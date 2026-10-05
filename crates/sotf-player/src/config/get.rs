@@ -1,5 +1,6 @@
 #[cfg(target_os = "macos")]
 use super::macos::macos_home_dir;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use super::misc::APP_BUNDLE_ID;
 use super::misc::CONFIG_DIR_OVERRIDE;
 use std::path::PathBuf;
