@@ -59,6 +59,30 @@ DIST_DIR="$PROJECT_ROOT/dist"
 TOOLS_DIR="$PROJECT_ROOT/tools"
 ASSETS_DIR="$PROJECT_ROOT/builds/linux"
 
+# Resolve notices from the aggregate checkout, so running this script from
+# another cwd still finds both the canonical font notice and sibling license.
+validate_linux_third_party_notice_sources() {
+    local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
+    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    local source
+    for source in "$fonts_notice" "$toolkit_license"; do
+        if [ ! -s "$source" ]; then
+            log_error "Required third-party notice input is missing or empty: $source"
+            return 1
+        fi
+    done
+}
+
+stage_linux_third_party_notices() {
+    local destination="$1"
+    local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
+    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    validate_linux_third_party_notice_sources || return 1
+    mkdir -p "$destination"
+    cp "$fonts_notice" "$destination/THIRD_PARTY_NOTICES.txt"
+    cp "$toolkit_license" "$destination/DejaVu-LICENSE"
+}
+
 # linuxdeploy tool configuration
 LINUXDEPLOY_VERSION="continuous"
 LINUXDEPLOY_BIN=""
@@ -362,6 +386,10 @@ create_tarball() {
         find "$staging_dir/assets" -name '*.sketch' -delete 2>/dev/null || true
     fi
 
+    # Keep the license texts available in the packaged installation layout,
+    # independently of the app's copied font assets.
+    stage_linux_third_party_notices "$staging_dir/share/doc/sotf"
+
     # Include desktop integration files
     cp "$ASSETS_DIR/org.spinorama.sotf.desktop" "$staging_dir/"
     if [ -f "$ASSETS_DIR/sotf.png" ]; then
@@ -540,6 +568,10 @@ create_appimage() {
     # Add TUI binary (linuxdeploy only handles one executable, add the second manually)
     cp "$BUILD_DIR/$TUI_BINARY_NAME" "$appdir/usr/bin/"
     chmod +x "$appdir/usr/bin/$TUI_BINARY_NAME"
+
+    # linuxdeploy's second pass writes the final AppImage; stage notices after
+    # its initial AppDir population so they are present in that final image.
+    stage_linux_third_party_notices "$appdir/usr/share/doc/sotf"
 
     # Rebuild AppImage with both binaries
     run_linuxdeploy "${deploy_args[@]}"
@@ -736,6 +768,8 @@ main() {
         exit 0
     fi
 
+    validate_linux_third_party_notice_sources
+
     log_info "=========================================="
     log_info "Building $APP_NAME v$VERSION for Linux"
     log_info "=========================================="
@@ -802,4 +836,6 @@ main() {
     fi
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

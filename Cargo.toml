@@ -64,7 +64,7 @@ socket2 = "0.6"
 tokio-rustls = "0.26"
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "io-util", "process", "signal"] }
 # tokio-tungstenite = "0.21"
-signal-hook = "0.4"
+signal-hook = "0.3.18"
 reqwest = { version = "0.13", features = ["json"] }
 url = "2"
 urlencoding = "2.1"

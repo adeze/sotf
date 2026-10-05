@@ -55,6 +55,31 @@ WITH_EXPERIMENTAL_TVOS=false
 
 DIST_DIR="$PROJECT_ROOT/dist"
 
+# Third-party notices for bundled fonts (the GPUI RustEmbed includes only TTF
+# bytes) and the sibling gpui-d3rs DejaVu font asset. Keep sibling resolution
+# rooted in the aggregate checkout layout rather than the caller's cwd.
+validate_macos_third_party_notice_sources() {
+    local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
+    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    local source
+    for source in "$fonts_notice" "$toolkit_license"; do
+        if [ ! -s "$source" ]; then
+            log_error "Required third-party notice input is missing or empty: $source"
+            return 1
+        fi
+    done
+}
+
+stage_macos_third_party_notices() {
+    local destination="$1"
+    local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
+    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    validate_macos_third_party_notice_sources || return 1
+    mkdir -p "$destination"
+    cp "$fonts_notice" "$destination/THIRD_PARTY_NOTICES.txt"
+    cp "$toolkit_license" "$destination/DejaVu-LICENSE"
+}
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -247,6 +272,7 @@ create_app_bundle() {
     rm -rf "$APP_BUNDLE"
     mkdir -p "$APP_BUNDLE/Contents/MacOS"
     mkdir -p "$APP_BUNDLE/Contents/Resources"
+    stage_macos_third_party_notices "$APP_BUNDLE/Contents/Resources"
 
     # Copy binary
     cp "$BUILD_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/"
@@ -530,6 +556,7 @@ main() {
     log_info "Building $APP_NAME v$VERSION"
     log_info "=========================================="
 
+    validate_macos_third_party_notice_sources
     check_prerequisites
     clean_build
     build_binary
@@ -558,4 +585,6 @@ main() {
     log_info "=========================================="
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
