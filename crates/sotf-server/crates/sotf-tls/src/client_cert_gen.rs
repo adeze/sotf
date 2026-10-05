@@ -129,9 +129,9 @@ mod tests {
     fn test_generate_client_cert() {
         let (cert, key) = generate_client_cert("Test-iPhone").expect("should succeed");
 
-        assert!(!cert.as_ref().is_empty());
+        assert_ne!(cert.as_ref(), []);
         match &key {
-            PrivateKeyDer::Pkcs8(k) => assert!(!k.secret_pkcs8_der().is_empty()),
+            PrivateKeyDer::Pkcs8(k) => assert_ne!(k.secret_pkcs8_der(), []),
             _ => panic!("expected PKCS8 key"),
         }
 

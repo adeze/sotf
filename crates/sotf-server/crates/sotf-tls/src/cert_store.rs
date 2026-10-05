@@ -134,8 +134,8 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let store = CertStore::load_or_generate(tmp.path()).expect("should succeed");
 
-        assert!(!store.cert().as_ref().is_empty());
-        assert!(!store.server_fingerprint().is_empty());
+        assert_ne!(store.cert().as_ref(), []);
+        assert_ne!(store.server_fingerprint(), "");
 
         // Files should exist
         assert!(tmp.path().join("tls/server.der").exists());
