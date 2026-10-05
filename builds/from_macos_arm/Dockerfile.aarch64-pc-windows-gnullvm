@@ -25,7 +25,7 @@ RUN apt-get update && \
     mingw-w64 \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Install Rust 1.95 (pinned version for compatibility)
+# Install the release Rust toolchain (pinned).
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --default-toolchain 1.99.0 --profile minimal && \
     rm -rf /root/.cargo/registry /root/.cargo/git
