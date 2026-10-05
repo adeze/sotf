@@ -12,6 +12,9 @@
 #
 # Usage:
 #   ./build-release-local.sh                     # Full release build
+#   ./build-release-local.sh --arch arm64         # Apple Silicon + Linux ARM64
+#   ./build-release-local.sh --arch x86_64        # macOS/Linux x86_64 only
+#   ./build-release-local.sh --arch all           # Both architectures (default)
 #   ./build-release-local.sh --dry-run           # Show what would be done
 #   ./build-release-local.sh --skip-linux        # Skip Linux builds
 #   ./build-release-local.sh --skip-windows      # Skip Windows builds
@@ -72,6 +75,7 @@ DEPLOY_SITE=false
 POST_ONLY=false
 CLEAN_REMOTE=false
 INIT_CONFIG=false
+ARCH_SELECTION=all
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -86,6 +90,20 @@ while [[ $# -gt 0 ]]; do
         --post-only)     POST_ONLY=true; shift ;;
         --clean-remote)  CLEAN_REMOTE=true; shift ;;
         --init-config)   INIT_CONFIG=true; shift ;;
+        --arch)
+            if [ "$#" -lt 2 ]; then
+                echo "--arch requires arm64, x86_64, or all"
+                exit 1
+            fi
+            case "$2" in
+                arm64|x86_64|all) ARCH_SELECTION="$2" ;;
+                *)
+                    echo "Invalid architecture '$2' (choose arm64, x86_64, or all)"
+                    exit 1
+                    ;;
+            esac
+            shift 2
+            ;;
         --config)        CONFIG_FILE="$2"; shift 2 ;;
         --help|-h)
             sed -n '2,/^$/p' "$0" | sed 's/^#//' | sed 's/^ //'
@@ -425,12 +443,8 @@ AGGREGATE_RSYNC_EXCLUDES=(
     --exclude='.claude/'
     --exclude='.serena/'
     --exclude='DerivedData/'
-    --exclude='build/'
-    --exclude='tools/'
-    --exclude='certs/'
     --exclude='coverage/'
     --exclude='mutants.out/'
-    --exclude='data/'
     --exclude='data_cached/'
     --exclude='data_generated/'
     --exclude='.DS_Store'
@@ -559,6 +573,10 @@ record_artifact() {
     return 0
 }
 
+arch_is_selected() {
+    [ "$ARCH_SELECTION" = all ] || [ "$ARCH_SELECTION" = "$1" ]
+}
+
 clear_versioned_artifacts() {
     local directory="$1"
     [ -d "$directory" ] || return 0
@@ -576,59 +594,105 @@ clear_versioned_artifacts() {
     [ "$failed" = false ]
 }
 
+is_excluded_linux_source_path() {
+    local path="$1"
+    case "/$path/" in
+        */target/*|*/target-static/*|*/.docker-target/*|*/dist/*|\
+        */node_modules/*|*/venv/*|*/.venv/*|*/__pycache__/*|\
+        */.git/*|*/.tokensave/*|*/.claude/*|*/.serena/*|\
+        */DerivedData/*|*/coverage/*|*/mutants.out/*|\
+        */data_cached/*|*/data_generated/*|*/.vs/*|*/.vscode/*|\
+        */.zed/*|*/.idea/*|*/.fleet/*|*/.qwen/*|*/.worktrees/*)
+            return 0
+            ;;
+    esac
+    case "$path" in
+        *.o|*.d|*/.DS_Store|.DS_Store|.release-source-manifest-*) return 0 ;;
+    esac
+    return 1
+}
+
 write_linux_source_manifest() {
     local aggregate_root="$1"
     local manifest="$2"
-    local repo rel head
+    local source_file_list="$3"
+    local manifest_name="$4"
+    local repo rel head path candidate entries
+    local entries_file="${source_file_list}.entries"
     : > "$manifest" || return 1
+    : > "$source_file_list" || return 1
+
     for repo in . sotf sotf-daw sotf-systemwide sotf-capture autoeq math-audio gpui-toolkit sofa-reader symphonia-add-ons; do
-        if [ ! -d "$aggregate_root/$repo" ]; then
-            log_error "Aggregate Linux source tree is missing required sibling: $repo"
+        if [ ! -d "$aggregate_root/$repo" ] || ! git -C "$aggregate_root/$repo" rev-parse --show-toplevel >/dev/null 2>&1; then
+            log_error "Aggregate Linux source tree is missing a Git workspace: $repo"
+            rm -f -- "$entries_file"
             return 1
         fi
         rel="$repo"
         [ "$repo" = . ] && rel=all_of_sotf
-        head=$(git -C "$aggregate_root/$repo" rev-parse HEAD 2>/dev/null || printf 'uncommitted-or-unversioned')
+        head=$(git -C "$aggregate_root/$repo" rev-parse HEAD 2>/dev/null) || {
+            log_error "Could not record source revision for $rel"
+            rm -f -- "$entries_file"
+            return 1
+        }
         printf '# source %s head %s\n' "$rel" "$head" >> "$manifest" || return 1
+
+        if ! git -C "$aggregate_root/$repo" ls-files -z --cached > "$entries_file"; then
+            log_error "Could not enumerate tracked source files for $rel"
+            rm -f -- "$entries_file"
+            return 1
+        fi
+        while IFS= read -r -d '' path; do
+            if [ "$repo" = . ]; then
+                case "$path" in
+                    sotf|sotf/|sotf-daw|sotf-daw/|sotf-systemwide|sotf-systemwide/|\
+                    sotf-capture|sotf-capture/|autoeq|autoeq/|math-audio|math-audio/|\
+                    gpui-toolkit|gpui-toolkit/|sofa-reader|sofa-reader/|\
+                    symphonia-add-ons|symphonia-add-ons/) continue ;;
+                esac
+                candidate="$path"
+            else
+                candidate="$repo/$path"
+            fi
+            is_excluded_linux_source_path "$candidate" && continue
+            printf '%s\0' "$candidate" >> "$source_file_list" || return 1
+        done < "$entries_file"
+
+        if ! git -C "$aggregate_root/$repo" ls-files -z --others --exclude-standard > "$entries_file"; then
+            log_error "Could not enumerate untracked source files for $rel"
+            rm -f -- "$entries_file"
+            return 1
+        fi
+        while IFS= read -r -d '' path; do
+            if [ "$repo" = . ]; then
+                case "$path" in
+                    sotf|sotf/|sotf-daw|sotf-daw/|sotf-systemwide|sotf-systemwide/|\
+                    sotf-capture|sotf-capture/|autoeq|autoeq/|math-audio|math-audio/|\
+                    gpui-toolkit|gpui-toolkit/|sofa-reader|sofa-reader/|\
+                    symphonia-add-ons|symphonia-add-ons/) continue ;;
+                esac
+                candidate="$path"
+            else
+                candidate="$repo/$path"
+            fi
+            # Include committed data fixtures while leaving local, untracked
+            # datasets out of release snapshots. Git-ignored datasets are
+            # already omitted by --exclude-standard.
+            case "$candidate" in */data/*) continue ;; esac
+            is_excluded_linux_source_path "$candidate" && continue
+            printf '%s\0' "$candidate" >> "$source_file_list" || return 1
+        done < "$entries_file"
     done
-    (
-        cd "$aggregate_root" || exit 1
-        find . -type f \
-            ! -path '*/.git/*' \
-            ! -path '*/target/*' \
-            ! -path '*/target-static/*' \
-            ! -path '*/.docker-target/*' \
-            ! -path '*/dist/*' \
-        ! -path '*/node_modules/*' \
-        ! -path '*/venv/*' \
-        ! -path '*/.venv/*' \
-        ! -path '*/__pycache__/*' \
-        ! -path '*/.tokensave/*' \
-            ! -path '*/.claude/*' \
-            ! -path '*/.serena/*' \
-            ! -path '*/DerivedData/*' \
-            ! -path '*/build/*' \
-            ! -path '*/tools/*' \
-            ! -path '*/certs/*' \
-            ! -path '*/coverage/*' \
-            ! -path '*/mutants.out/*' \
-            ! -path '*/mutants.out' \
-            ! -path '*/data/*' \
-            ! -path '*/data_cached/*' \
-            ! -path '*/data_generated/*' \
-            ! -path '*/.vs/*' \
-            ! -path '*/.vscode/*' \
-            ! -path '*/.zed/*' \
-            ! -path '*/.idea/*' \
-            ! -path '*/.fleet/*' \
-            ! -path '*/.qwen/*' \
-            ! -path '*/.worktrees/*' \
-            ! -name '.release-source-manifest-*' \
-            ! -name '*.o' \
-            ! -name '*.d' \
-            ! -name '.DS_Store' \
-            -print0 | xargs -0 shasum -a 256
-    ) >> "$manifest"
+    rm -f -- "$entries_file"
+
+    while IFS= read -r -d '' path; do
+        if [ ! -f "$aggregate_root/$path" ] && [ ! -L "$aggregate_root/$path" ]; then
+            log_error "Source file listed for Linux snapshot is missing: $path"
+            return 1
+        fi
+        (cd "$aggregate_root" && shasum -a 256 "$path") >> "$manifest" || return 1
+    done < "$source_file_list"
+    printf '%s\0' "$manifest_name" >> "$source_file_list" || return 1
 }
 
 verify_linux_source_manifest() {
@@ -835,13 +899,21 @@ build_macos() {
     # then asks the DMG script to package that exact binary.
 
     if $DRY_RUN; then
-        log_dry "cargo build --profile dist --target aarch64-apple-darwin (sotf-tui, sotf-desktop)"
-        log_dry "./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/dist/sotf-desktop"
-        log_dry "cargo build --profile dist --target x86_64-apple-darwin (sotf-tui, sotf-desktop)"
-        log_dry "./scripts/build-dmg-sotf.sh --arch x86_64 --binary target/x86_64-apple-darwin/dist/sotf-desktop"
+        if arch_is_selected arm64; then
+            log_dry "cargo build --profile dist --target aarch64-apple-darwin (sotf-tui, sotf-desktop)"
+            log_dry "./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/dist/sotf-desktop"
+        fi
+        if arch_is_selected x86_64; then
+            log_dry "cargo build --profile dist --target x86_64-apple-darwin (sotf-tui, sotf-desktop)"
+            log_dry "./scripts/build-dmg-sotf.sh --arch x86_64 --binary target/x86_64-apple-darwin/dist/sotf-desktop"
+        fi
     else
-        build_macos_target arm64 aarch64-apple-darwin hal,onnx || phase_failed=true
-        build_macos_target x86_64 x86_64-apple-darwin hal || phase_failed=true
+        if arch_is_selected arm64; then
+            build_macos_target arm64 aarch64-apple-darwin hal,onnx || phase_failed=true
+        fi
+        if arch_is_selected x86_64; then
+            build_macos_target x86_64 x86_64-apple-darwin hal || phase_failed=true
+        fi
         $phase_failed && record_result "macOS required targets: FAILED"
     fi
 
@@ -922,6 +994,7 @@ build_linux() {
     local remote_dir="$remote_snapshot_root/$(basename "$PROJECT_ROOT")"
     local manifest_name=".release-source-manifest-${VERSION}-${run_id}.sha256"
     local manifest_path="$AGGREGATE_ROOT/$manifest_name"
+    local source_file_list="$DIST_DIR/.release-source-files-${VERSION}-${run_id}.nul"
     local fetched_ok=true
 
     # Use a unique sibling-root snapshot so the build cannot resolve a stale
@@ -938,8 +1011,9 @@ build_linux() {
             record_result "Linux sync: FAILED (manifest collision)"
             return 1
         fi
-        if ! write_linux_source_manifest "$AGGREGATE_ROOT" "$manifest_path"; then
+        if ! write_linux_source_manifest "$AGGREGATE_ROOT" "$manifest_path" "$source_file_list" "$manifest_name"; then
             rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list" "${source_file_list}.entries"
             log_error "Could not record aggregate source hashes"
             record_result "Linux sync: FAILED (manifest generation)"
             return 1
@@ -947,24 +1021,25 @@ build_linux() {
         if ! ssh_cmd "$host" "$port" "$key" \
             "mkdir -p '${remote_snapshot_root%/*}' && mkdir '$remote_snapshot_root'"; then
             rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list"
             log_error "Could not create Linux snapshot directory"
             record_result "Linux sync: FAILED (snapshot directory)"
             return 1
         fi
         build_ssh_transport "$port" "$key"
-        if ! rsync -avz --delete \
-            --include="/$manifest_name" \
+        if ! rsync -avz --delete --from0 --files-from="$source_file_list" \
             "${AGGREGATE_RSYNC_EXCLUDES[@]}" \
-            --exclude='.release-source-manifest-*' \
             -e "${SSH_TRANSPORT_CMD[*]}" \
             "$AGGREGATE_ROOT/" "${host}:${remote_snapshot_root}/"; then
             rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list"
             log_error "rsync to Linux failed"
             record_result "Linux sync: FAILED"
             return 1
         fi
         if ! verify_linux_source_manifest "$host" "$port" "$key" "$remote_snapshot_root" "$manifest_name"; then
             rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list"
             log_error "Linux snapshot source hash verification failed"
             record_result "Linux sync: FAILED (source hash mismatch)"
             return 1
@@ -973,12 +1048,14 @@ build_linux() {
         local retained_manifest="$DIST_DIR/source-manifest-linux-${VERSION}-${run_id}.sha256"
         if ! cp "$manifest_path" "$retained_manifest"; then
             rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list"
             log_error "Could not retain the Linux source hash manifest"
             record_result "Linux sync: FAILED (manifest copy)"
             return 1
         fi
         record_artifact "$retained_manifest" "Linux source manifest" || fetched_ok=false
         rm -f -- "$manifest_path"
+        rm -f -- "$source_file_list"
         if $CLEAN_REMOTE; then
             log_info "The Linux snapshot is fresh; no existing remote build artifacts are reused"
         else
@@ -987,35 +1064,67 @@ build_linux() {
         log_success "Source synced"
     fi
 
-    # Build Linux x86_64 natively
-    log_step "Building Linux x86_64 (native on remote)..."
+    local native_machine native_arch
     if $DRY_RUN; then
-        log_dry "ssh ${host} 'cd ${remote_dir} && ./scripts/build-linux.sh --appimage'"
+        native_machine="$(uname -m)"
+        log_dry "ssh ${host} uname -m (mock/native target detection)"
     else
-        if ! ssh_cmd "$host" "$port" "$key" \
-            "cd '$remote_dir' && mkdir -p dist && rm -f dist/*${VERSION}* && ./scripts/build-linux.sh --appimage"; then
-            log_error "Linux x86_64 build failed"
-            record_result "Linux x86_64: FAILED"
-            fetched_ok=false
-        else
-            record_result "Linux x86_64: BUILD OK"
-        fi
+        native_machine=$(ssh_cmd "$host" "$port" "$key" "uname -m") || {
+            log_error "Could not detect Linux builder architecture"
+            record_result "Linux architecture detection: FAILED"
+            return 1
+        }
+    fi
+    case "$native_machine" in
+        x86_64|amd64) native_arch=x86_64 ;;
+        aarch64|arm64) native_arch=arm64 ;;
+        *)
+            log_error "Unsupported Linux builder architecture: $native_machine"
+            record_result "Linux architecture detection: FAILED ($native_machine)"
+            return 1
+            ;;
+    esac
+    log_info "Linux builder native architecture: $native_arch"
+
+    if $DRY_RUN; then
+        log_dry "ssh ${host} 'cd ${remote_dir} && mkdir -p dist && rm -f dist/*${VERSION}*'"
+    elif ! ssh_cmd "$host" "$port" "$key" \
+        "cd '$remote_dir' && mkdir -p dist && rm -f dist/*${VERSION}*"; then
+        log_error "Could not clear stale Linux artifacts for v${VERSION}"
+        record_result "Linux cleanup: FAILED"
+        return 1
     fi
 
-    # Build Linux ARM64 via Docker on the remote
-    log_step "Building Linux ARM64 (Docker on remote)..."
-    if $DRY_RUN; then
-        log_dry "ssh ${host} 'cd ${remote_dir} && just docker-linux-arm64'"
-    else
-        if ssh_cmd "$host" "$port" "$key" \
-            "cd '$remote_dir' && just docker-linux-arm64"; then
-            record_result "Linux ARM64: BUILD OK"
+    local arch build_command method appimage_expected
+    for arch in x86_64 arm64; do
+        arch_is_selected "$arch" || continue
+        if [ "$arch" = "$native_arch" ]; then
+            build_command="./scripts/build-linux.sh --appimage"
+            method="native"
+            appimage_expected=true
+        elif [ "$arch" = arm64 ]; then
+            build_command="just docker-linux-arm64"
+            method="Docker"
+            appimage_expected=true
         else
-            log_error "Linux ARM64 build failed"
-            record_result "Linux ARM64: FAILED"
+            build_command="just docker-linux-x86"
+            method="Docker"
+            # On an ARM host the x86 recipe uses QEMU and deliberately builds
+            # TUI-only, so its tarball is the only required output.
+            appimage_expected=false
+        fi
+        log_step "Building Linux ${arch} (${method} on remote)..."
+        if $DRY_RUN; then
+            log_dry "ssh ${host} 'cd ${remote_dir} && ${build_command}'"
+        elif ssh_cmd "$host" "$port" "$key" \
+            "cd '$remote_dir' && ${build_command}"; then
+            record_result "Linux ${arch}: BUILD OK"
+        else
+            log_error "Linux ${arch} build failed"
+            record_result "Linux ${arch}: FAILED"
             fetched_ok=false
         fi
-    fi
+    done
 
     # Copy artifacts back (current version only)
     log_step "Fetching Linux artifacts (v${VERSION})..."
@@ -1029,11 +1138,16 @@ build_linux() {
             record_result "Linux fetch: FAILED"
             return 1
         fi
-        local arch artifact artifact_label
+        local arch artifact artifact_label appimage_expected
         for arch in x86_64 arm64; do
-            for artifact in \
-                "sotf-desktop-${VERSION}-linux-${arch}.tar.gz" \
-                "sotf-desktop-${VERSION}-linux-${arch}.AppImage"; do
+            arch_is_selected "$arch" || continue
+            appimage_expected=true
+            if [ "$arch" = x86_64 ] && [ "$native_arch" = arm64 ]; then
+                appimage_expected=false
+            fi
+            local expected_artifacts=("sotf-desktop-${VERSION}-linux-${arch}.tar.gz")
+            $appimage_expected && expected_artifacts+=("sotf-desktop-${VERSION}-linux-${arch}.AppImage")
+            for artifact in "${expected_artifacts[@]}"; do
                 artifact_label="Linux ${arch} ${artifact##*.}"
                 if ! record_artifact "$DIST_DIR/$artifact" "$artifact_label"; then
                     fetched_ok=false
