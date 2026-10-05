@@ -8,6 +8,7 @@ ENV TZ=Etc/UTC
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV CARGO_TARGET_DIR=/build-target
 ENV PATH="/root/.cargo/bin:${PATH}"
+ENV RUSTUP_TOOLCHAIN=1.99.0
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -45,10 +46,10 @@ RUN apt-get update && \
         && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --default-toolchain stable --profile minimal && \
+    sh -s -- -y --default-toolchain 1.99.0 --profile minimal && \
     rustup component add clippy llvm-tools-preview rust-analyzer rust-src rustc-dev rustfmt && \
     cargo install just --locked && \
     mkdir -p /build-target && \
     rm -rf /root/.cargo/registry /root/.cargo/git
 
-WORKDIR /project
+WORKDIR /workspace/sotf

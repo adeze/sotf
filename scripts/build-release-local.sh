@@ -45,6 +45,7 @@ trap 'log_error "Unexpected error at line $LINENO (exit $?)"' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+AGGREGATE_ROOT="$(cd "$PROJECT_ROOT/.." && pwd)"
 DIST_DIR="$PROJECT_ROOT/dist"
 CONFIG_FILE="${HOME}/.sotf-release.conf"
 
@@ -219,6 +220,7 @@ build_ssh_transport() {
     SSH_TRANSPORT_CMD=(ssh)
     [ -n "$port" ] && SSH_TRANSPORT_CMD+=(-p "$port")
     [ -n "$key" ]  && SSH_TRANSPORT_CMD+=(-i "$key")
+    return 0
 }
 
 # Run an SSH command with optional key and port
@@ -406,6 +408,43 @@ RSYNC_EXCLUDES=(
     --exclude='/product/'
 )
 
+# The Linux builder consumes the aggregate checkout, not just the SOTF child.
+# Its fresh snapshot deliberately omits every repository's build output and
+# VCS metadata, while keeping source files from all sibling workspaces.
+AGGREGATE_RSYNC_EXCLUDES=(
+    --exclude='.git/'
+    --exclude='target/'
+    --exclude='target-static/'
+    --exclude='.docker-target/'
+    --exclude='dist/'
+    --exclude='node_modules/'
+    --exclude='venv/'
+    --exclude='.venv/'
+    --exclude='__pycache__/'
+    --exclude='.tokensave/'
+    --exclude='.claude/'
+    --exclude='.serena/'
+    --exclude='DerivedData/'
+    --exclude='build/'
+    --exclude='tools/'
+    --exclude='certs/'
+    --exclude='coverage/'
+    --exclude='mutants.out/'
+    --exclude='data/'
+    --exclude='data_cached/'
+    --exclude='data_generated/'
+    --exclude='.DS_Store'
+    --exclude='.vs/'
+    --exclude='.vscode/'
+    --exclude='.zed/'
+    --exclude='.idea/'
+    --exclude='.fleet/'
+    --exclude='.qwen/'
+    --exclude='.worktrees/'
+    --exclude='*.o'
+    --exclude='*.d'
+)
+
 handle_rsync_status() {
     local status="$1"
     local label="$2"
@@ -499,8 +538,131 @@ rsync_from_win() {
 
 # Track build results
 declare -a BUILD_RESULTS=()
+declare -a RELEASE_ARTIFACTS=()
+BUILD_FAILED=false
 record_result() {
     BUILD_RESULTS+=("$1")
+    case "$1" in
+        *FAILED*) BUILD_FAILED=true ;;
+    esac
+}
+
+record_artifact() {
+    local path="$1"
+    local label="${2:-$path}"
+    if [ ! -s "$path" ]; then
+        log_error "Expected fresh artifact is missing or empty: $path"
+        record_result "$label: FAILED (missing artifact)"
+        return 1
+    fi
+    RELEASE_ARTIFACTS+=("$path")
+    return 0
+}
+
+clear_versioned_artifacts() {
+    local directory="$1"
+    [ -d "$directory" ] || return 0
+    local path
+    local failed=false
+    shopt -s nullglob
+    for path in "$directory"/*"$VERSION"*; do
+        [ -f "$path" ] || [ -L "$path" ] || continue
+        if ! rm -f -- "$path"; then
+            log_error "Could not remove stale current-version artifact: $path"
+            failed=true
+        fi
+    done
+    shopt -u nullglob
+    [ "$failed" = false ]
+}
+
+write_linux_source_manifest() {
+    local aggregate_root="$1"
+    local manifest="$2"
+    local repo rel head
+    : > "$manifest" || return 1
+    for repo in . sotf sotf-daw sotf-systemwide sotf-capture autoeq math-audio gpui-toolkit sofa-reader symphonia-add-ons; do
+        if [ ! -d "$aggregate_root/$repo" ]; then
+            log_error "Aggregate Linux source tree is missing required sibling: $repo"
+            return 1
+        fi
+        rel="$repo"
+        [ "$repo" = . ] && rel=all_of_sotf
+        head=$(git -C "$aggregate_root/$repo" rev-parse HEAD 2>/dev/null || printf 'uncommitted-or-unversioned')
+        printf '# source %s head %s\n' "$rel" "$head" >> "$manifest" || return 1
+    done
+    (
+        cd "$aggregate_root" || exit 1
+        find . -type f \
+            ! -path '*/.git/*' \
+            ! -path '*/target/*' \
+            ! -path '*/target-static/*' \
+            ! -path '*/.docker-target/*' \
+            ! -path '*/dist/*' \
+        ! -path '*/node_modules/*' \
+        ! -path '*/venv/*' \
+        ! -path '*/.venv/*' \
+        ! -path '*/__pycache__/*' \
+        ! -path '*/.tokensave/*' \
+            ! -path '*/.claude/*' \
+            ! -path '*/.serena/*' \
+            ! -path '*/DerivedData/*' \
+            ! -path '*/build/*' \
+            ! -path '*/tools/*' \
+            ! -path '*/certs/*' \
+            ! -path '*/coverage/*' \
+            ! -path '*/mutants.out/*' \
+            ! -path '*/mutants.out' \
+            ! -path '*/data/*' \
+            ! -path '*/data_cached/*' \
+            ! -path '*/data_generated/*' \
+            ! -path '*/.vs/*' \
+            ! -path '*/.vscode/*' \
+            ! -path '*/.zed/*' \
+            ! -path '*/.idea/*' \
+            ! -path '*/.fleet/*' \
+            ! -path '*/.qwen/*' \
+            ! -path '*/.worktrees/*' \
+            ! -name '.release-source-manifest-*' \
+            ! -name '*.o' \
+            ! -name '*.d' \
+            ! -name '.DS_Store' \
+            -print0 | xargs -0 shasum -a 256
+    ) >> "$manifest"
+}
+
+verify_linux_source_manifest() {
+    local host="$1" port="$2" key="$3" remote_root="$4" manifest_name="$5"
+    ssh_cmd "$host" "$port" "$key" \
+        "cd '$remote_root' && grep -v '^#' '$manifest_name' | shasum -a 256 -c - >/dev/null"
+}
+
+verify_linux_appimage_arch() {
+    local path="$1" arch="$2" description
+    description=$(file -b "$path") || {
+        log_error "Could not inspect Linux AppImage architecture: $path"
+        record_result "Linux ${arch} AppImage: FAILED (file inspection)"
+        return 1
+    }
+    case "$arch:$description" in
+        x86_64:*x86-64*|x86_64:*x86_64*|arm64:*aarch64*|arm64:*ARM\ aarch64*) return 0 ;;
+        *)
+            log_error "Linux ${arch} AppImage has unexpected file type: $description"
+            record_result "Linux ${arch} AppImage: FAILED (architecture mismatch)"
+            return 1
+            ;;
+    esac
+}
+
+write_artifact_hashes() {
+    local output="$1"
+    local artifact artifact_name
+    : > "$output" || return 1
+    for artifact in "${RELEASE_ARTIFACTS[@]}"; do
+        [ -s "$artifact" ] || return 1
+        artifact_name=$(basename "$artifact") || return 1
+        (cd "$DIST_DIR" && shasum -a 256 "$artifact_name") >> "$output" || return 1
+    done
 }
 
 # Time a phase
@@ -603,6 +765,56 @@ preflight() {
 # PHASE 1: macOS BUILDS (local)
 # -----------------------------------------------------------------------
 
+build_macos_target() {
+    local arch="$1"
+    local target="$2"
+    local features="$3"
+    local target_dir="$PROJECT_ROOT/target/$target/dist"
+    local tui_out="$DIST_DIR/sotf-tui-${VERSION}-macos-${arch}"
+    local desktop_out="$DIST_DIR/sotf-desktop-${VERSION}-macos-${arch}"
+    local label="macOS ${arch}"
+
+    log_step "Building ${label} (dynamic, profile=dist)..."
+    if ! rustup target add "$target" 2>/dev/null; then
+        log_warning "Rust target $target is already installed or could not be added; Cargo will report whether it is usable"
+    fi
+    if ! cargo build --profile dist --target "$target" -p sotf-tui --features "$features" ||
+       ! cargo build --profile dist --target "$target" -p sotf-gpui --features "$features"; then
+        log_error "${label} Cargo build failed"
+        record_result "${label}: FAILED (cargo build)"
+        return 1
+    fi
+    if ! mkdir -p "$DIST_DIR" ||
+       ! cp "$target_dir/sotf-tui" "$tui_out" ||
+       ! cp "$target_dir/sotf-desktop" "$desktop_out"; then
+        log_error "${label} artifact copy failed"
+        record_result "${label}: FAILED (artifact copy)"
+        return 1
+    fi
+    if ! record_artifact "$tui_out" "${label} TUI" ||
+       ! record_artifact "$desktop_out" "${label} desktop"; then
+        return 1
+    fi
+    if ! lipo -verify_arch "$arch" "$tui_out" >/dev/null 2>&1 ||
+       ! lipo -verify_arch "$arch" "$desktop_out" >/dev/null 2>&1; then
+        log_error "${label} artifact architecture verification failed"
+        record_result "${label}: FAILED (architecture mismatch)"
+        return 1
+    fi
+
+    local dmg="$DIST_DIR/sotf-desktop-${VERSION}-macos-${arch}.dmg"
+    if ! ./scripts/build-dmg-sotf.sh --arch "$arch" --binary "$target_dir/sotf-desktop"; then
+        log_error "${label} DMG packaging failed"
+        record_result "${label} DMG: FAILED (packaging)"
+        return 1
+    fi
+    if ! record_artifact "$dmg" "${label} DMG"; then
+        return 1
+    fi
+    record_result "${label}: OK"
+    return 0
+}
+
 build_macos() {
     if $SKIP_MACOS; then
         log_info "Skipping macOS builds (--skip-macos)"
@@ -611,6 +823,7 @@ build_macos() {
 
     log_phase "Phase 1: macOS Builds (local)"
     start_timer
+    local phase_failed=false
 
     cd "$PROJECT_ROOT"
 
@@ -621,51 +834,15 @@ build_macos() {
     # cleanly, so this pipeline builds the dynamically-linked binary first and
     # then asks the DMG script to package that exact binary.
 
-    # --- macOS ARM64 ---
-    log_step "Building macOS ARM64 (dynamic, profile=dist) ..."
     if $DRY_RUN; then
         log_dry "cargo build --profile dist --target aarch64-apple-darwin (sotf-tui, sotf-desktop)"
         log_dry "./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/dist/sotf-desktop"
-    else
-        rustup target add aarch64-apple-darwin 2>/dev/null || true
-        # Release cuts use the `dist` profile (fat LTO + codegen-units=1).
-        # See [profile.dist] in root Cargo.toml. Artifacts land in
-        # target/<triple>/dist/ instead of target/<triple>/release/.
-        cargo build --profile dist --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
-        cargo build --profile dist --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
-        mkdir -p "$DIST_DIR"
-        cp "target/aarch64-apple-darwin/dist/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
-        cp "target/aarch64-apple-darwin/dist/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
-        record_result "macOS ARM64: OK"
-        if ./scripts/build-dmg-sotf.sh --arch arm64 --binary "target/aarch64-apple-darwin/dist/sotf-desktop"; then
-            record_result "macOS ARM64 DMG: OK"
-        else
-            log_error "macOS ARM64 DMG packaging failed"
-            record_result "macOS ARM64 DMG: FAILED"
-            exit 1
-        fi
-    fi
-
-    # --- macOS x86_64 ---
-    log_step "Building macOS x86_64 (dynamic, profile=dist) ..."
-    if $DRY_RUN; then
         log_dry "cargo build --profile dist --target x86_64-apple-darwin (sotf-tui, sotf-desktop)"
         log_dry "./scripts/build-dmg-sotf.sh --arch x86_64 --binary target/x86_64-apple-darwin/dist/sotf-desktop"
     else
-        rustup target add x86_64-apple-darwin 2>/dev/null || true
-        cargo build --profile dist --target x86_64-apple-darwin -p sotf-tui --features hal
-        cargo build --profile dist --target x86_64-apple-darwin -p sotf-gpui --features hal
-        mkdir -p "$DIST_DIR"
-        cp "target/x86_64-apple-darwin/dist/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
-        cp "target/x86_64-apple-darwin/dist/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
-        record_result "macOS x86_64: OK"
-        if ./scripts/build-dmg-sotf.sh --arch x86_64 --binary "target/x86_64-apple-darwin/dist/sotf-desktop"; then
-            record_result "macOS x86_64 DMG: OK"
-        else
-            log_error "macOS x86_64 DMG packaging failed"
-            record_result "macOS x86_64 DMG: FAILED"
-            exit 1
-        fi
+        build_macos_target arm64 aarch64-apple-darwin hal,onnx || phase_failed=true
+        build_macos_target x86_64 x86_64-apple-darwin hal || phase_failed=true
+        $phase_failed && record_result "macOS required targets: FAILED"
     fi
 
     # --- macOS Systemwide pkg (moved) ---
@@ -681,24 +858,46 @@ build_macos() {
             export INSTALLER_DEVELOPER_ID="${INSTALLER_DEVELOPER_ID:-}"
             export APPLE_ID="${APPLE_ID:-}"
 
-            ./scripts/sign-macos.sh
-            log_success "macOS code signing complete"
-
-            if [ -n "${APPLE_ID:-}" ]; then
-                log_step "Notarizing macOS artifacts..."
-                ./scripts/sign-macos.sh --notarize
-                log_success "macOS notarization complete"
+            if ./scripts/sign-macos.sh; then
+                log_success "macOS code signing complete"
+                if [ -n "${APPLE_ID:-}" ]; then
+                    log_step "Notarizing macOS artifacts..."
+                    if ./scripts/sign-macos.sh --notarize; then
+                        log_success "macOS notarization complete"
+                        record_result "macOS notarization: OK"
+                    else
+                        log_error "macOS notarization failed"
+                        record_result "macOS notarization: FAILED"
+                        phase_failed=true
+                    fi
+                else
+                    log_warning "APPLE_ID not set, skipping notarization"
+                fi
+                record_result "macOS signing: OK"
             else
-                log_warning "APPLE_ID not set, skipping notarization"
+                log_error "macOS code signing failed"
+                record_result "macOS signing: FAILED"
+                phase_failed=true
             fi
-            record_result "macOS signing: OK"
         fi
     elif ! $SKIP_SIGN; then
         log_warning "DEVELOPER_ID not set, skipping macOS signing"
         record_result "macOS signing: SKIPPED (no DEVELOPER_ID)"
     fi
 
+    if ! $DRY_RUN; then
+        if ! write_artifact_hashes "$DIST_DIR/BUILD-SHA256SUMS-${VERSION}"; then
+            log_error "Could not write the build artifact hash manifest"
+            record_result "macOS artifact hashes: FAILED"
+            phase_failed=true
+        fi
+    fi
+    if $phase_failed; then
+        log_error "macOS phase failed ($(elapsed))"
+        return 1
+    fi
     log_success "macOS builds complete ($(elapsed))"
+    return 0
 }
 
 # -----------------------------------------------------------------------
@@ -717,30 +916,73 @@ build_linux() {
     local host="$LINUX_HOST"
     local port="${LINUX_PORT:-22}"
     local key="${LINUX_SSH_KEY:-}"
-    local remote_dir="${LINUX_PROJECT_DIR}"
+    local configured_project_dir="${LINUX_PROJECT_DIR}"
+    local run_id="$(date +%Y%m%d%H%M%S)-$$"
+    local remote_snapshot_root="${configured_project_dir%/*}/.sotf-release-${VERSION}-${run_id}"
+    local remote_dir="$remote_snapshot_root/$(basename "$PROJECT_ROOT")"
+    local manifest_name=".release-source-manifest-${VERSION}-${run_id}.sha256"
+    local manifest_path="$AGGREGATE_ROOT/$manifest_name"
+    local fetched_ok=true
 
-    # Sync source to Linux machine
-    log_step "Syncing source to ${host}:${remote_dir}..."
+    # Use a unique sibling-root snapshot so the build cannot resolve a stale
+    # or unknown checkout already present on the Linux host. The manifest
+    # records every transferred source file and the HEAD of each sibling.
+    log_step "Syncing aggregate source snapshot to ${host}:${remote_snapshot_root}..."
     if $DRY_RUN; then
-        log_dry "rsync project to ${host}:${remote_dir}"
-        if $CLEAN_REMOTE; then
-            log_dry "ssh ${host} 'rm -rf ${remote_dir}/{target,target-static,node_modules,dist,venv}'"
-        fi
+        log_dry "write source hashes for ${AGGREGATE_ROOT}"
+        log_dry "rsync ${AGGREGATE_ROOT}/ to ${host}:${remote_snapshot_root}/ (aggregate siblings, fresh path)"
+        log_dry "verify ${manifest_name} on ${host}:${remote_snapshot_root}"
     else
-        # Ensure remote directory exists
-        ssh_cmd "$host" "$port" "$key" "mkdir -p '$remote_dir'"
-        if ! rsync_to "$host" "$port" "$key" "$remote_dir"; then
+        if [ -e "$manifest_path" ]; then
+            log_error "Refusing to overwrite an existing release source manifest: $manifest_path"
+            record_result "Linux sync: FAILED (manifest collision)"
+            return 1
+        fi
+        if ! write_linux_source_manifest "$AGGREGATE_ROOT" "$manifest_path"; then
+            rm -f -- "$manifest_path"
+            log_error "Could not record aggregate source hashes"
+            record_result "Linux sync: FAILED (manifest generation)"
+            return 1
+        fi
+        if ! ssh_cmd "$host" "$port" "$key" \
+            "mkdir -p '${remote_snapshot_root%/*}' && mkdir '$remote_snapshot_root'"; then
+            rm -f -- "$manifest_path"
+            log_error "Could not create Linux snapshot directory"
+            record_result "Linux sync: FAILED (snapshot directory)"
+            return 1
+        fi
+        build_ssh_transport "$port" "$key"
+        if ! rsync -avz --delete \
+            --include="/$manifest_name" \
+            "${AGGREGATE_RSYNC_EXCLUDES[@]}" \
+            --exclude='.release-source-manifest-*' \
+            -e "${SSH_TRANSPORT_CMD[*]}" \
+            "$AGGREGATE_ROOT/" "${host}:${remote_snapshot_root}/"; then
+            rm -f -- "$manifest_path"
             log_error "rsync to Linux failed"
             record_result "Linux sync: FAILED"
-            return
+            return 1
         fi
+        if ! verify_linux_source_manifest "$host" "$port" "$key" "$remote_snapshot_root" "$manifest_name"; then
+            rm -f -- "$manifest_path"
+            log_error "Linux snapshot source hash verification failed"
+            record_result "Linux sync: FAILED (source hash mismatch)"
+            return 1
+        fi
+        mkdir -p "$DIST_DIR"
+        local retained_manifest="$DIST_DIR/source-manifest-linux-${VERSION}-${run_id}.sha256"
+        if ! cp "$manifest_path" "$retained_manifest"; then
+            rm -f -- "$manifest_path"
+            log_error "Could not retain the Linux source hash manifest"
+            record_result "Linux sync: FAILED (manifest copy)"
+            return 1
+        fi
+        record_artifact "$retained_manifest" "Linux source manifest" || fetched_ok=false
+        rm -f -- "$manifest_path"
         if $CLEAN_REMOTE; then
-            log_step "Cleaning build artifacts on remote (--clean-remote)..."
-            ssh_cmd "$host" "$port" "$key" \
-                "rm -rf '$remote_dir/target' '$remote_dir/target-static' '$remote_dir/node_modules' '$remote_dir/dist' '$remote_dir/venv'" \
-                || log_warning "Remote cleanup failed (non-fatal)"
+            log_info "The Linux snapshot is fresh; no existing remote build artifacts are reused"
         else
-            log_info "Reusing remote build artifacts (pass --clean-remote to wipe)"
+            log_info "Linux builds use a fresh snapshot directory; prior remote sources and artifacts are not consulted"
         fi
         log_success "Source synced"
     fi
@@ -751,11 +993,12 @@ build_linux() {
         log_dry "ssh ${host} 'cd ${remote_dir} && ./scripts/build-linux.sh --appimage'"
     else
         if ! ssh_cmd "$host" "$port" "$key" \
-            "cd '$remote_dir' && ./scripts/build-linux.sh --appimage"; then
+            "cd '$remote_dir' && mkdir -p dist && rm -f dist/*${VERSION}* && ./scripts/build-linux.sh --appimage"; then
             log_error "Linux x86_64 build failed"
             record_result "Linux x86_64: FAILED"
+            fetched_ok=false
         else
-            record_result "Linux x86_64: OK"
+            record_result "Linux x86_64: BUILD OK"
         fi
     fi
 
@@ -766,10 +1009,11 @@ build_linux() {
     else
         if ssh_cmd "$host" "$port" "$key" \
             "cd '$remote_dir' && just docker-linux-arm64"; then
-            record_result "Linux ARM64: OK"
+            record_result "Linux ARM64: BUILD OK"
         else
-            log_warning "Linux ARM64 build failed (continuing)"
+            log_error "Linux ARM64 build failed"
             record_result "Linux ARM64: FAILED"
+            fetched_ok=false
         fi
     fi
 
@@ -783,12 +1027,39 @@ build_linux() {
             --include='*/' --include="*${VERSION}*" --exclude='*'; then
             log_error "rsync from Linux failed"
             record_result "Linux fetch: FAILED"
-            return
+            return 1
         fi
-        log_success "Linux artifacts fetched"
+        local arch artifact artifact_label
+        for arch in x86_64 arm64; do
+            for artifact in \
+                "sotf-desktop-${VERSION}-linux-${arch}.tar.gz" \
+                "sotf-desktop-${VERSION}-linux-${arch}.AppImage"; do
+                artifact_label="Linux ${arch} ${artifact##*.}"
+                if ! record_artifact "$DIST_DIR/$artifact" "$artifact_label"; then
+                    fetched_ok=false
+                elif [[ "$artifact" == *.AppImage ]] &&
+                    ! verify_linux_appimage_arch "$DIST_DIR/$artifact" "$arch"; then
+                    fetched_ok=false
+                fi
+            done
+        done
+        if [ "$fetched_ok" = true ]; then
+            if ! write_artifact_hashes "$DIST_DIR/BUILD-SHA256SUMS-${VERSION}"; then
+                log_error "Could not write the build artifact hash manifest"
+                record_result "Linux artifact hashes: FAILED"
+                return 1
+            fi
+            log_success "Linux artifacts fetched and required outputs verified"
+            record_result "Linux required artifacts: OK"
+        fi
     fi
 
+    if [ "$fetched_ok" != true ]; then
+        log_error "Linux phase failed ($(elapsed))"
+        return 1
+    fi
     log_success "Linux builds complete ($(elapsed))"
+    return 0
 }
 
 # -----------------------------------------------------------------------
@@ -803,6 +1074,7 @@ build_windows() {
 
     log_phase "Phase 3: Windows Builds (remote: ${WINDOWS_HOST})"
     start_timer
+    local first_result_index=${#BUILD_RESULTS[@]}
 
     local host="$WINDOWS_HOST"
     local port="${WINDOWS_PORT:-22}"
@@ -865,6 +1137,15 @@ build_windows() {
         log_success "Source synced"
     fi
 
+    if ! $DRY_RUN; then
+        if ! win_ssh_cmd "$host" "$port" "$key" \
+            "mkdir -p ${remote_dir}/dist && rm -f ${remote_dir}/dist/*${VERSION}*"; then
+            log_error "Could not clear stale Windows artifacts for v${VERSION}"
+            record_result "Windows cleanup: FAILED"
+            return 1
+        fi
+    fi
+
     # Build Windows x86_64 (host arch)
     # build-msix.ps1 needs both sotf-desktop.exe AND sotf-tui.exe present in
     # the corresponding target dir before it runs.
@@ -911,7 +1192,7 @@ build_windows() {
             log_warning "Windows arm64 build failed (continuing with x86_64 only)"
             log_info "On the remote: rustup target add aarch64-pc-windows-msvc"
             log_info "and ensure VS 2022 has the ARM64 build tools component installed."
-            record_result "Windows arm64: FAILED"
+            record_result "Windows arm64: UNAVAILABLE (optional target)"
         fi
     fi
 
@@ -980,7 +1261,11 @@ build_windows() {
         $windows_arm64_ok && log_dry "win_ssh_cmd ${host} '${msix_arm}'"
     else
         # Cleanup runs once before either MSIX so we don't wipe the first one.
-        win_ssh_cmd "$host" "$port" "$key" "$msix_cleanup" 2>/dev/null || true
+        if ! win_ssh_cmd "$host" "$port" "$key" "$msix_cleanup"; then
+            log_error "Could not clear stale Windows MSIX files"
+            record_result "Windows MSIX cleanup: FAILED"
+            return 1
+        fi
 
         if win_ssh_cmd "$host" "$port" "$key" "cd ${remote_dir} && ${msix_x86}"; then
             record_result "Windows MSIX x86_64: OK"
@@ -997,7 +1282,7 @@ build_windows() {
                 record_result "Windows MSIX arm64: OK"
             else
                 log_warning "MSIX arm64 build failed (continuing)"
-                record_result "Windows MSIX arm64: FAILED"
+                record_result "Windows MSIX arm64: UNAVAILABLE (optional target)"
             fi
         else
             log_info "Skipping arm64 MSIX (arm64 binaries didn't build)"
@@ -1018,9 +1303,26 @@ build_windows() {
             return
         fi
         log_success "Windows artifacts fetched"
+        local windows_artifact
+        for windows_artifact in \
+            "$DIST_DIR/sotf-tui-${VERSION}-windows-x86_64.exe" \
+            "$DIST_DIR/sotf-desktop-${VERSION}-windows-x86_64.msix"; do
+            record_artifact "$windows_artifact" "Windows required artifact" || true
+        done
     fi
 
+    local result_index windows_failed=false
+    for ((result_index = first_result_index; result_index < ${#BUILD_RESULTS[@]}; result_index++)); do
+        case "${BUILD_RESULTS[$result_index]}" in
+            *FAILED*) windows_failed=true ;;
+        esac
+    done
+    if $windows_failed; then
+        log_error "Windows phase failed ($(elapsed))"
+        return 1
+    fi
     log_success "Windows builds complete ($(elapsed))"
+    return 0
 }
 
 # -----------------------------------------------------------------------
@@ -1035,17 +1337,33 @@ post_build() {
     # Some helper scripts (e.g. build-dmg-sotf.sh) emit <product>-<os>-<arch>-<version>.<ext>;
     # rename them here so checksums and cosign signatures use the canonical name.
     normalize_artifact_names
+    if [ "$BUILD_FAILED" = true ]; then
+        log_error "Artifact normalization failed; stopping post-build processing"
+        return 1
+    fi
 
     # --- Cosign non-Apple artifacts ---
     if ! $SKIP_SIGN; then
         sign_with_cosign
     fi
+    if [ "$BUILD_FAILED" = true ]; then
+        log_error "Artifact signing failed; stopping post-build processing"
+        return 1
+    fi
 
     # --- SHA256 checksums ---
     generate_checksums
+    if [ "$BUILD_FAILED" = true ]; then
+        log_error "Checksum generation failed; stopping post-build processing"
+        return 1
+    fi
 
     # --- Release notes ---
     generate_release_notes
+    if [ "$BUILD_FAILED" = true ]; then
+        log_error "Release notes generation failed; stopping post-build processing"
+        return 1
+    fi
 
     # --- Update site ---
     if ! $SKIP_SITE; then
@@ -1087,7 +1405,11 @@ normalize_artifact_names() {
                 continue
             fi
             log_info "Renaming: $base → $newname"
-            mv "$f" "$DIST_DIR/$newname"
+            if ! mv "$f" "$DIST_DIR/$newname"; then
+                log_error "Could not normalize artifact name: $base"
+                record_result "Artifact rename ${base}: FAILED"
+                continue
+            fi
             renamed=$((renamed + 1))
         fi
     done
@@ -1156,15 +1478,22 @@ sign_with_cosign() {
                     --bundle "${artifact}.bundle" \
                     "$artifact" || {
                     log_warning "Failed to sign $name"
+                    record_result "Cosign ${name}: FAILED"
                     continue
                 }
-            else
-                cosign sign-blob \
-                    --bundle "${artifact}.bundle" \
-                    "$artifact" || {
-                    log_warning "Failed to sign $name"
-                    continue
-                }
+        else
+            cosign sign-blob \
+                --bundle "${artifact}.bundle" \
+                "$artifact" || {
+                log_warning "Failed to sign $name"
+                record_result "Cosign ${name}: FAILED"
+                continue
+            }
+            fi
+            if [ ! -s "${artifact}.bundle" ]; then
+                log_warning "cosign returned success without creating a bundle for $name"
+                record_result "Cosign ${name}: FAILED (missing bundle)"
+                continue
             fi
             signed_count=$((signed_count + 1))
         fi
@@ -1203,7 +1532,12 @@ generate_checksums() {
             *"$VERSION"*) ;;
             *) continue ;;
         esac
-        shasum -a 256 "$f" >> "$checksum_file"
+        if ! shasum -a 256 "$f" >> "$checksum_file"; then
+            log_error "Failed to checksum $f"
+            record_result "Checksums: FAILED"
+            cd "$PROJECT_ROOT"
+            return 1
+        fi
         count=$((count + 1))
     done
     cd "$PROJECT_ROOT"
@@ -1232,9 +1566,12 @@ generate_release_notes() {
     fi
 
     # Reuse the existing release notes generator
-    ./scripts/build-release.sh "${args[@]}"
-
-    record_result "Release notes: OK"
+    if ./scripts/build-release.sh "${args[@]}"; then
+        record_result "Release notes: OK"
+    else
+        log_error "Release notes generation failed"
+        record_result "Release notes: FAILED"
+    fi
 }
 
 update_site() {
@@ -1256,7 +1593,12 @@ update_site() {
 
     log_step "Building site..."
     cd "$site_dir"
-    npm run build
+    if ! npm run build; then
+        cd "$PROJECT_ROOT"
+        log_error "Site build failed"
+        record_result "Site build: FAILED"
+        return
+    fi
     cd "$PROJECT_ROOT"
 
     log_success "Site built"
@@ -1358,15 +1700,42 @@ main() {
     preflight
 
     if ! $POST_ONLY; then
-        build_macos
-        build_linux
-        build_windows
+        if ! $DRY_RUN; then
+            if ! clear_versioned_artifacts "$DIST_DIR"; then
+                record_result "Artifact cleanup: FAILED"
+                print_summary
+                return 1
+            fi
+            if ! rm -f -- "$DIST_DIR/SHA256SUMS"; then
+                log_error "Could not remove stale SHA256SUMS"
+                record_result "Artifact cleanup: FAILED"
+                print_summary
+                return 1
+            fi
+            RELEASE_ARTIFACTS=()
+        fi
+        build_macos || true
+        build_linux || true
+        build_windows || true
     else
         log_info "Post-only mode — skipping builds"
     fi
 
+    if [ "$BUILD_FAILED" = true ]; then
+        print_summary
+        log_error "One or more required release steps failed; skipping post-build signing and release metadata"
+        return 1
+    fi
+
     post_build
     print_summary
+    if [ "$BUILD_FAILED" = true ]; then
+        log_error "One or more required release steps failed; refusing a successful release status"
+        return 1
+    fi
+    return 0
 }
 
-main
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main
+fi

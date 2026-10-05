@@ -61,7 +61,7 @@ All the files land in `./dist`.
 On a Linux X86 machine, you need docker:
 ```
 just docker-linux-x86
-just docker-windows-86
+just docker-windows-x86
 ```
 All the files land in `./dist`.
 
@@ -96,30 +96,26 @@ In a powershell terminal:
 
 ## Building for iOS is experimental
 
-In a terminal, to test on Apple simulator:
+To build the SOTF and GPUI showcase apps for the Apple simulator or a connected
+device, add the Rust targets first, then run the corresponding recipe:
+
 ```
+rustup target add aarch64-apple-ios-sim aarch64-apple-ios
 just ios-sim
-```
-In a terminal, to test on devices
-```
 just ios-device
 ```
 
-
 ## Building for tvOS is very experimental
 
-tvOS port is really experimental, I use patched crates and you need to use the nightly compiler.
+tvOS support remains experimental and uses patched crates. The Rust target
+needs nightly and `rust-src` because the recipes build the standard library
+from source. Build for the simulator or a connected device with the tvOS
+recipes:
 
-In a terminal, to test on Apple simulator:
 ```
-rustup upgrade
-rustup target add aarch64-apple-tvos-sim
+rustup toolchain install nightly
+rustup component add rust-src --toolchain nightly
 just tvos-sim
-```
-In a terminal, to test on devices
-```
-rustup upgrade
-rustup target add aarch64-apple-tvos-sim
 just tvos-device
 ```
 
@@ -129,6 +125,23 @@ just tvos-device
 
 For developping, you can self sign which just is doing for you. For publishing, you need to have proper certificate from Apple that cost ~100$/y.
 
+Build the DMG first. The packaging script creates an unsigned image; signing
+and notarization are handled by the separate signing script. For a release
+build, pass the dynamically linked `dist` binary so the packaged app contains
+the exact binary produced by Cargo:
+
+```
+cargo build --profile dist --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
+./scripts/build-dmg-sotf.sh --arch arm64 --binary target/aarch64-apple-darwin/dist/sotf-desktop
+./scripts/sign-macos.sh --notarize
+```
+
+Use `x86_64-apple-darwin` and `--arch x86_64` for an Intel build. Set the
+Developer ID and Apple ID credentials below before signing. The systemwide
+installer is built separately from `sotf-systemwide` with
+`./scripts/build-systemwide.sh`; its payload must be signed before the
+installer package is signed and notarized.
+
 You need to be able to sign and notarize.
 ```
 export APPLE_ID="you@me.com"
@@ -137,7 +150,7 @@ export DEVELOPER_ID="Developer ID Application: You (CODE))"
 
 You can generate:
 ```
-./scripts/build-dmg-sotf.sh --sign --notarize
+./scripts/sign-macos.sh --notarize
 ```
 
 ### Linux
