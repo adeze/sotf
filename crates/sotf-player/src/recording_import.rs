@@ -322,8 +322,10 @@ mod tests {
                 frequency_range: None,
             },
         )]));
-        let mut recording = crate::recording_types::RecordingState::default();
-        recording.channel_recordings = imported.recordings();
+        let mut recording = crate::recording_types::RecordingState {
+            channel_recordings: imported.recordings(),
+            ..Default::default()
+        };
         let mut room = crate::ui_models::room_eq::RoomEqScreenModel::default();
         room.load_from_imported_recording(&recording, &imported)
             .unwrap();
