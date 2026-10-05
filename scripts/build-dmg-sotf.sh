@@ -30,6 +30,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+source "$PROJECT_ROOT/../sotf-daw/scripts/lib/nnnoiseless_model_notices.sh"
 
 # Extract version from root Cargo.toml
 VERSION=$(sotf_version "$PROJECT_ROOT")
@@ -56,11 +57,12 @@ WITH_EXPERIMENTAL_TVOS=false
 DIST_DIR="$PROJECT_ROOT/dist"
 
 # Third-party notices for bundled fonts (the GPUI RustEmbed includes only TTF
-# bytes) and the sibling gpui-d3rs DejaVu font asset. Keep sibling resolution
-# rooted in the aggregate checkout layout rather than the caller's cwd.
+# bytes), the sibling gpui-d3rs DejaVu font asset, and default RNNoise weights.
+# Keep sibling resolution rooted in the aggregate checkout, not caller's cwd.
 validate_macos_third_party_notice_sources() {
     local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
     local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    validate_nnnoiseless_model_notice_sources "$PROJECT_ROOT/../sotf-daw" || return 1
     local source
     for source in "$fonts_notice" "$toolkit_license"; do
         if [ ! -s "$source" ]; then
@@ -78,6 +80,7 @@ stage_macos_third_party_notices() {
     mkdir -p "$destination"
     cp "$fonts_notice" "$destination/THIRD_PARTY_NOTICES.txt"
     cp "$toolkit_license" "$destination/DejaVu-LICENSE"
+    stage_nnnoiseless_model_notices "$PROJECT_ROOT/../sotf-daw" "$destination"
 }
 
 # Parse arguments

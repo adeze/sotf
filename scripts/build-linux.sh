@@ -36,6 +36,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+source "$PROJECT_ROOT/../sotf-daw/scripts/lib/nnnoiseless_model_notices.sh"
 
 # Extract version from root Cargo.toml
 VERSION=$(sotf_version "$PROJECT_ROOT")
@@ -60,10 +61,11 @@ TOOLS_DIR="$PROJECT_ROOT/tools"
 ASSETS_DIR="$PROJECT_ROOT/builds/linux"
 
 # Resolve notices from the aggregate checkout, so running this script from
-# another cwd still finds both the canonical font notice and sibling license.
+# another cwd still finds the canonical font notice and sibling assets.
 validate_linux_third_party_notice_sources() {
     local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
     local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    validate_nnnoiseless_model_notice_sources "$PROJECT_ROOT/../sotf-daw" || return 1
     local source
     for source in "$fonts_notice" "$toolkit_license"; do
         if [ ! -s "$source" ]; then
@@ -81,6 +83,7 @@ stage_linux_third_party_notices() {
     mkdir -p "$destination"
     cp "$fonts_notice" "$destination/THIRD_PARTY_NOTICES.txt"
     cp "$toolkit_license" "$destination/DejaVu-LICENSE"
+    stage_nnnoiseless_model_notices "$PROJECT_ROOT/../sotf-daw" "$destination"
 }
 
 # linuxdeploy tool configuration
