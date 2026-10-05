@@ -182,7 +182,7 @@ mod macos {
                     })
                 },
             ) {
-                *completed.lock().expect("smoke result lock") = Some(Err(error.into()));
+                *completed.lock().expect("smoke result lock") = Some(Err(error));
                 cx.quit();
             }
         });
