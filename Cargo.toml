@@ -330,7 +330,7 @@ nnnoiseless = "0.1"
 tract-onnx = "0.22"
 
 # Font-stack helper crate (Zed fork of font-kit)
-font-kit = { package = "zed-font-kit", version = "0.14.1-zed", git = "https://github.com/zed-industries/font-kit", rev = "94b0f28166665e8fd2f53ff6d268a14955c82269" }
+font-kit = { package = "zed-font-kit", version = "0.14.1-zed", path = "../gpui-toolkit/crates/3rdparties/zed-font-kit" }
 
 # TUI extensions
 
@@ -443,6 +443,9 @@ incremental = false
 strip = "symbols"
 
 [patch.crates-io]
+# Match GPUI compatibility forks: workspace patches are not inherited.
+fontconfig-parser = { git = "https://github.com/pierreaubert/fontconfig-parser.git", rev = "d247c91f5a57edd6ba6eb26e884d4904dbfbc87e" }
+rusty-fork = { git = "https://github.com/pierreaubert/rusty-fork.git", rev = "ee62bcd64fa6afe7fae0e52a448d716dc294e98d" }
 rfd = { git = "https://github.com/pierreaubert/rfd.git", rev = "b049aa9c12c6cf5ac72a4ea0dffdeed6f7427f0d" }
 nalgebra = { git = "https://github.com/pierreaubert/nalgebra.git", rev = "a42573dbc9649af62fb07b469c98c852e62720fd" }
 tract-core = { git = "https://github.com/pierreaubert/tract.git", rev = "706cccb56b2de6bfcbd0016b9c260aef183e41d7" }
