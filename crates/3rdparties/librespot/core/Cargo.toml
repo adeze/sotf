@@ -85,7 +85,7 @@ pin-project-lite = "0.2"
 priority-queue = "2.5"
 protobuf = "3.7"
 protobuf-json-mapping = "3.7"
-quick-xml = { version = "0.38", features = ["serialize"] }
+quick-xml = { version = "0.41", features = ["serialize"] }
 rand = { version = "0.9", default-features = false, features = ["thread_rng"] }
 rsa = "0.9"
 serde = { version = "1.0", features = ["derive"] }
