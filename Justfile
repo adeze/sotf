@@ -210,14 +210,14 @@ run-gpui:
 [group('run')]
 run-gpui-release:
 	{{cargo}} build --release --bin sotf-desktop {{prod_features}}
-	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
+	codesign --force --deep --sign - --entitlements builds/macos/entitlements.plist target/release/sotf-desktop
 	./target/release/sotf-desktop
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-leaks:
 	RUSTFLAGS="-C debuginfo=2" {{cargo}} build --release --bin sotf-desktop {{test_features}}
-	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
+	codesign --force --deep --sign - --entitlements builds/macos/entitlements.plist target/release/sotf-desktop
 	./target/release/sotf-desktop
 
 # Run the TUI player

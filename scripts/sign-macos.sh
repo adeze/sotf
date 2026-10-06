@@ -25,6 +25,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$PROJECT_ROOT/dist"
+DESKTOP_ENTITLEMENTS="$PROJECT_ROOT/builds/macos/entitlements.plist"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
@@ -114,22 +115,37 @@ is_macho_file() {
     [ -f "$file_path" ] && file "$file_path" | grep -q "Mach-O"
 }
 
+is_desktop_code() {
+    local code_path="$1"
+    case "${code_path##*/}" in
+        sotf-desktop|sotf-desktop-*-macos-*) return 0 ;;
+    esac
+    # Identify the desktop bundle by its canonical executable, even if renamed.
+    [ -f "$code_path/Contents/MacOS/sotf-desktop" ]
+}
+
 sign_macho_file() {
     local file_path="$1"
+    local -a sign_args=(--force --sign "$DEVELOPER_ID" --options runtime --timestamp)
+    if is_desktop_code "$file_path"; then
+        sign_args+=(--entitlements "$DESKTOP_ENTITLEMENTS")
+    fi
 
-    codesign --force --sign "$DEVELOPER_ID" \
-        --options runtime \
-        --timestamp \
-        "$file_path"
+    codesign "${sign_args[@]}" "$file_path"
 }
 
 sign_code_bundle() {
     local bundle_path="$1"
+    local -a sign_args=(--force --sign "$DEVELOPER_ID" --options runtime --timestamp)
+    if is_desktop_code "$bundle_path"; then
+        # Payloads were signed inside out. Avoid applying the desktop's
+        # entitlements recursively to its already-signed nested code.
+        sign_args+=(--entitlements "$DESKTOP_ENTITLEMENTS")
+    else
+        sign_args+=(--deep)
+    fi
 
-    codesign --force --deep --sign "$DEVELOPER_ID" \
-        --options runtime \
-        --timestamp \
-        "$bundle_path"
+    codesign "${sign_args[@]}" "$bundle_path"
     codesign --verify --verbose=2 --strict "$bundle_path"
 }
 
@@ -373,4 +389,6 @@ main() {
     log_info "=========================================="
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
