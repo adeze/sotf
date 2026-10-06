@@ -428,7 +428,7 @@ create_icns() {
     # Generate all required sizes
     local sizes=(16 32 64 128 256 512 1024)
     for size in "${sizes[@]}"; do
-        sips -z $size $size "$input_image" --out "$iconset_dir/icon_${size}x${size}.png" 2>/dev/null || true
+        sips -s format png -z $size $size "$input_image" --out "$iconset_dir/icon_${size}x${size}.png" 2>/dev/null || true
     done
 
     # Create @2x versions
