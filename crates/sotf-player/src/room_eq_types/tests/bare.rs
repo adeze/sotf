@@ -19,6 +19,7 @@ pub(super) fn bare_chain(name: &str, drivers: Option<Vec<DriverDspChain>>) -> Ch
         final_curve: None,
         eq_response: None,
         target_curve: None,
+        physical_correction_target: None,
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,

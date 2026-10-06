@@ -22,6 +22,7 @@ pub(super) fn chain(
         final_curve: None,
         eq_response: None,
         target_curve: None,
+        physical_correction_target: None,
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,

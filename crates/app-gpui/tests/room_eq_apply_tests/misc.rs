@@ -430,6 +430,7 @@ fn build_channel_dsp_from_real_emitters(
         final_curve: None,
         eq_response: None,
         target_curve: None,
+        physical_correction_target: None,
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
