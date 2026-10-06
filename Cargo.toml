@@ -444,6 +444,10 @@ incremental = false
 strip = "symbols"
 
 [patch.crates-io]
+# SOTF owned maintenance forks; upstream 2.1.1, local version 2.1.2.
+derive_more = { path = "../math-audio/crates/3rdparties/derive_more" }
+derive_more-impl = { path = "../math-audio/crates/3rdparties/derive_more-impl" }
+
 headers = { path = "crates/3rdparties/headers" }
 oo7 = { path = "../gpui-toolkit/crates/3rdparties/crypto-forks/oo7" }
 # Match GPUI compatibility forks: workspace patches are not inherited.
