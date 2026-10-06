@@ -711,6 +711,18 @@ impl App {
                 self.ui_state.input_mode = crate::app::InputMode::Normal;
             }
         }
+        if target == crate::app::Screen::Spectrum
+            && !self.plugin_state.has_enabled_spectrum_analyzer()
+        {
+            let existing = self.plugin_state.graph.plugins().iter().position(|plugin| {
+                plugin.plugin_type() == sotf_audio_player::PluginType::SpectrumAnalyzer
+            });
+            if let Some(index) = existing {
+                self.toggle_plugin(index);
+            } else {
+                self.add_plugin(&sotf_audio_player::PluginType::SpectrumAnalyzer);
+            }
+        }
         if matches!(
             target,
             crate::app::Screen::Settings | crate::app::Screen::SettingsDetail

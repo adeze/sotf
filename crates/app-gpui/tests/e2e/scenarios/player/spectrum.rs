@@ -21,7 +21,9 @@ impl TestScenario for SpectrumScreenScenario {
         let mut driver = AppDriver::new(cx, window);
 
         // Navigate to Spectrum screen
-        driver.navigate_to(Screen::Spectrum);
+        driver.update_app(|app, _| {
+            app.set_screen(Screen::Spectrum, "SpectrumRegression");
+        });
 
         // Verify we're on Spectrum screen
         let screen = driver.read_app(|app| app.ui_state.current_screen);
@@ -29,13 +31,35 @@ impl TestScenario for SpectrumScreenScenario {
             return Err(format!("Expected Spectrum screen, got {:?}", screen).into());
         }
 
-        // Verify spectrum analyzer is available (state exists in app)
-        let has_spectrum_support = driver.read_app(|app| {
-            // Spectrum screen should be accessible
-            app.ui_state.current_screen == Screen::Spectrum
+        let analyzer_count = driver.read_app(|app| {
+            assert!(app.plugin_state.has_enabled_spectrum_analyzer());
+            assert!(app.plugin_state.graph.spectrum_engine_index().is_some());
+            app.plugin_state
+                .graph
+                .plugins()
+                .iter()
+                .filter(|plugin| {
+                    plugin.plugin_type() == sotf_audio_player::PluginType::SpectrumAnalyzer
+                })
+                .count()
         });
-
-        println!("Spectrum screen loaded: {}", has_spectrum_support);
+        assert_eq!(analyzer_count, 1);
+        // Repeated visits must not accumulate analyzers.
+        driver.update_app(|app, _| {
+            app.set_screen(Screen::Library, "SpectrumRegression");
+            app.set_screen(Screen::Spectrum, "SpectrumRegression");
+        });
+        let analyzer_count_after = driver.read_app(|app| {
+            app.plugin_state
+                .graph
+                .plugins()
+                .iter()
+                .filter(|plugin| {
+                    plugin.plugin_type() == sotf_audio_player::PluginType::SpectrumAnalyzer
+                })
+                .count()
+        });
+        assert_eq!(analyzer_count_after, analyzer_count);
 
         Ok(())
     }
@@ -43,12 +67,16 @@ impl TestScenario for SpectrumScreenScenario {
 
 #[gpui::test]
 async fn test_spectrum_screen_navigation(cx: &mut TestAppContext) {
+    let profile = tempfile::tempdir().expect("Create private spectrum test profile");
+    sotf_audio_player::config::set_config_dir_override(profile.path().to_path_buf());
     let scenario = SpectrumScreenScenario;
     let runner = E2ERunner::new(scenario);
     let result = runner.run(cx).await;
 
-    if let Err(e) = &result {
-        println!("Test failed: {}", e);
-    }
-    assert!(result.is_ok(), "Spectrum screen navigation test failed");
+    let result = result.expect("Spectrum scenario runner failed");
+    assert!(
+        result.passed,
+        "Spectrum screen failed: {:?}",
+        result.error_message
+    );
 }

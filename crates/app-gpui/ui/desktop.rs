@@ -7,8 +7,24 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Select,
-    SelectOption, Text,
+    SelectOption, TabItem, TabVariant, Tabs, Text,
 };
+
+fn studio_tab(id: String, label: &str, icon: IconName, selector: String) -> TabItem {
+    TabItem::new(id, label.to_owned()).icon_with_color(move |color| {
+        let icon = Icon::new(icon).small().color(color);
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            icon.dev_track(selector.clone()).into_any_element()
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            let _ = &selector;
+            icon.into_any_element()
+        }
+    })
+}
 
 impl PlayerView {
     pub(super) fn studio_workspace_navigation(
@@ -117,13 +133,7 @@ impl PlayerView {
                     .into_any_element(),
             );
         }
-        let mut row = div()
-            .flex()
-            .flex_wrap()
-            .gap(d.gap)
-            .p(d.pad_y)
-            .flex_shrink_0();
-        for (index, target) in [
+        let categories: Vec<_> = [
             Screen::Studio,
             Screen::Recording,
             Screen::RoomEq,
@@ -131,52 +141,59 @@ impl PlayerView {
         ]
         .into_iter()
         .enumerate()
-        {
+        .map(|(index, fallback)| {
             let target = ui
                 .navigation
                 .studio_target(index)
-                .filter(|screen| ui.release_channel.allows(screen.maturity()))
-                .unwrap_or(target);
-            if !ui.release_channel.allows(target.maturity()) {
-                continue;
-            }
-            let state = self.state.downgrade();
-            let view = cx.entity().downgrade();
-            let button = Button::new(
-                SharedString::from(format!("studio-category-{index}")),
-                labels[index],
+                .filter(|target| ui.release_channel.allows(target.maturity()))
+                .unwrap_or(fallback);
+            (index, target)
+        })
+        .filter(|(_, target)| ui.release_channel.allows(target.maturity()))
+        .collect();
+        let category_selected = categories
+            .iter()
+            .position(|(index, _)| *index == selected)
+            .unwrap_or(0);
+        let state_for_category = self.state.downgrade();
+        let row = Tabs::new("studio-categories")
+            .tabs(
+                categories
+                    .iter()
+                    .map(|(index, _)| {
+                        let icon = [
+                            IconName::SlidersHorizontal,
+                            IconName::AudioWaveform,
+                            IconName::AudioWaveform,
+                            IconName::Headphones,
+                        ][*index];
+                        studio_tab(
+                            format!("studio-category-{index}"),
+                            labels[*index],
+                            icon,
+                            format!("studio.category.{index}"),
+                        )
+                    })
+                    .collect(),
             )
-            .size(ButtonSize::Sm)
-            .variant(if index == selected {
-                ButtonVariant::Primary
-            } else {
-                ButtonVariant::Ghost
+            .selected_index(category_selected)
+            .variant(TabVariant::Enclosed)
+            .theme(gpui_ui_kit::TabsTheme {
+                selected_bg: ui.theme.accent,
+                ..ui.theme.to_tabs_theme()
             })
-            .theme(ui.theme.to_button_theme())
-            .on_click_event(move |_, window, cx| {
-                if index == selected {
-                    return;
-                }
-                if let Some(state) = state.upgrade() {
+            .aria_label(ui.translations.screen_studio)
+            .on_change(move |index, _, cx| {
+                if let Some((_, target)) = categories.get(index)
+                    && let Some(state) = state_for_category.upgrade()
+                {
                     state.update(cx, |state, cx| {
-                        state.app.set_screen(target, "StudioCategory");
-                        cx.notify();
-                    });
-                }
-                if let Some(view) = view.upgrade() {
-                    view.update(cx, |view, cx| {
-                        view.focus_handle.focus(window, cx);
+                        state.app.set_screen(*target, "StudioCategory");
                         cx.notify();
                     });
                 }
             });
-            #[cfg(feature = "dev-api")]
-            let button = {
-                use crate::app::dev_api::DevTrackExt;
-                button.dev_track(format!("studio.category.{index}"))
-            };
-            row = row.child(button);
-        }
+        let row = div().flex().justify_center().p(d.pad_y).child(row);
         let tools = match selected {
             0 => vec![
                 (Screen::Studio, ui.translations.screen_studio_rack),
@@ -193,48 +210,58 @@ impl PlayerView {
             ],
             _ => Vec::new(),
         };
-        let mut subtools = div().flex().flex_wrap().gap(d.gap).px(d.pad_y).pb(d.pad_y);
-        for (target, label) in tools {
-            if !ui.release_channel.allows(target.maturity()) {
-                continue;
-            }
-            let state = self.state.downgrade();
-            let view = cx.entity().downgrade();
-            let button = Button::new(
-                SharedString::from(format!("studio-subtool-{target:?}")),
-                label,
+        let tools: Vec<_> = tools
+            .into_iter()
+            .filter(|(target, _)| ui.release_channel.allows(target.maturity()))
+            .collect();
+        let tool_selected = tools
+            .iter()
+            .position(|(target, _)| *target == screen)
+            .unwrap_or(0);
+        let state_for_tool = self.state.downgrade();
+        let subtools = Tabs::new("studio-subtools")
+            .tabs(
+                tools
+                    .iter()
+                    .map(|(target, label)| {
+                        let icon = match target {
+                            Screen::Spectrum => IconName::AudioWaveform,
+                            Screen::PluginGraph => IconName::SlidersHorizontal,
+                            Screen::HeadphoneEq => IconName::Headphones,
+                            _ => IconName::SlidersHorizontal,
+                        };
+                        studio_tab(
+                            format!("studio-subtool-{target:?}"),
+                            label,
+                            icon,
+                            format!("studio.subtool.{target:?}"),
+                        )
+                    })
+                    .collect(),
             )
-            .size(ButtonSize::Sm)
-            .variant(if screen == target {
-                ButtonVariant::Secondary
-            } else {
-                ButtonVariant::Ghost
+            .selected_index(tool_selected)
+            .variant(TabVariant::Underline)
+            .theme(gpui_ui_kit::TabsTheme {
+                text_selected: ui.theme.accent,
+                icon_selected: Some(ui.theme.accent),
+                ..ui.theme.to_tabs_theme()
             })
-            .theme(ui.theme.to_button_theme())
-            .on_click_event(move |_, window, cx| {
-                if target == screen {
-                    return;
-                }
-                if let Some(state) = state.upgrade() {
+            .on_change(move |index, _, cx| {
+                if let Some((target, _)) = tools.get(index)
+                    && let Some(state) = state_for_tool.upgrade()
+                {
                     state.update(cx, |state, cx| {
-                        state.app.set_screen(target, "StudioSubtool");
-                        cx.notify();
-                    });
-                }
-                if let Some(view) = view.upgrade() {
-                    view.update(cx, |view, cx| {
-                        view.focus_handle.focus(window, cx);
+                        state.app.set_screen(*target, "StudioSubtool");
                         cx.notify();
                     });
                 }
             });
-            #[cfg(feature = "dev-api")]
-            let button = {
-                use crate::app::dev_api::DevTrackExt;
-                button.dev_track(format!("studio.subtool.{target:?}"))
-            };
-            subtools = subtools.child(button);
-        }
+        let subtools = div()
+            .flex()
+            .justify_center()
+            .px(d.pad_y)
+            .pb(d.pad_y)
+            .child(subtools);
         Some(
             div()
                 .flex()
@@ -294,6 +321,8 @@ impl PlayerView {
         let text = DesktopTranslations::for_language(state.app.ui_state.language);
         let mut sidebar = div()
             .id("desktop-navigation")
+            .min_h_0()
+            .overflow_y_scroll()
             .track_focus(&self.window_state.navigation_focus)
             .w(rems(12.0))
             .h_full()
@@ -305,33 +334,54 @@ impl PlayerView {
             .bg(theme.surface)
             .border_r_1()
             .border_color(theme.border);
-        for (screen, label, icon) in self.desktop_destinations(cx) {
+        let toggle_state = self.state.clone();
+        let sidebar_text =
+            crate::app::i18n::SidebarTranslations::for_language(state.app.ui_state.language);
+        sidebar = sidebar.child(
+            IconButton::with_child(
+                "desktop-navigation-collapse",
+                Icon::new(IconName::ChevronLeft)
+                    .small()
+                    .color(theme.text_secondary),
+            )
+            .variant(IconButtonVariant::Outline)
+            .size(IconButtonSize::Sm)
+            .theme(theme.to_icon_button_theme())
+            .aria_label(sidebar_text.collapse)
+            .on_click_event(move |_, _, cx| {
+                toggle_state.update(cx, |state, cx| {
+                    state.app.ui_state.primary_nav_collapsed = true;
+                    cx.notify();
+                });
+            }),
+        );
+        let mut destinations = self.desktop_destinations(cx);
+        destinations.push((Screen::Settings, text.preferences, IconName::Settings));
+        for (screen, label, icon) in destinations {
+            if screen == Screen::Settings {
+                sidebar = sidebar.child(div().flex_1());
+            }
             let entity = self.state.clone();
             let selected =
                 current == screen || screen == Screen::StudioHub && current.is_studio_tool();
-            let button = IconButton::with_child(
-                SharedString::from(format!("desktop-nav-{screen:?}")),
-                Icon::new(icon).small().color(theme.text_primary),
-            )
-            .size(IconButtonSize::Sm)
-            .variant(if selected {
-                IconButtonVariant::Filled
-            } else {
-                IconButtonVariant::Ghost
-            })
-            .selected(selected)
-            .theme(theme.to_icon_button_theme())
-            .aria_label(label)
-            .on_click_event(move |_, _, cx| {
-                entity.update(cx, |state, cx| {
-                    if screen == Screen::StudioHub {
-                        state.app.enter_studio_mode("DesktopNavigation");
-                    } else {
-                        state.app.set_screen(screen, "DesktopNavigation");
-                    }
-                    cx.notify();
+            let button = Button::new(SharedString::from(format!("desktop-nav-{screen:?}")), label)
+                .custom_icon_left(Icon::new(icon).small().color(theme.text_primary))
+                .size(ButtonSize::Md)
+                .full_width(true)
+                .variant(ButtonVariant::Outline)
+                .selected(selected)
+                .theme(theme.to_button_theme())
+                .aria_label(label)
+                .on_click_event(move |_, _, cx| {
+                    entity.update(cx, |state, cx| {
+                        if screen == Screen::StudioHub {
+                            state.app.enter_studio_mode("DesktopNavigation");
+                        } else {
+                            state.app.set_screen(screen, "DesktopNavigation");
+                        }
+                        cx.notify();
+                    });
                 });
-            });
             #[cfg(feature = "dev-api")]
             let button = {
                 use crate::app::dev_api::DevTrackExt;
@@ -345,32 +395,9 @@ impl PlayerView {
                     button.into_any_element()
                 }
             };
-            sidebar = sidebar.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(d.gap)
-                    .min_h(rems(2.75))
-                    .child(button)
-                    .child(Text::body(label)),
-            );
+            sidebar = sidebar.child(button);
         }
-        let entity = self.state.clone();
-        sidebar
-            .child(div().flex_1())
-            .child(
-                Button::new("desktop-preferences", text.preferences)
-                    .size(ButtonSize::Sm)
-                    .variant(ButtonVariant::Ghost)
-                    .theme(theme.to_button_theme())
-                    .on_click_event(move |_, _, cx| {
-                        entity.update(cx, |state, cx| {
-                            state.app.set_screen(Screen::Settings, "DesktopPreferences");
-                            cx.notify();
-                        });
-                    }),
-            )
-            .into_any_element()
+        sidebar.into_any_element()
     }
 
     pub(super) fn render_compact_navigation(&self, cx: &mut Context<Self>) -> AnyElement {

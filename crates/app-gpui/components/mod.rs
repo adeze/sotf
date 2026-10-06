@@ -81,7 +81,8 @@ pub(crate) struct ThemedTooltip {
 impl Render for ThemedTooltip {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        div()
+        let tooltip = div()
+            .debug_selector(|| "themed-tooltip-description".to_owned())
             .px(d.pad_y)
             .py(d.pad_y_half)
             .bg(self.bg)
@@ -92,7 +93,21 @@ impl Render for ThemedTooltip {
             .text_size(d.text_xs)
             .text_color(self.text_color)
             .whitespace_nowrap()
-            .child(self.text.clone())
+            .child(self.text.clone());
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::{DevElementState, DevTrackExt};
+            tooltip
+                .dev_track_with_state(
+                    "tooltip.description",
+                    DevElementState::default().text(self.text.to_string()),
+                )
+                .into_any_element()
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            tooltip.into_any_element()
+        }
     }
 }
 

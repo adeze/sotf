@@ -253,9 +253,10 @@ impl PlayerView {
     ) -> (sotf_audio_player::PlaybackState, bool) {
         let current_screen = state.app.ui_state.current_screen;
         let layout_mode = state.app.ui_state.layout_mode;
-        let should_update_spectrum = frame_count.is_multiple_of(2);
-        let include_spectrum = should_update_spectrum
-            && (state.app.layout.spectrum_visible || current_screen == Screen::Spectrum);
+        let (include_spectrum, publish_spectrum) = spectrum_poll::spectrum_poll_schedule(
+            frame_count,
+            state.app.layout.spectrum_visible || current_screen == Screen::Spectrum,
+        );
         let structural_update_pending = state.app.plugin_state.update_state.pending_ack.is_some()
             || matches!(
                 state.app.plugin_state.update_state.pending_plugin_update,
@@ -407,7 +408,7 @@ impl PlayerView {
             .unwrap_or(loudness_info);
         state.app.playback.input_loudness_info = input_loudness_info;
         state.app.playback.loudness_info = loudness_info;
-        if include_spectrum {
+        if publish_spectrum {
             #[cfg(feature = "dev-api")]
             let spectrum_info = state
                 .app

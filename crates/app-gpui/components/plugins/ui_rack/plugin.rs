@@ -326,7 +326,7 @@ impl PlayerView {
             )
             .when(
                 self.state.read(cx).app.plugin_state.is_rack_available(),
-                |d| {
+                |root| {
                     let (is_collapsed, rack_detail_ratio) = {
                         let state = self.state.read(cx);
                         let layout = state.layout.read(cx);
@@ -336,7 +336,7 @@ impl PlayerView {
                             layout.rack_detail_ratio.clamp(0.12, 0.65),
                         )
                     };
-                    d
+                    root
                         // Plugin Rack Strip (top) - only show if not collapsed
                         .when(!is_collapsed, |d| {
                             d.child(
@@ -362,6 +362,31 @@ impl PlayerView {
                                     .child(self.render_plugin_rack(cx)),
                             )
                         })
+                        // The picker is a sibling of the short rack viewport,
+                        // so its button hitboxes are not clipped by the rack split.
+                        .when(
+                            self.state.read(cx).app.plugin_ui.show_add_plugin_menu,
+                            |root| {
+                                root.child(dev_track!(
+                                    div()
+                                        .id("add-plugin-menu")
+                                        .h(rems(20.0))
+                                        .max_h(relative(0.45))
+                                        .min_h_0()
+                                        .flex_shrink_0()
+                                        .overflow_y_scroll()
+                                        .track_scroll(&self.scroll.rack_add_menu)
+                                        .px(d.card)
+                                        .py(d.pad_y)
+                                        .bg(theme.surface)
+                                        .border_1()
+                                        .border_color(theme.border)
+                                        .rounded(d.r_md)
+                                        .child(self.render_add_plugin_buttons(cx)),
+                                    "rack.add.menu"
+                                ))
+                            },
+                        )
                         // Horizontal divider between rack and detail panel
                         .child({
                             let divider_theme = PaneDividerTheme {
@@ -581,7 +606,6 @@ impl PlayerView {
 
         let is_empty = plugins_data.is_empty();
         let d = Ds::from_cx(cx);
-        let show_add_plugin_menu = self.state.read(cx).app.plugin_ui.show_add_plugin_menu;
         let add_slot_id = ElementId::from("plugin-add-slot");
         let add_slot_accessibility = AriaProps::with_role(AriaRole::Button);
         cx.register_accessible(AccessibilityNode {
@@ -615,7 +639,7 @@ impl PlayerView {
                     .w_full()
                     .min_h(rems(7.0))
                     .bg(theme.background_secondary)
-                    .child(
+                    .child(dev_track!(
                         div()
                             .id("plugin-rack")
                             .relative()
@@ -627,6 +651,7 @@ impl PlayerView {
                             .px(d.card)
                             .py(d.pad_x)
                             .overflow_x_scroll()
+                            .track_scroll(&self.scroll.rack_modules)
                     // Plugin modules - Ozone-style cards with left button column
                     .children(main_modules.iter().map(
                         |(idx, color, icon, _name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
@@ -1221,10 +1246,11 @@ impl PlayerView {
                         let drop_highlight = theme.feedback.drag_over_highlight;
                         let drop_border = theme.feedback.drag_over_border;
 
-                dev_track!(div()
+                dev_track!(dev_track!(div()
                     .id(add_slot_id.clone())
                             .w(rems(8.0))
                             .h(rems(6.5))
+                            .flex_shrink_0()
                             .flex()
                             .items_center()
                             .justify_center()
@@ -1300,10 +1326,11 @@ impl PlayerView {
                                 },
                             ))
                     .child(
-                        Icon::new(IconName::Plus)
-                            .small()
-                            .color(theme_add.text_secondary),
-                    ), "rack.add.slot")
+                        div().flex().items_center().justify_center()
+                            .size(rems(2.0)).rounded_full().border_1()
+                            .border_color(theme_add.text_secondary)
+                            .child(Icon::new(IconName::Plus).small().color(theme_add.text_secondary)),
+                    ), "rack.add.slot"), "rack.add.open")
             })
                     // Trailing permanent plugins (output matrix/monitor) after "+"
                     .children(tail_modules.iter().map(
@@ -1534,63 +1561,7 @@ impl PlayerView {
                                 .child(text.empty_rack),
                         )
                     })
-                    // Add plugin menu (shown when "+" is clicked). Deferred
-                    // overlay keeps it above the rack/detail pane divider
-                    // instead of clipping inside the fixed-height rack strip.
-                    .when(show_add_plugin_menu, |rack| {
-                        let menu = div()
-                            .id("add-plugin-menu")
-                            .absolute()
-                            .top_full()
-                            .left_0()
-                            .right_0()
-                            .mt(d.grid)
-                            .px(d.card)
-                            .py(d.card)
-                            .max_h(rems(25.0))
-                            .overflow_y_scroll()
-                            .track_scroll(&self.scroll.rack_add_menu)
-                            .bg(theme.surface)
-                            .border_1()
-                            .border_color(theme.border)
-                            .rounded(d.r_md)
-                    .shadow_lg()
-                    .occlude()
-                    .child(self.render_add_plugin_buttons(cx));
-
-                #[cfg(feature = "dev-api")]
-                let menu = menu.dev_track("rack.add.menu");
-
-                rack.child(deferred(menu).with_priority(10))
-            })
-                    )
-                    // Keep the add action reachable when large text or a long
-                    // chain scrolls the modules past the visible rack width.
-                    .child({
-                        div()
-                            .flex_shrink_0()
-                            .px(d.grid)
-                            .child(dev_track!(
-                                IconButton::with_child(
-                                    "rack-add-fixed",
-                                    Icon::new(IconName::Plus)
-                                        .small()
-                                        .color(theme.text_secondary),
-                                )
-                                .variant(IconButtonVariant::Outline)
-                                .size(IconButtonSize::Sm)
-                                .theme(theme.to_icon_button_theme())
-                                .aria_label(text.add_plugin_to_start)
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.state.update(cx, |state, _| {
-                                        let open = &mut state.app.plugin_ui.show_add_plugin_menu;
-                                        *open = !*open;
-                                    });
-                                    cx.notify();
-                                })),
-                                "rack.add.open"
-                            ))
-                    })
+                    , "rack.modules"))
                     .child({
                         let state_for_load = self.state.clone();
                         let state_for_save = self.state.clone();
@@ -1989,46 +1960,35 @@ impl PlayerView {
                     name.to_ascii_lowercase().replace([' ', '/'], "-")
                 );
                 let state_for_add = self.state.clone();
+                let rack_scroll = self.scroll.rack_modules.clone();
+                let icon = plugin_icon(&pt, false, false);
+                let button = Button::new(add_element_id, name)
+                    .custom_icon_left(Icon::new(icon).small().color(color))
+                    .aria_label(name)
+                    .variant(ButtonVariant::Outline)
+                    .size(ButtonSize::Md)
+                    .theme(theme_c.to_button_theme())
+                    .on_click_event(move |_, _, cx| {
+                        state_for_add.update(cx, |state, cx| {
+                            state.app.add_plugin(&pt);
+                            state.app.update_level_meter_groups();
+                            state.app.plugin_ui.show_add_plugin_menu = false;
+                            // The single add slot follows the editable plugins.
+                            rack_scroll.scroll_to_item(
+                                state.app.plugin_state.graph.user_plugin_insert_index(),
+                            );
+                            cx.notify();
+                        });
+                    });
                 buttons.push(
                     div()
-                        .id(SharedString::from(format!("rack-add-card-{name}")))
-                        .flex()
-                        .flex_col()
-                        .items_start()
-                        .gap(d.grid)
-                        .px(d.pad_y)
-                        .py(d.pad_y_half)
-                        .rounded(d.r_md)
-                        .bg(theme_c.surface)
-                        .border_1()
-                        .border_color(color)
-                        .text_size(d.text_xs)
-                        .text_color(color)
+                        .id(SharedString::from(format!("rack-add-tooltip-{name}")))
+                        .debug_selector(move || format!("rack-add-tooltip-{name}"))
                         .tooltip({
                             let theme = theme_c.clone();
-                            move |_window, cx| make_tooltip(description, &theme, cx)
+                            move |_, cx| make_tooltip(description, &theme, cx)
                         })
-                        .child(dev_track!(
-                            Button::new(add_element_id.clone(), name)
-                                .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Sm)
-                                .theme(theme_c.to_button_theme())
-                                .on_click_event(move |_event, _window, cx| {
-                                    state_for_add.update(cx, |state, cx| {
-                                        state.app.add_plugin(&pt);
-                                        state.app.update_level_meter_groups();
-                                        state.app.plugin_ui.show_add_plugin_menu = false;
-                                        cx.notify();
-                                    });
-                                }),
-                            add_selector.clone()
-                        ))
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .text_color(theme_c.text_muted)
-                                .child(description),
-                        )
+                        .child(dev_track!(button, add_selector))
                         .into_any_element(),
                 );
             }

@@ -106,6 +106,7 @@ impl PlayerView {
             .collect();
 
         Select::new("signal_type")
+            .size(gpui_ui_kit::SelectSize::Md)
             .options(options)
             .selected(recording_state.signal_type.as_str())
             .is_open(recording_state.signal_type_dropdown_open)
@@ -171,6 +172,7 @@ impl PlayerView {
         let current_duration = recording_state.signal_duration_secs as i32;
 
         Select::new("signal_duration")
+            .size(gpui_ui_kit::SelectSize::Md)
             .options(options)
             .selected(current_duration.to_string())
             .is_open(recording_state.duration_dropdown_open)

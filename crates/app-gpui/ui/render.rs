@@ -325,9 +325,10 @@ impl Render for PlayerView {
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.
         let ui_kit_theme: gpui_ui_kit::Theme = theme.to_ui_kit_theme(theme_id, cx);
-        cx.set_global(UiKitThemeState {
-            theme: Arc::new(ui_kit_theme),
-        });
+        // Initialize toolkit defaults before applying the active app theme.
+        let mut ui_kit_theme_state = UiKitThemeState::new();
+        ui_kit_theme_state.theme = Arc::new(ui_kit_theme);
+        cx.set_global(ui_kit_theme_state);
 
         // Determine key context based on input mode
         // Use "TextInput" context when typing to disable single-letter keybindings
@@ -1106,9 +1107,10 @@ impl PlayerView {
         };
         let state_for_toggle = self.state.clone();
         let toggle_action = std::rc::Rc::new(move |cx: &mut App| {
-            state_for_toggle.update(cx, |state, _cx| {
+            state_for_toggle.update(cx, |state, cx| {
                 state.app.ui_state.primary_nav_collapsed =
                     !state.app.ui_state.primary_nav_collapsed;
+                cx.notify();
             });
         });
         div()

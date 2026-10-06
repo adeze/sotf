@@ -1,6 +1,7 @@
 use crate::app::i18n::PhoneTranslations;
 use crate::components::design::Ds;
 use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -201,6 +202,11 @@ impl PlayerView {
                                         SearchBar::new("search-input")
                                             .value(search_query.clone())
                                             .placeholder(text.search_library)
+                                            .custom_icon(
+                                                Icon::new(IconName::Search)
+                                                    .small()
+                                                    .color(theme.text_secondary),
+                                            )
                                             .size(SearchBarSize::Sm)
                                             .on_change({
                                                 let app_state = self.state.clone();

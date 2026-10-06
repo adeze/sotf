@@ -952,6 +952,7 @@ impl PlayerView {
         };
 
         Select::new("playback_device")
+            .size(gpui_ui_kit::SelectSize::Md)
             .options(options)
             .selected(selected_value)
             .placeholder(translations.recording_select_playback_placeholder)
@@ -1095,6 +1096,7 @@ impl PlayerView {
                 div().w(px(100.0)).child(
                     // intentional: sample-rate dropdown width
                     Select::new("playback_sample_rate")
+                        .size(gpui_ui_kit::SelectSize::Md)
                         .options(options)
                         .selected(selected_value)
                         .placeholder(translations.recording_select_rate_placeholder)
@@ -1193,6 +1195,7 @@ impl PlayerView {
                 div().w(px(100.0)).child(
                     // intentional: speaker-config dropdown width
                     Select::new("speaker_config")
+                        .size(gpui_ui_kit::SelectSize::Md)
                         .options(options)
                         .selected(selected_value)
                         .placeholder(translations.recording_select_config_placeholder)
@@ -1575,6 +1578,7 @@ impl PlayerView {
                     "{} / {}",
                     recording_text.single, recording_text.multi
                 ))
+                .size(gpui_ui_kit::SelectSize::Md)
                 .options(options)
                 .selected(selected)
                 .is_open(is_open)
@@ -1887,6 +1891,7 @@ impl PlayerView {
         div().w(px(140.0)).child(
             // intentional: channel-name dropdown width
             Select::new(SharedString::from(format!("channel_name_{}", channel_idx)))
+                .size(gpui_ui_kit::SelectSize::Md)
                 .options(options)
                 .selected(current_group.clone())
                 .placeholder(selected_label)
@@ -1968,6 +1973,7 @@ impl PlayerView {
         };
 
         Select::new("recording_device")
+            .size(gpui_ui_kit::SelectSize::Md)
             .options(options)
             .selected(selected_value)
             .placeholder(translations.recording_select_recording_placeholder)
@@ -2108,6 +2114,7 @@ impl PlayerView {
                 div().w(px(100.0)).child(
                     // intentional: sample-rate dropdown width
                     Select::new("recording_sample_rate")
+                        .size(gpui_ui_kit::SelectSize::Md)
                         .options(options)
                         .selected(selected_value)
                         .placeholder(translations.recording_select_rate_placeholder)

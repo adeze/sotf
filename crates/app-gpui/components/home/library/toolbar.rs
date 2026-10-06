@@ -7,7 +7,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Select,
-    SelectOption, Text,
+    SelectOption, SelectSize, Text,
 };
 use sotf_audio_player::controllers::LibraryResultOrder;
 
@@ -68,7 +68,7 @@ impl PlayerView {
                 LibraryResultOrder::Artist => "artist",
             };
             let select = Select::new("library-result-order")
-                .label(text[6])
+                .size(SelectSize::Sm)
                 .aria_label(text[6])
                 .options(vec![
                     SelectOption::new("recent", text[7]),
@@ -121,7 +121,15 @@ impl PlayerView {
                 });
             #[cfg(feature = "dev-api")]
             let select = select.dev_track("library-result-order");
-            views = views.child(div().w(rems(12.0)).child(select));
+            views = views.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .flex_shrink_0()
+                    .gap(d.gap)
+                    .child(Text::label(text[6]))
+                    .child(div().w(rems(10.0)).child(select)),
+            );
         }
         let toolbar_state = self.state.clone();
         let toolbar_view = cx.entity().clone();

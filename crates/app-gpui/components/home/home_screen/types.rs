@@ -654,7 +654,6 @@ impl PlayerView {
             "favorite" => home_text[1].to_string(),
             _ => shelf.title.clone(),
         };
-        let favorites = shelf.id == "favorite";
         let collapsed_limit = collapsed_album_limit_for_width(ui.window_width);
         let expanded_limit = expanded_album_limit_for_dimensions(
             ui.window_width,
@@ -742,7 +741,6 @@ impl PlayerView {
                 div()
                     .flex()
                     .gap(d.gap_md)
-                    .when(favorites, |el| el.flex_col())
                     .when(is_expanded, |el| el.flex_wrap())
                     .when(!is_expanded, |el| el.overflow_hidden())
                     .children(shelf.albums.into_iter().take(limit).enumerate().map(
@@ -750,9 +748,6 @@ impl PlayerView {
                             let is_selected = selection.shelf_id.as_deref()
                                 == Some(album_shelf_id.as_str())
                                 && selection.album_index == idx;
-                            if favorites {
-                                return self.render_home_favorite_row(album, idx, is_selected, cx);
-                            }
                             self.render_home_album_card(
                                 &album_shelf_id,
                                 album,
@@ -763,62 +758,6 @@ impl PlayerView {
                         },
                     )),
             )
-            .into_any_element()
-    }
-
-    fn render_home_favorite_row(
-        &self,
-        album: Arc<Album>,
-        index: usize,
-        is_selected: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let state = self.state.read(cx);
-        let d = Ds::from_cx(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let label =
-            crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language)
-                .view_album;
-        div()
-            .flex()
-            .items_center()
-            .flex_wrap()
-            .gap(d.gap)
-            .py(d.pad_y)
-            .border_b_1()
-            .border_color(if is_selected {
-                theme.accent
-            } else {
-                theme.border
-            })
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap(d.grid)
-                    .child(Text::section_header(album.title.clone()))
-                    .child(Text::caption(album.artist())),
-            )
-            .child(dev_track!(
-                Button::new(
-                    SharedString::from(format!("home-favorite-open-{index}")),
-                    label
-                )
-                .size(ButtonSize::Sm)
-                .variant(ButtonVariant::Secondary)
-                .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(move |view, _, window, cx| {
-                    view.state.update(cx, |state, _| {
-                        state.app.library_state.home_album_selection.shelf_id =
-                            Some("favorite".into());
-                        state.app.library_state.home_album_selection.album_index = index;
-                    });
-                    view.open_album_detail(Arc::clone(&album), window, cx);
-                })),
-                format!("home.favorite.open.{index}")
-            ))
             .into_any_element()
     }
 
@@ -958,7 +897,7 @@ impl PlayerView {
         let album_for_click = Arc::clone(&album);
         let album_for_menu = Arc::clone(&album);
         let state_entity = self.state.clone();
-        div()
+        let card = div()
             .id(SharedString::from(format!(
                 "home-album-{}-{}",
                 album.id.unwrap_or(-1),
@@ -1007,8 +946,22 @@ impl PlayerView {
                 AlbumCard::new(album, idx, is_selected, theme)
                     .mode(AlbumCardMode::Grid)
                     .state(state_entity),
-            )
-            .into_any_element()
+            );
+        #[cfg(feature = "dev-api")]
+        {
+            let card = card.dev_track(format!("home.album.{shelf_id}.{idx}"));
+            if shelf_id == "favorite" {
+                // Keep the existing favorite-open scenario target on the card.
+                card.dev_track(format!("home.favorite.open.{idx}"))
+                    .into_any_element()
+            } else {
+                card.into_any_element()
+            }
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            card.into_any_element()
+        }
     }
 
     pub(super) fn render_remote_home_album_card(

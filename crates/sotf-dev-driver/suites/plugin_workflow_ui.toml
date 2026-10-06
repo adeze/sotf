@@ -5,6 +5,18 @@ readiness_timeout = "20s"
 size = "900x700"
 
 [[scenario]]
+name = "studio-picker-insertion"
+path = "crates/sotf-dev-driver/scenarios/studio_picker_insertion.scn"
+timeout = "45s"
+tags = ["plugins", "studio", "ui", "pointer", "regression"]
+
+[[scenario]]
+name = "studio-picker-description"
+path = "crates/sotf-dev-driver/scenarios/studio_picker_tooltip.scn"
+timeout = "30s"
+tags = ["plugins", "studio", "ui", "tooltip", "accessibility"]
+
+[[scenario]]
 name = "plugin-rack-visible-controls"
 path = "crates/sotf-dev-driver/scenarios/gpui_plugin_rack.scn"
 timeout = "30s"

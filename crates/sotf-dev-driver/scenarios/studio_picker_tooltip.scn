@@ -1,0 +1,18 @@
+# Keep native tooltip timing independent of the critical insertion regression.
+wait_idle 1s
+action PluginClear
+click sidebar.nav-studiohub
+assert screen.focused == "Studio"
+click rack.add.open
+assert_visible rack.add.menu
+wait_visible rack.add.compressor timeout=3s
+assert_accessible button Compressor
+screenshot studio-picker-open
+hover rack.add.compressor
+wait_visible tooltip.description timeout=3s
+assert_visible tooltip.description
+assert_text tooltip.description == "Reduce dynamic range above a threshold."
+# The screenshot is supplemental; the live painted text assertion proves content.
+screenshot studio-plugin-description-tooltip
+assert plugins.user_count == 0
+assert playback.is_playing == false

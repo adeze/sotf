@@ -1,0 +1,37 @@
+# Regression: choose plugins through the actual rendered picker, never plugin_add.
+wait_idle 1s
+action PluginClear
+click sidebar.nav-studiohub
+assert screen.focused == "Studio"
+assert plugins.user_count == 0
+assert_visible rack.add.open
+click rack.add.open
+assert_visible rack.add.menu
+wait_visible rack.add.compressor timeout=3s
+assert_accessible button Compressor
+screenshot studio-picker-open
+click rack.add.compressor
+wait_until plugins.user_count == 1 timeout=3s
+assert plugins.first_user_type == "Compressor"
+assert_absent rack.add.menu
+# Reopen and insert a second instance to cover repeated picker activation.
+click rack.add.open
+wait_visible rack.add.compressor timeout=3s
+click rack.add.compressor
+wait_until plugins.user_count == 2 timeout=3s
+assert_absent rack.add.menu
+# The inserted graph must survive a screen transition.
+click sidebar.nav-library
+click sidebar.nav-studiohub
+assert plugins.user_count == 2
+screenshot studio-picker-insertion
+# Scroll to the final analysis category and activate its visible item.
+click rack.add.open
+wait_visible rack.add.menu timeout=3s
+scroll rack.add.menu -2000
+wait_idle 500ms
+scroll_into_view rack.add.menu rack.add.spectrum-analyzer
+assert_in_viewport rack.add.spectrum-analyzer
+click rack.add.spectrum-analyzer
+wait_until plugins.user_count == 3 timeout=3s
+assert_absent rack.add.menu

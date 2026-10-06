@@ -218,6 +218,7 @@ impl PlayerView {
                 let select = Select::new(SharedString::from(format!(
                     "imported-route-{index}-{output}"
                 )))
+                .size(gpui_ui_kit::SelectSize::Md)
                 .options(options)
                 .selected(selected.map(|value| value.to_string()).unwrap_or_default())
                 .placeholder(label)
@@ -375,6 +376,7 @@ impl PlayerView {
                             div().w(px(160.0)).child(
                                 // intentional: channel-select dropdown width
                                 Select::new("plot_channel_select")
+                                    .size(gpui_ui_kit::SelectSize::Md)
                                     .options(channel_options)
                                     .selected(selected_channel_value)
                                     .is_open(channel_dropdown_open)
@@ -435,6 +437,7 @@ impl PlayerView {
                             div().w(px(140.0)).child(
                                 // intentional: smoothing-select dropdown width
                                 Select::new("plot_smoothing_select")
+                                    .size(gpui_ui_kit::SelectSize::Md)
                                     .options(smoothing_options)
                                     .selected(selected_smoothing_value)
                                     .is_open(smoothing_dropdown_open)
