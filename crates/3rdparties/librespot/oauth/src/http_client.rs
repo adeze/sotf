@@ -8,10 +8,10 @@ fn webpki_tls_config() -> rustls::ClientConfig {
     rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
         rustls::crypto::aws_lc_rs::default_provider(),
     ))
-        .with_safe_default_protocol_versions()
-        .expect("AWS-LC supports the safe TLS protocol versions")
-        .with_root_certificates(roots)
-        .with_no_client_auth()
+    .with_safe_default_protocol_versions()
+    .expect("AWS-LC supports the safe TLS protocol versions")
+    .with_root_certificates(roots)
+    .with_no_client_auth()
 }
 
 pub(super) fn blocking_client() -> Result<reqwest::blocking::Client, reqwest::Error> {
@@ -84,7 +84,9 @@ mod tests {
         let url = format!("http://{}/token", listener.local_addr().unwrap());
         let task = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accept mock OAuth request");
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
             let mut request = Vec::new();
             let mut bytes = [0; 1024];
             loop {
@@ -106,7 +108,10 @@ mod tests {
         http::Request::builder()
             .method(http::Method::POST)
             .uri(url)
-            .header(http::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .header(
+                http::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
             .header("x-client-test", "preserved")
             .body(b"a=b".to_vec())
             .unwrap()
@@ -118,14 +123,20 @@ mod tests {
         assert_eq!(response.body(), b"ok");
         let text = String::from_utf8(recorded).unwrap();
         assert!(text.starts_with("POST /token HTTP/1.1"));
-        assert!(text.to_ascii_lowercase().contains("x-client-test: preserved"));
+        assert!(
+            text.to_ascii_lowercase()
+                .contains("x-client-test: preserved")
+        );
         assert!(text.ends_with("a=b"));
     }
 
     #[test]
     fn blocking_bridge_preserves_oauth_request_and_response() {
         let (url, task) = mock_token_endpoint();
-        let client = reqwest::blocking::Client::builder().no_proxy().build().unwrap();
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap();
         let response = blocking(&client, request(&url)).unwrap();
         assert_exchange(response, task.join().unwrap());
     }

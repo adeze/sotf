@@ -3,10 +3,10 @@ use std::io;
 use symphonia::core::{
     codecs::audio::{AudioDecoder as SymphoniaAudioDecoder, AudioDecoderOptions},
     errors::Error,
+    formats::probe::Hint,
     formats::{FormatOptions, FormatReader, SeekMode, SeekTo, TrackType},
     io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions},
     meta::{MetadataOptions, StandardTag, Tag},
-    formats::probe::Hint,
     units::{Duration as MediaDuration, Time, TimeBase, Timestamp},
 };
 
@@ -54,11 +54,16 @@ impl SymphoniaDecoder {
             DecoderError::SymphoniaDecoder("Could not retrieve default track".into())
         })?;
 
-        let codec_params = track.codec_params.as_ref().and_then(|params| params.audio())
-            .ok_or_else(|| DecoderError::SymphoniaDecoder("Missing audio codec parameters".into()))?;
+        let codec_params = track
+            .codec_params
+            .as_ref()
+            .and_then(|params| params.audio())
+            .ok_or_else(|| {
+                DecoderError::SymphoniaDecoder("Missing audio codec parameters".into())
+            })?;
         let decoder_opts = AudioDecoderOptions::default().gapless(true);
-        let decoder = symphonia::default::get_codecs()
-            .make_audio_decoder(codec_params, &decoder_opts)?;
+        let decoder =
+            symphonia::default::get_codecs().make_audio_decoder(codec_params, &decoder_opts)?;
         let track_id = track.id;
         let time_base = track.time_base;
         let duration = track.duration;
@@ -110,8 +115,9 @@ impl SymphoniaDecoder {
     fn ts_to_ms(&self, ts: Timestamp) -> u32 {
         match self.time_base.and_then(|base| base.calc_time(ts)) {
             Some(time) => time.as_millis().clamp(0, i128::from(u32::MAX)) as u32,
-            None => ((ts.get().max(0) as f64 * PAGES_PER_MS) as u64)
-                .min(u64::from(u32::MAX)) as u32,
+            None => {
+                ((ts.get().max(0) as f64 * PAGES_PER_MS) as u64).min(u64::from(u32::MAX)) as u32
+            }
         }
     }
 }
@@ -122,19 +128,33 @@ fn normalisation_from_tags(tags: &[Tag]) -> Option<NormalisationData> {
     }
     let mut data = NormalisationData::default();
     for tag in tags {
-        let parsed = |text: &str| text.trim().trim_end_matches("dB").trim().parse::<f64>().ok();
+        let parsed = |text: &str| {
+            text.trim()
+                .trim_end_matches("dB")
+                .trim()
+                .parse::<f64>()
+                .ok()
+        };
         match &tag.std {
             Some(StandardTag::ReplayGainAlbumGain(value)) => {
-                if let Some(value) = parsed(value) { data.album_gain_db = value; }
+                if let Some(value) = parsed(value) {
+                    data.album_gain_db = value;
+                }
             }
             Some(StandardTag::ReplayGainAlbumPeak(value)) => {
-                if let Some(value) = parsed(value) { data.album_peak = value; }
+                if let Some(value) = parsed(value) {
+                    data.album_peak = value;
+                }
             }
             Some(StandardTag::ReplayGainTrackGain(value)) => {
-                if let Some(value) = parsed(value) { data.track_gain_db = value; }
+                if let Some(value) = parsed(value) {
+                    data.track_gain_db = value;
+                }
             }
             Some(StandardTag::ReplayGainTrackPeak(value)) => {
-                if let Some(value) = parsed(value) { data.track_peak = value; }
+                if let Some(value) = parsed(value) {
+                    data.track_peak = value;
+                }
             }
             _ => (),
         }
@@ -149,10 +169,14 @@ fn local_metadata_from_tags(tags: &[Tag]) -> LocalFileMetadata {
             Some(StandardTag::TrackTitle(value)) => metadata.name = Some((**value).clone()),
             Some(StandardTag::Language(value)) => metadata.language = Some((**value).clone()),
             Some(StandardTag::Artist(value)) => metadata.artists = Some((**value).clone()),
-            Some(StandardTag::AlbumArtist(value)) => metadata.album_artists = Some((**value).clone()),
+            Some(StandardTag::AlbumArtist(value)) => {
+                metadata.album_artists = Some((**value).clone())
+            }
             Some(StandardTag::Album(value)) => metadata.album = Some((**value).clone()),
             Some(StandardTag::TrackNumber(value)) => metadata.number = u32::try_from(*value).ok(),
-            Some(StandardTag::DiscNumber(value)) => metadata.disc_number = u32::try_from(*value).ok(),
+            Some(StandardTag::DiscNumber(value)) => {
+                metadata.disc_number = u32::try_from(*value).ok()
+            }
             _ => (),
         }
     }
@@ -165,10 +189,12 @@ impl AudioDecoder for SymphoniaDecoder {
         let mut target = Time::try_new(
             i64::from(position_ms / 1_000),
             (position_ms % 1_000) * 1_000_000,
-        ).expect("millisecond position is a valid time");
-        if let Some(duration) = self.duration.and_then(|duration| {
-            self.time_base.and_then(|base| base.calc_duration(duration))
-        }) {
+        )
+        .expect("millisecond position is a valid time");
+        if let Some(duration) = self
+            .duration
+            .and_then(|duration| self.time_base.and_then(|base| base.calc_duration(duration)))
+        {
             target = target.min(duration);
         }
 
@@ -242,12 +268,7 @@ mod tests {
     use std::io::Cursor;
 
     fn stereo_wav() -> Vec<u8> {
-        let frames: [[i16; 2]; 4] = [
-            [-32768, 32767],
-            [-16384, 16384],
-            [0, 0],
-            [16384, -16384],
-        ];
+        let frames: [[i16; 2]; 4] = [[-32768, 32767], [-16384, 16384], [0, 0], [16384, -16384]];
         let data_len = (frames.len() * 4) as u32;
         let mut wav = Vec::new();
         wav.extend_from_slice(b"RIFF");
@@ -304,7 +325,9 @@ mod tests {
         let tags = vec![
             tag(StandardTag::ReplayGainAlbumGain(Arc::new("-4.5 dB".into()))),
             tag(StandardTag::ReplayGainAlbumPeak(Arc::new("0.91".into()))),
-            tag(StandardTag::ReplayGainTrackGain(Arc::new("-3.25 dB".into()))),
+            tag(StandardTag::ReplayGainTrackGain(Arc::new(
+                "-3.25 dB".into(),
+            ))),
             tag(StandardTag::ReplayGainTrackPeak(Arc::new("0.98".into()))),
             tag(StandardTag::TrackTitle(Arc::new("A Title".into()))),
             tag(StandardTag::Artist(Arc::new("An Artist".into()))),

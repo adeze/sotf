@@ -9,10 +9,10 @@ use std::{
     time::Duration,
 };
 use symphonia::core::{
+    formats::probe::Hint,
     formats::{FormatOptions, FormatReader, TrackType},
     io::MediaSourceStream,
     meta::{MetadataOptions, StandardTag, Tag},
-    formats::probe::Hint,
 };
 
 // "Spotify supports .mp3, .mp4, and .m4p files. It doesn’t support .mp4 files that contain video,
@@ -108,7 +108,11 @@ fn get_uri_from_file(audio_path: &Path, file_extension: &str) -> Result<SpotifyU
 
     fn get_tags(format: &mut dyn FormatReader) -> Vec<Tag> {
         symphonia_util::get_latest_metadata(format)
-            .and_then(|metadata| metadata.current().map(|revision| revision.media.tags.clone()))
+            .and_then(|metadata| {
+                metadata
+                    .current()
+                    .map(|revision| revision.media.tags.clone())
+            })
             .unwrap_or_default()
     }
 
@@ -133,7 +137,8 @@ fn get_uri_from_file(audio_path: &Path, file_extension: &str) -> Result<SpotifyU
         .duration
         .ok_or(Error::internal("Failed to calculate track duration"))?;
 
-    let time = time_base.calc_duration(duration)
+    let time = time_base
+        .calc_duration(duration)
         .ok_or(Error::internal("Track duration is out of range"))?;
 
     fn format_uri_part(input: Option<String>) -> String {
