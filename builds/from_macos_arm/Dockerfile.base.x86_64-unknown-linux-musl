@@ -16,6 +16,13 @@ RUN apt-get update && \
     make \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+# The upstream cross image can move independently of the workspace toolchain.
+RUN rustup toolchain install 1.99.0-x86_64-unknown-linux-gnu --component cargo,clippy,llvm-tools-preview,rust-analyzer,rust-src,rust-std,rustc,rustc-dev,rustfmt && \
+    rustup target add --toolchain 1.99.0-x86_64-unknown-linux-gnu x86_64-unknown-linux-musl && \
+    rustup default 1.99.0-x86_64-unknown-linux-gnu
+
+ENV RUSTUP_TOOLCHAIN=1.99.0-x86_64-unknown-linux-gnu
+
 # Install just (command runner)
 RUN cargo install just --locked && \
     rm -rf /root/.cargo/registry /root/.cargo/git
@@ -27,12 +34,4 @@ ENV PKG_CONFIG_ALLOW_CROSS=1
 ENV OPENSSL_STATIC=1
 ENV OPENSSL_VENDORED=1
 
-WORKDIR /project
-
-# Copy source with .dockerignore in place
-COPY . .
-
-# Build release binary
-RUN cargo build --release --target x86_64-unknown-linux-musl && \
-    find target/x86_64-unknown-linux-musl/release -maxdepth 1 -type f -executable | xargs strip -v 2>/dev/null || true && \
-    rm -rf target/.rustc_info.json target/.fingerprint target/x86_64-unknown-linux-musl/release/deps/*.d
+WORKDIR /workspace/sotf

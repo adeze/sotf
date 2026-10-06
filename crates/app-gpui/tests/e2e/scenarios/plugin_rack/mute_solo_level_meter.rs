@@ -1020,7 +1020,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
         })
         .unwrap();
 
-    let any_window = window.clone().into();
+    let any_window = window.into();
     let server = cx
         .update(|cx| dev_api::start_for_testing(cx, 0, any_window, RUN_ID))
         .unwrap();

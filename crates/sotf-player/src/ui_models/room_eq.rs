@@ -1830,20 +1830,22 @@ mod tests {
     #[test]
     fn set_crossover_freq_hint_validates_and_materializes() {
         use crate::room_eq_types::{RoomEqSpeakerConfig, SpeakerConfigType};
-        let mut model = RoomEqScreenModel::default();
-        model.speaker_configs = vec![
-            RoomEqSpeakerConfig {
-                channel_name: "L".into(),
-                config_type: SpeakerConfigType::MultiDriver,
-                driver_names: vec!["Woofer".into(), "Tweeter".into()],
-                ..Default::default()
-            },
-            RoomEqSpeakerConfig {
-                channel_name: "R".into(),
-                config_type: SpeakerConfigType::Single,
-                ..Default::default()
-            },
-        ];
+        let mut model = RoomEqScreenModel {
+            speaker_configs: vec![
+                RoomEqSpeakerConfig {
+                    channel_name: "L".into(),
+                    config_type: SpeakerConfigType::MultiDriver,
+                    driver_names: vec!["Woofer".into(), "Tweeter".into()],
+                    ..Default::default()
+                },
+                RoomEqSpeakerConfig {
+                    channel_name: "R".into(),
+                    config_type: SpeakerConfigType::Single,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
         assert_eq!(model.expected_crossover_count(0), 1);
         assert_eq!(model.expected_crossover_count(1), 0);
         assert_eq!(model.expected_crossover_count(99), 0);

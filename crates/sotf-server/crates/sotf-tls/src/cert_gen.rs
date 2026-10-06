@@ -108,9 +108,9 @@ mod tests {
         )
         .expect("cert generation should succeed");
 
-        assert!(!cert.as_ref().is_empty());
+        assert_ne!(cert.as_ref(), []);
         match &key {
-            PrivateKeyDer::Pkcs8(k) => assert!(!k.secret_pkcs8_der().is_empty()),
+            PrivateKeyDer::Pkcs8(k) => assert_ne!(k.secret_pkcs8_der(), []),
             _ => panic!("expected PKCS8 key"),
         }
     }
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn test_local_ip_addresses() {
         let addrs = local_ip_addresses();
-        assert!(!addrs.is_empty());
+        assert_ne!(addrs, [] as [IpAddr; 0]);
         assert!(addrs.contains(&IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)));
     }
 }

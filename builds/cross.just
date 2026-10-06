@@ -32,44 +32,46 @@ cross:
 	esac
 
 # ----------------------------------------------------------------------
-# BASE DOCKER IMAGES (system deps + rust + cargo fetch, cached per Cargo.lock)
+# Dockerfiles install tools only. Cargo runs after the aggregate source tree is
+# mounted at /workspace, with sotf as the container working directory.
+# BASE DOCKER IMAGES (system dependencies + pinned Rust toolchain)
 # ----------------------------------------------------------------------
 
 [group('docker')]
 docker-base-linux-arm64:
 	@echo "Building base Docker image for Linux ARM64 (gnu)..."
 	docker build -t sotf-base-linux-arm64 \
-		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-gnu .
+		-f builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-gnu ..
 
 [group('docker')]
 docker-base-linux-x86:
 	@echo "Building base Docker image for Linux x86_64..."
 	docker build --platform linux/amd64 -t sotf-base-linux-x86 \
-		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-musl .
+		-f builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-musl ..
 
 [group('docker')]
 docker-base-linux-arm64-gnu:
 	@echo "Building base Docker image for Linux ARM64 (gnu)..."
 	docker build -t sotf-base-linux-arm64-gnu \
-		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-gnu .
+		-f builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-gnu ..
 
 [group('docker')]
 docker-base-linux-x86-gnu:
 	@echo "Building base Docker image for Linux x86_64 (gnu)..."
 	docker build -t sotf-base-linux-x86-gnu \
-		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-gnu .
+		-f builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-gnu ..
 
 [group('docker')]
 docker-base-win-arm64:
 	@echo "Building base Docker image for Windows ARM64..."
 	docker build -t sotf-base-win-arm64 \
-		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-pc-windows-gnullvm .
+		-f builds/from_macos_arm/Dockerfile.base.aarch64-pc-windows-gnullvm ..
 
 [group('docker')]
 docker-base-win-x86:
 	@echo "Building base Docker image for Windows x86_64..."
 	docker build --platform linux/amd64 -t sotf-base-win-x86 \
-		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-pc-windows-gnullvm .
+		-f builds/from_macos_arm/Dockerfile.base.x86_64-pc-windows-gnullvm ..
 
 # ----------------------------------------------------------------------
 # LINUX (AppImage + tarball via Docker)
@@ -100,12 +102,12 @@ docker-linux-x86-alpine-latest:
 	out_dir="dist/linux-distros/alpine-latest"
 	echo "Building Docker image for Alpine latest..."
 	docker build --platform linux/amd64 -t "$image" \
-		-f ./builds/linux-distros/Dockerfile.alpine-x86_64 .
+		-f builds/linux-distros/Dockerfile.alpine-x86_64 ..
 	echo "Building TUI in Docker container..."
 	docker run --rm --platform linux/amd64 \
-		-v "$(pwd)":/project \
+		-v "$(pwd)/..":/workspace \
 		-v "$volume":/build-target \
-		-w /project \
+		-w /workspace/sotf \
 		-e CARGO_TARGET_DIR=/build-target \
 		"$image" ./scripts/build-linux.sh --tui-only
 	mkdir -p "$out_dir"
@@ -128,12 +130,12 @@ _docker-linux-x86-debian-distro distro base_image:
 	docker build --platform linux/amd64 \
 		--build-arg BASE_IMAGE="{{base_image}}" \
 		-t "$image" \
-		-f ./builds/linux-distros/Dockerfile.debian-x86_64-gnu .
+		-f builds/linux-distros/Dockerfile.debian-x86_64-gnu ..
 	echo "Building AppImage, .deb, and tarball in Docker container..."
 	docker run --rm --platform linux/amd64 \
-		-v "$(pwd)":/project \
+		-v "$(pwd)/..":/workspace \
 		-v "$volume":/build-target \
-		-w /project \
+		-w /workspace/sotf \
 		-e CARGO_TARGET_DIR=/build-target \
 		"$image" ./scripts/build-linux.sh --appimage --deb
 	mkdir -p "$out_dir"
@@ -152,9 +154,9 @@ _docker-linux-x86-debian-distro distro base_image:
 [group('docker')]
 docker-linux-arm64: docker-base-linux-arm64
 	@echo "Building Docker image..."
-	docker build -t sotf-linux-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-gnu .
+	docker build -t sotf-linux-arm64 -f builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-gnu ..
 	@echo "Building in Docker container..."
-	docker run --rm -v "$(pwd)":/project -v sotf-target-linux-arm64:/build-target -w /project \
+	docker run --rm -v "$(pwd)/..":/workspace -v sotf-target-linux-arm64:/build-target -w /workspace/sotf \
 		-e CARGO_TARGET_DIR=/build-target \
 		sotf-linux-arm64 ./scripts/build-linux.sh --appimage
 	@echo "Done! Output in: dist/"
@@ -168,15 +170,15 @@ docker-linux-x86: docker-base-linux-x86
 	host_arch=$(uname -m)
 	echo "Building Docker image..."
 	if [ "$host_arch" = "x86_64" ]; then
-		docker build -t sotf-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
+		docker build -t sotf-linux-x86 -f builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl ..
 		echo "Building in Docker container..."
-		docker run --rm -v "$(pwd)":/project -v sotf-target-linux-x86:/build-target -w /project \
+		docker run --rm -v "$(pwd)/..":/workspace -v sotf-target-linux-x86:/build-target -w /workspace/sotf \
 			-e CARGO_TARGET_DIR=/build-target \
 			sotf-linux-x86 ./scripts/build-linux.sh --appimage
 	else
-		docker build --platform linux/amd64 -t sotf-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
+		docker build --platform linux/amd64 -t sotf-linux-x86 -f builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl ..
 		echo "Building in Docker container (QEMU)..."
-		docker run --rm --platform linux/amd64 -v "$(pwd)":/project -v sotf-target-linux-x86:/build-target -w /project \
+		docker run --rm --platform linux/amd64 -v "$(pwd)/..":/workspace -v sotf-target-linux-x86:/build-target -w /workspace/sotf \
 			-e CARGO_TARGET_DIR=/build-target \
 			sotf-linux-x86 ./scripts/build-linux.sh --tui-only
 	fi
@@ -186,9 +188,9 @@ docker-linux-x86: docker-base-linux-x86
 [group('docker')]
 docker-debug-linux-x86: docker-base-linux-x86-gnu
 	@echo "Building Docker image..."
-	docker build -t sotf-linux-x86-gnu -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu .
+	docker build -t sotf-linux-x86-gnu -f builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu ..
 	@echo "Starting interactive shell..."
-	docker run -it --rm -v "$(pwd)":/project -w /project sotf-linux-x86-gnu /bin/bash
+	docker run -it --rm -v "$(pwd)/..":/workspace -w /workspace/sotf sotf-linux-x86-gnu /bin/bash
 
 # ----------------------------------------------------------------------
 # WINDOWS (cross-compiled in Docker via llvm-mingw)
@@ -202,7 +204,7 @@ docker-windows-arm64: docker-base-win-arm64
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 	echo "Building Docker image..."
-	docker build -t sotf-win-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-pc-windows-gnullvm .
+	docker build -t sotf-win-arm64 -f builds/from_macos_arm/Dockerfile.aarch64-pc-windows-gnullvm ..
 	echo "Building in Docker container..."
 	mkdir -p dist
 	docker_env=(-e CARGO_TARGET_DIR=/build-target)
@@ -213,7 +215,7 @@ docker-windows-arm64: docker-base-win-arm64
 	fi
 	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
 	# Artifacts land in /build-target/<triple>/dist/ instead of .../release/.
-	docker run --rm -v "$(pwd)":/project -v sotf-target-win-arm64:/build-target -w /project "${docker_env[@]}" sotf-win-arm64 \
+	docker run --rm -v "$(pwd)/..":/workspace -v sotf-target-win-arm64:/build-target -w /workspace/sotf "${docker_env[@]}" sotf-win-arm64 \
 		bash -c 'cargo build --profile dist --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/aarch64-pc-windows-gnullvm/dist --arch arm64 && cp /build-target/aarch64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-${VERSION}-windows-arm64.exe"
 	echo "Done! dist/sotf-tui-${VERSION}-windows-arm64.exe + MSIX in dist/"
@@ -226,7 +228,7 @@ docker-windows-x86: docker-base-win-x86
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 	echo "Building Docker image..."
-	docker build --platform linux/amd64 -t sotf-win-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-pc-windows-gnullvm .
+	docker build --platform linux/amd64 -t sotf-win-x86 -f builds/from_macos_arm/Dockerfile.x86_64-pc-windows-gnullvm ..
 	echo "Building in Docker container..."
 	mkdir -p dist
 	docker_env=(-e CARGO_TARGET_DIR=/build-target)
@@ -236,7 +238,7 @@ docker-windows-x86: docker-base-win-x86
 		[ -n "${WINDOWS_TIMESTAMP_URL:-}" ] && docker_env+=(-e WINDOWS_TIMESTAMP_URL)
 	fi
 	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
-	docker run --rm --platform linux/amd64 -v "$(pwd)":/project -v sotf-target-win-x86:/build-target -w /project "${docker_env[@]}" sotf-win-x86 \
+	docker run --rm --platform linux/amd64 -v "$(pwd)/..":/workspace -v sotf-target-win-x86:/build-target -w /workspace/sotf "${docker_env[@]}" sotf-win-x86 \
 		bash -c 'cargo build --profile dist --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/x86_64-pc-windows-gnullvm/dist --arch x86_64 && cp /build-target/x86_64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 	echo "Done! dist/sotf-tui-${VERSION}-windows-x86_64.exe + MSIX in dist/"

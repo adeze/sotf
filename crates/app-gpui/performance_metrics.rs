@@ -106,6 +106,31 @@ mod tests {
 
     #[cfg(feature = "dev-api")]
     #[test]
+    fn rate_returns_value_per_positive_elapsed_second() {
+        assert_eq!(rate(15, 3.0), 5.0);
+    }
+
+    #[cfg(feature = "dev-api")]
+    #[test]
+    fn rate_returns_zero_for_non_positive_elapsed_time() {
+        assert_eq!(rate(15, 0.0), 0.0);
+        assert_eq!(rate(15, -3.0), 0.0);
+    }
+
+    #[cfg(feature = "dev-api")]
+    #[test]
+    fn ratio_returns_numerator_per_positive_denominator() {
+        assert_eq!(ratio(15, 3), 5.0);
+    }
+
+    #[cfg(feature = "dev-api")]
+    #[test]
+    fn ratio_returns_zero_for_zero_denominator() {
+        assert_eq!(ratio(15, 0), 0.0);
+    }
+
+    #[cfg(feature = "dev-api")]
+    #[test]
     fn installed_mimalloc_exposes_expected_statistics() {
         let stats = mimalloc::MiMalloc::stats_json().unwrap();
         let value: Value = serde_json::from_slice(stats.to_bytes()).unwrap();

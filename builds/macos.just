@@ -83,15 +83,15 @@ install-macos: install-macos-brew install-rustup
 # MACOS INSTALLER
 # ----------------------------------------------------------------------
 
-# Build macOS installer package (unsigned)
+# Compatibility aliases for the systemwide package owner.
 [group('build-macos')]
 build-installer:
-	./scripts/build-installer.sh
+	cd ../sotf-systemwide && ./scripts/build-systemwide.sh
 
 # Build macOS installer package without HAL driver
 [group('build-macos')]
 build-installer-no-hal:
-	./scripts/build-installer.sh --no-hal
+	cd ../sotf-systemwide && ./scripts/build-systemwide.sh --no-hal
 
 # Sign all macOS artifacts in dist/
 [group('build-macos')]

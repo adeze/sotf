@@ -20,6 +20,7 @@ members = [
     "crates/app-tvos",
     "crates/sotf-docs-gen",
 ]
+exclude = ["crates/3rdparties/librespot"]
 resolver = "3"
 
 [workspace.package]
@@ -47,10 +48,10 @@ build_html = "2.7"
 anyhow = { version = "1.0" }
 assert_fs = "1.0"
 m3u8-rs = { version = "6" }
-librespot-core = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "9cc09665dd3ed55b938a7d77d4038d9038b159ae", default-features = false, features = ["native-tls"] }
-librespot-playback = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "9cc09665dd3ed55b938a7d77d4038d9038b159ae", default-features = false, features = ["native-tls"] }
-librespot-metadata = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "9cc09665dd3ed55b938a7d77d4038d9038b159ae", default-features = false, features = ["native-tls"] }
-librespot-protocol = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "9cc09665dd3ed55b938a7d77d4038d9038b159ae", default-features = false }
+librespot-core = { version = "0.8", path = "crates/3rdparties/librespot/core", default-features = false, features = ["native-tls"] }
+librespot-playback = { version = "0.8", path = "crates/3rdparties/librespot/playback", default-features = false, features = ["native-tls"] }
+librespot-metadata = { version = "0.8", path = "crates/3rdparties/librespot/metadata", default-features = false, features = ["native-tls"] }
+librespot-protocol = { version = "0.8", path = "crates/3rdparties/librespot/protocol", default-features = false }
 # Exact pin (NOT caret): vergen 9.1.0 broke vergen-gitcl 1.0.8, used by
 # librespot-core's build script — vergen 9.1's `Build` no longer implements
 # vergen-lib 0.1's `Add` trait (E0277). A caret req would still allow 9.1+,
@@ -64,7 +65,7 @@ socket2 = "0.6"
 tokio-rustls = "0.26"
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "io-util", "process", "signal"] }
 # tokio-tungstenite = "0.21"
-signal-hook = "0.4"
+signal-hook = "0.3.18"
 reqwest = { version = "0.13", features = ["json"] }
 url = "2"
 urlencoding = "2.1"
@@ -73,7 +74,7 @@ futures = "0.3"
 
 # CLI and system
 base64 = "0.23"
-chacha20poly1305 = "0.10"
+chacha20poly1305 = { version = "0.11", features = ["zeroize"] }
 byteorder = "1.5"
 coreaudio-rs = "0.14.2"
 core-foundation-sys = "0.8"
@@ -318,7 +319,7 @@ sotf-media-controls = { path = "crates/sotf-media-controls" }
 nokhwa = { version = "0.10", default-features = false }
 
 # QR code decoding from camera
-rqrr = "0.10.0"
+rqrr = "0.11.0"
 
 # RNNoise (pure Rust)
 nnnoiseless = "0.1"
@@ -330,7 +331,7 @@ nnnoiseless = "0.1"
 tract-onnx = "0.22"
 
 # Font-stack helper crate (Zed fork of font-kit)
-font-kit = { package = "zed-font-kit", version = "0.14.1-zed", git = "https://github.com/zed-industries/font-kit", rev = "94b0f28166665e8fd2f53ff6d268a14955c82269" }
+font-kit = { package = "zed-font-kit", version = "0.14.1-zed", path = "../gpui-toolkit/crates/3rdparties/zed-font-kit" }
 
 # TUI extensions
 
@@ -443,8 +444,16 @@ incremental = false
 strip = "symbols"
 
 [patch.crates-io]
-rusty-fork = { git = "https://github.com/pierreaubert/rusty-fork.git", rev = "ee62bcd64fa6afe7fae0e52a448d716dc294e98d" }
+predicates = { path = "../math-audio/crates/3rdparties/predicates" }
+# SOTF owned maintenance forks; upstream 2.1.1, local version 2.1.2.
+derive_more = { path = "../math-audio/crates/3rdparties/derive_more" }
+derive_more-impl = { path = "../math-audio/crates/3rdparties/derive_more-impl" }
+
+headers = { path = "crates/3rdparties/headers" }
+oo7 = { path = "../gpui-toolkit/crates/3rdparties/crypto-forks/oo7" }
+# Match GPUI compatibility forks: workspace patches are not inherited.
 fontconfig-parser = { git = "https://github.com/pierreaubert/fontconfig-parser.git", rev = "d247c91f5a57edd6ba6eb26e884d4904dbfbc87e" }
+rusty-fork = { git = "https://github.com/pierreaubert/rusty-fork.git", rev = "ee62bcd64fa6afe7fae0e52a448d716dc294e98d" }
 rfd = { git = "https://github.com/pierreaubert/rfd.git", rev = "b049aa9c12c6cf5ac72a4ea0dffdeed6f7427f0d" }
 nalgebra = { git = "https://github.com/pierreaubert/nalgebra.git", rev = "a42573dbc9649af62fb07b469c98c852e62720fd" }
 tract-core = { git = "https://github.com/pierreaubert/tract.git", rev = "706cccb56b2de6bfcbd0016b9c260aef183e41d7" }

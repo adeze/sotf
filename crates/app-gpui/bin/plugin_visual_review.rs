@@ -280,17 +280,31 @@ mod macos {
         Ok(())
     }
 
-    fn capture_viewport(
-        cx: &mut VisualTestAppContext,
-        output: &Path,
+    #[derive(Clone, Copy)]
+    struct ViewportCapture<'a> {
+        output: &'a Path,
         width: u32,
         height: u32,
-        plugin_types: &[PluginType],
-        external_fixture: &Path,
+        plugin_types: &'a [PluginType],
+        external_fixture: &'a Path,
         surface: ReviewSurface,
         zoom: f32,
+    }
+
+    fn capture_viewport(
+        cx: &mut VisualTestAppContext,
+        capture: ViewportCapture<'_>,
         manifest: &mut Vec<serde_json::Value>,
     ) -> Result<()> {
+        let ViewportCapture {
+            output,
+            width,
+            height,
+            plugin_types,
+            external_fixture,
+            surface,
+            zoom,
+        } = capture;
         for (ordinal, requested_type) in plugin_types.iter().cloned().enumerate() {
             if matches!(surface, ReviewSurface::Settings) && requested_type != PluginType::External
             {
@@ -554,13 +568,15 @@ mod macos {
         for (width, height) in VIEWPORTS {
             capture_viewport(
                 &mut cx,
-                &args.output,
-                width,
-                height,
-                &plugin_types,
-                &external_fixture,
-                args.surface,
-                args.zoom,
+                ViewportCapture {
+                    output: &args.output,
+                    width,
+                    height,
+                    plugin_types: &plugin_types,
+                    external_fixture: &external_fixture,
+                    surface: args.surface,
+                    zoom: args.zoom,
+                },
                 &mut manifest,
             )?;
         }

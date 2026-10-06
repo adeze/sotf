@@ -30,6 +30,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+source "$PROJECT_ROOT/../sotf-daw/scripts/lib/nnnoiseless_model_notices.sh"
 
 # Extract version from root Cargo.toml
 VERSION=$(sotf_version "$PROJECT_ROOT")
@@ -54,6 +55,33 @@ WITH_MOBILE=false
 WITH_EXPERIMENTAL_TVOS=false
 
 DIST_DIR="$PROJECT_ROOT/dist"
+
+# Third-party notices for bundled fonts (the GPUI RustEmbed includes only TTF
+# bytes), the sibling gpui-d3rs DejaVu font asset, and default RNNoise weights.
+# Keep sibling resolution rooted in the aggregate checkout, not caller's cwd.
+validate_macos_third_party_notice_sources() {
+    local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
+    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    validate_nnnoiseless_model_notice_sources "$PROJECT_ROOT/../sotf-daw" || return 1
+    local source
+    for source in "$fonts_notice" "$toolkit_license"; do
+        if [ ! -s "$source" ]; then
+            log_error "Required third-party notice input is missing or empty: $source"
+            return 1
+        fi
+    done
+}
+
+stage_macos_third_party_notices() {
+    local destination="$1"
+    local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
+    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    validate_macos_third_party_notice_sources || return 1
+    mkdir -p "$destination"
+    cp "$fonts_notice" "$destination/THIRD_PARTY_NOTICES.txt"
+    cp "$toolkit_license" "$destination/DejaVu-LICENSE"
+    stage_nnnoiseless_model_notices "$PROJECT_ROOT/../sotf-daw" "$destination"
+}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -247,6 +275,7 @@ create_app_bundle() {
     rm -rf "$APP_BUNDLE"
     mkdir -p "$APP_BUNDLE/Contents/MacOS"
     mkdir -p "$APP_BUNDLE/Contents/Resources"
+    stage_macos_third_party_notices "$APP_BUNDLE/Contents/Resources"
 
     # Copy binary
     cp "$BUILD_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/"
@@ -399,7 +428,7 @@ create_icns() {
     # Generate all required sizes
     local sizes=(16 32 64 128 256 512 1024)
     for size in "${sizes[@]}"; do
-        sips -z $size $size "$input_image" --out "$iconset_dir/icon_${size}x${size}.png" 2>/dev/null || true
+        sips -s format png -z $size $size "$input_image" --out "$iconset_dir/icon_${size}x${size}.png" 2>/dev/null || true
     done
 
     # Create @2x versions
@@ -530,6 +559,7 @@ main() {
     log_info "Building $APP_NAME v$VERSION"
     log_info "=========================================="
 
+    validate_macos_third_party_notice_sources
     check_prerequisites
     clean_build
     build_binary
@@ -558,4 +588,6 @@ main() {
     log_info "=========================================="
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

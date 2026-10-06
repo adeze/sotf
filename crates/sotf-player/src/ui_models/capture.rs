@@ -485,10 +485,6 @@ mod tests {
         .unwrap()
     }
 
-    #[expect(
-        clippy::field_reassign_with_default,
-        reason = "Drop prevents struct update syntax"
-    )]
     fn pending(stage: CaptureStage) -> (CaptureWorkflow, mpsc::Sender<WorkerEvent>) {
         let (sender, receiver) = mpsc::channel();
         let mut workflow = CaptureWorkflow::default();
@@ -628,10 +624,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::field_reassign_with_default,
-        reason = "Drop prevents struct update syntax"
-    )]
     fn dropping_workflow_requests_recording_cancellation() {
         let cancel = Arc::new(AtomicBool::new(false));
         let mut workflow = CaptureWorkflow::default();

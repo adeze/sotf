@@ -1,0 +1,26 @@
+FROM --platform=linux/arm64 ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+ENV PATH="/root/.cargo/bin:${PATH}"
+ENV RUSTUP_TOOLCHAIN=1.99.0
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        curl \
+        git \
+        libasound2-dev \
+        libclang-dev \
+        pkg-config \
+        && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain 1.99.0 --profile minimal && \
+    rustup component add clippy && \
+    cargo install just --locked && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+WORKDIR /workspace/sotf-systemwide

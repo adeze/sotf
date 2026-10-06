@@ -25,18 +25,18 @@ RUN apt-get update && \
     mingw-w64 \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Install Rust 1.95 (pinned version for compatibility)
+# Install the release Rust toolchain (pinned).
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --default-toolchain 1.95.0 --profile minimal && \
+    sh -s -- -y --default-toolchain 1.99.0 --profile minimal && \
     rm -rf /root/.cargo/registry /root/.cargo/git
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 # Keep Docker builds on the pinned toolchain even when the mounted workspace
 # contains rust-toolchain.toml with channel = "stable".
-ENV RUSTUP_TOOLCHAIN=1.95.0
+ENV RUSTUP_TOOLCHAIN=1.99.0
 
 # Add the Windows target
-RUN rustup target add --toolchain 1.95.0 x86_64-pc-windows-gnullvm
+RUN rustup target add --toolchain 1.99.0 x86_64-pc-windows-gnullvm
 
 # Install just
 RUN cargo install just --locked && \
@@ -60,12 +60,4 @@ ENV AR_x86_64_pc_windows_gnullvm=x86_64-w64-mingw32-ar
 ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER=x86_64-w64-mingw32-clang
 ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_AR=x86_64-w64-mingw32-ar
 
-WORKDIR /project
-
-# Copy source with .dockerignore in place
-COPY . .
-
-# Build the Windows release artifact used by the packaging recipe.
-RUN cargo build --release --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && \
-    (x86_64-w64-mingw32-strip -v target/x86_64-pc-windows-gnullvm/release/sotf-tui.exe 2>/dev/null || true) && \
-    rm -rf target/.rustc_info.json target/.fingerprint target/x86_64-pc-windows-gnullvm/release/deps/*.d
+WORKDIR /workspace/sotf

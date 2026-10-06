@@ -148,7 +148,7 @@ mod tests {
         let store = TrustedClientStore::load(tmp.path()).expect("load");
         assert!(store.is_empty());
         assert!(!store.contains("AA:BB:CC"));
-        assert!(store.list().is_empty());
+        assert_eq!(store.list(), [] as [&TrustedClient; 0]);
     }
 
     #[test]
