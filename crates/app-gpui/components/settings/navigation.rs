@@ -1,10 +1,34 @@
 use crate::app::i18n::DesktopTranslations;
 use crate::app::types::{PreferencesCategory, PreferencesSetting, Screen, SettingsTab};
+use crate::components::icons::{Icon, IconName};
 use crate::components::{design::Ds, settings_tab_label};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Input, Select, SelectOption, Text};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, Input, InputSize, Select, SelectOption, TabItem, TabVariant,
+    Tabs, Text,
+};
+
+pub(super) fn preferences_tab(
+    id: String,
+    label: impl Into<SharedString>,
+    selector: String,
+) -> TabItem {
+    TabItem::new(id, label).icon_with_color(move |color| {
+        let icon = Icon::new(IconName::Plug).small().color(color);
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            icon.dev_track(selector.clone()).into_any_element()
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            let _ = &selector;
+            icon.into_any_element()
+        }
+    })
+}
 
 impl PlayerView {
     pub(crate) fn request_preferences_close(app: &mut crate::app::App) {
@@ -111,7 +135,46 @@ impl PlayerView {
         if query.trim().is_empty() {
             content = content.child(Text::section_header(text.categories[category as usize]));
             let group_tabs = category.visible_tabs(cfg!(target_os = "ios"));
-            if group_tabs.len() > 1 {
+            if category == PreferencesCategory::Connections {
+                let entity = self.state.downgrade();
+                let selected = group_tabs
+                    .iter()
+                    .position(|tab| *tab == active)
+                    .unwrap_or(0);
+                content = content.child(
+                    Tabs::new("preferences-connections-tabs")
+                        .tabs(
+                            group_tabs
+                                .iter()
+                                .map(|tab| {
+                                    preferences_tab(
+                                        format!("settings-{tab:?}"),
+                                        settings_tab_label(*tab, &translations),
+                                        format!("settings.tab.{tab:?}"),
+                                    )
+                                })
+                                .collect(),
+                        )
+                        .selected_index(selected)
+                        .variant(TabVariant::Enclosed)
+                        .theme(gpui_ui_kit::TabsTheme {
+                            selected_bg: theme.accent,
+                            ..theme.to_tabs_theme()
+                        })
+                        .aria_label(text.categories[category as usize])
+                        .on_change(move |index, _, cx| {
+                            if let Some(tab) = group_tabs.get(index)
+                                && let Some(entity) = entity.upgrade()
+                            {
+                                entity.update(cx, |state, cx| {
+                                    state.app.ui_state.active_settings_tab = *tab;
+                                    state.app.settings.navigation.clear_setting_target();
+                                    cx.notify();
+                                });
+                            }
+                        }),
+                );
+            } else if group_tabs.len() > 1 {
                 let mut sections = div().flex().flex_wrap().gap(d.grid);
                 for tab in group_tabs {
                     let entity = self.state.clone();
@@ -172,6 +235,15 @@ impl PlayerView {
                     let focus = entity.update(cx, |state, cx| {
                         let focus = cx.focus_handle();
                         state.app.ui_state.active_settings_tab = setting.tab();
+                        match setting {
+                            PreferencesSetting::RemoteSources => {
+                                state.app.federation.streaming_source_tab = "subsonic".into();
+                            }
+                            PreferencesSetting::RemotePlayers => {
+                                state.app.federation.streaming_source_tab = "remote_sotf".into();
+                            }
+                            _ => {}
+                        }
                         if setting == PreferencesSetting::AudioAnalysis
                             && !state
                                 .app
@@ -269,12 +341,21 @@ impl PlayerView {
                     .flex()
                     .flex_wrap()
                     .items_center()
+                    .justify_center()
+                    .w_full()
+                    .flex_shrink_0()
+                    .p(d.pad_x)
+                    .bg(theme.background_secondary)
+                    .border_1()
+                    .border_color(theme.border)
+                    .rounded(d.r_md)
                     .gap(d.gap)
                     .child(Text::section_header(text.preferences))
                     .child(
                         div().flex_1().min_w(rems(12.0)).max_w(rems(32.0)).child(
                             track_preferences_control(
                                 Input::new("preferences-search")
+                                    .size(InputSize::Md)
                                     .value(query)
                                     .placeholder(if compact {
                                         translations.library_search
@@ -298,8 +379,8 @@ impl PlayerView {
                     )
                     .child(track_preferences_control(
                         Button::new("preferences-done", text.done)
-                            .size(ButtonSize::Sm)
-                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Md)
+                            .variant(ButtonVariant::Primary)
                             .theme(theme.to_button_theme())
                             .on_click_event(cx.listener(|view, _, window, cx| {
                                 view.state.update(cx, |state, cx| {

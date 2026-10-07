@@ -7,6 +7,8 @@ use std::sync::Arc;
 /// Federation & server configuration and background scan state
 #[derive(Debug)]
 pub struct FederationState {
+    /// Selected streaming source type; this is transient navigation state.
+    pub streaming_source_tab: String,
     pub sources: Vec<sotf_audio_player::federation_config::FederationSourceEntry>,
     pub source_statuses: HashMap<String, sotf_audio_player::federation_config::ConnectionStatus>,
     pub server_config: sotf_audio_player::federation_config::ServerConfig,
@@ -41,6 +43,7 @@ pub struct FederationState {
 impl Default for FederationState {
     fn default() -> Self {
         Self {
+            streaming_source_tab: "remote_sotf".into(),
             sources: Vec::new(),
             source_statuses: HashMap::new(),
             server_config: sotf_audio_player::federation_config::ServerConfig::default(),

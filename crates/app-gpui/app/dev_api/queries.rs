@@ -1289,6 +1289,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "settings.library_scan_albums" => json!(app.library_state.scan_progress_albums),
         "settings.library_scan_error" => json!(app.settings.library.scan_error),
         "settings.federation_source_count" => json!(app.federation.sources.len()),
+        "settings.streaming_source_tab" => json!(app.federation.streaming_source_tab),
         "settings.federation_tidal_login_active" => {
             #[cfg(feature = "tidal")]
             {

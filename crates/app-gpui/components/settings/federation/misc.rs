@@ -3,13 +3,12 @@ use crate::app::dev_api::DevTrackExt;
 use crate::app::federation::test_federation_connection;
 use crate::app::i18n::FederationTranslations;
 use crate::components::design::Ds;
-use crate::components::settings::settings_section_label;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Divider, HStack, Input, InputSize, StackSpacing, Text,
-    TextSize, VStack,
+    Button, ButtonSize, ButtonVariant, Divider, HStack, Input, InputSize, StackSpacing, TabVariant,
+    Tabs, Text, TextSize, VStack,
 };
 use sotf_audio_player::federation_config::ConnectionStatus;
 
@@ -38,6 +37,28 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let text = FederationTranslations::for_language(state.app.ui_state.language);
         let sources = state.app.federation.sources.clone();
+        let source_tabs = [
+            (
+                "remote_sotf",
+                crate::app::i18n::ServerSettingsTranslations::for_language(
+                    state.app.ui_state.language,
+                )
+                .remote_players,
+            ),
+            ("tidal", "Tidal"),
+            ("spotify", "Spotify"),
+            ("subsonic", "Subsonic"),
+            ("mpd", "MPD"),
+            ("dlna", "DLNA"),
+            ("icy_radio", "Radio"),
+        ];
+        let selected_source = state.app.federation.streaming_source_tab.clone();
+        let selected_index = source_tabs
+            .iter()
+            .position(|(key, _)| *key == selected_source)
+            .unwrap_or(0);
+        let (source_type, source_label) = source_tabs[selected_index];
+        let source_state = self.state.downgrade();
         let service_login_error = state.app.federation.service_login_error.clone();
 
         let mut content = div()
@@ -70,40 +91,79 @@ impl PlayerView {
                     "settings.federation.login-error"
                 ))
             })
-            // Add Source buttons
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap(d.gap)
+                    .id("streaming-source-tabs-scroll")
+                    .w_full()
+                    .min_w_0()
+                    .overflow_x_scroll()
                     .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.text_primary)
-                            .child(format!("Sources ({})", sources.len())),
-                    )
-                    .child({
-                        let buttons = div()
-                            .flex()
-                            .flex_wrap()
-                            .w_full()
-                            .gap(d.gap)
-                            .child(self.add_source_button("subsonic", "Subsonic", &theme, cx))
-                            .child(self.add_source_button("mpd", "MPD", &theme, cx))
-                            .child(self.add_source_button("dlna", "DLNA", &theme, cx))
-                            .child(self.add_source_button("icy_radio", "Radio", &theme, cx));
-                        #[cfg(feature = "tidal")]
-                        let buttons =
-                            buttons.child(self.add_source_button("tidal", "Tidal", &theme, cx));
-                        #[cfg(feature = "spotify")]
-                        let buttons =
-                            buttons.child(self.add_source_button("spotify", "Spotify", &theme, cx));
-                        buttons
-                    }),
+                        Tabs::new("streaming-source-tabs")
+                            .tabs(
+                                source_tabs
+                                    .iter()
+                                    .map(|(key, label)| {
+                                        super::super::navigation::preferences_tab(
+                                            format!("streaming-source-{key}"),
+                                            *label,
+                                            format!("settings.federation.tab.{key}"),
+                                        )
+                                        .disabled(
+                                            (*key == "tidal" && !cfg!(feature = "tidal"))
+                                                || (*key == "spotify"
+                                                    && !cfg!(feature = "spotify")),
+                                        )
+                                    })
+                                    .collect(),
+                            )
+                            .selected_index(selected_index)
+                            .variant(TabVariant::Underline)
+                            .theme(gpui_ui_kit::TabsTheme {
+                                text_selected: theme.accent,
+                                icon_selected: Some(theme.accent),
+                                ..theme.to_tabs_theme()
+                            })
+                            .aria_label("Streaming sources")
+                            .on_change(move |index, _, cx| {
+                                if let Some((key, _)) = source_tabs.get(index)
+                                    && let Some(state) = source_state.upgrade()
+                                {
+                                    state.update(cx, |state, cx| {
+                                        state.app.federation.streaming_source_tab =
+                                            (*key).to_owned();
+                                        state.app.settings.navigation.clear_setting_target();
+                                        cx.notify();
+                                    });
+                                }
+                            }),
+                    ),
             );
 
-        if sources.is_empty() {
+        if source_type == "remote_sotf" {
+            for (source_idx, source) in sources
+                .iter()
+                .enumerate()
+                .filter(|(_, source)| source.connection.source_type_key() == "peer")
+            {
+                content = content.child(self.render_source_card(
+                    source_idx,
+                    source,
+                    &theme,
+                    &translations,
+                    cx,
+                ));
+            }
+            return content.child(self.render_remote_sotf_section(&theme, &d, cx));
+        }
+
+        content = content.child(self.add_source_button(source_type, source_label, &theme, cx));
+        let selected_sources: Vec<_> = sources
+            .iter()
+            .enumerate()
+            .filter(|(_, source)| source.connection.source_type_key() == source_type)
+            .collect();
+
+        if selected_sources.is_empty() {
             content = content.child(
                 div()
                     .p(d.card)
@@ -118,7 +178,7 @@ impl PlayerView {
                     ),
             );
         } else {
-            for (source_idx, source) in sources.iter().enumerate() {
+            for (source_idx, source) in selected_sources {
                 content = content.child(self.render_source_card(
                     source_idx,
                     source,
@@ -130,15 +190,6 @@ impl PlayerView {
         }
 
         content
-            .child(settings_section_label(
-                crate::app::i18n::ServerSettingsTranslations::for_language(
-                    self.state.read(cx).app.ui_state.language,
-                )
-                .remote_players,
-                &theme,
-                &d,
-            ))
-            .child(self.render_remote_sotf_section(&theme, &d, cx))
     }
 
     pub(super) fn add_source_button(

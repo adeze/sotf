@@ -1,0 +1,75 @@
+# Exercise rendered Connections and source tabs without network login or playback.
+focus Settings
+resize 1440 900
+wait_idle 1s
+click settings.tab.Federation
+wait_until settings.active_tab == "Federation"
+wait_idle 1s
+assert_in_viewport preferences.search
+assert_in_viewport preferences.done
+assert_non_overlapping preferences.search preferences.done
+assert_visible settings.tab.Federation
+assert_visible settings.tab.Servers
+assert_visible settings.federation.tab.remote_sotf
+assert_visible settings.federation.tab.tidal
+assert_visible settings.federation.tab.spotify
+assert_visible settings.servers.remote-sotf-name
+screenshot preferences-streaming-remote-players
+resize 600 800
+wait_idle 1s
+assert_in_viewport preferences.search
+assert_in_viewport preferences.done
+assert_non_overlapping preferences.search preferences.done
+assert_in_viewport settings.federation.tab.tidal
+assert_in_viewport settings.federation.tab.spotify
+screenshot preferences-streaming-compact-toolbar
+resize 1440 900
+wait_idle 1s
+
+click settings.tab.Servers
+wait_idle 500ms
+assert settings.active_tab == "Servers"
+assert_absent settings.servers.remote-sotf-name
+assert_absent settings.federation.tab.tidal
+screenshot preferences-server-tabs
+
+click settings.tab.Federation
+wait_idle 500ms
+assert settings.active_tab == "Federation"
+click settings.federation.tab.tidal
+wait_idle 500ms
+assert settings.streaming_source_tab == "tidal"
+assert_visible settings.federation.add.tidal
+assert_absent settings.servers.remote-sotf-name
+click settings.federation.add.tidal
+wait_idle 500ms
+assert settings.federation_source_count == 1
+assert_visible settings.federation.tidal.login
+screenshot preferences-streaming-tidal
+
+click settings.federation.tab.spotify
+wait_idle 500ms
+assert settings.streaming_source_tab == "spotify"
+assert_visible settings.federation.add.spotify
+assert_absent settings.federation.tidal.login
+click settings.federation.add.spotify
+wait_idle 500ms
+assert settings.federation_source_count == 2
+assert_visible settings.federation.source.1
+screenshot preferences-streaming-spotify
+
+click settings.federation.tab.tidal
+wait_idle 500ms
+assert_visible settings.federation.source.0
+assert_absent settings.federation.source.1
+assert settings.federation_source_count == 2
+
+click settings.federation.tab.remote_sotf
+wait_idle 500ms
+assert settings.streaming_source_tab == "remote_sotf"
+assert_visible settings.servers.remote-sotf-name
+assert_absent settings.federation.source.1
+assert playback.is_playing == false
+click preferences.done
+wait_idle 500ms
+assert_absent preferences.search

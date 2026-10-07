@@ -29,18 +29,18 @@ import 'builds/aggregates.just'
 # VARIABLES
 # ----------------------------------------------------------------------
 
-list_test_features := "qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"
-list_prod_features := "onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls"
+list_test_features := "qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls, tidal, spotify"
+list_prod_features := "onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls, tidal, spotify"
 
-test_features := '--features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"'
-release_test_features := '--features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls"'
-prod_features := '--features="onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls"'
+test_features := '--features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls, tidal, spotify"'
+release_test_features := '--features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls, tidal, spotify"'
+prod_features := '--features="onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls, tidal, spotify"'
 
 # `sotf-dev-api/server` is intentionally unavailable in release builds.
 # Keep the release TUI shortcuts on the matching feature set.
 test_features_macos := release_test_features
-test_features_linux := '--features="qa, onnx, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"'
-test_features_windows := '--features="qa, onnx, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"'
+test_features_linux := '--features="qa, onnx, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls, tidal, spotify"'
+test_features_windows := '--features="qa, onnx, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls, tidal, spotify"'
 
 # ----------------------------------------------------------------------
 # TEST
@@ -273,7 +273,7 @@ dist: dist-sotf-gpui dist-sotf-tui dist-sotf-recorder
 
 [group('dist')]
 dist-sotf-gpui:
-	{{cargo}} build --profile dist --bin sotf-desktop -p sotf-gpui --features onnx
+	{{cargo}} build --profile dist --bin sotf-desktop -p sotf-gpui --features shipping,onnx
 
 [group('dist')]
 dist-sotf-tui:

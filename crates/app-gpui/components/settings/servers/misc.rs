@@ -57,10 +57,6 @@ impl PlayerView {
             .child(self.render_mpd_section(&server_config, &theme, &translations, &d, cx))
             // DLNA Server section
             .child(self.render_dlna_section(&server_config, &theme, &d, cx))
-            // Remote SOTF players are a client-side connection setting, not a
-            // hosted media-server option, but belong alongside the other
-            // server configuration surfaces.
-            .child(self.render_remote_sotf_section(&theme, &d, cx))
     }
 
     pub(super) fn render_sotf_api_section(
@@ -1077,19 +1073,6 @@ impl PlayerView {
                 )),
             )
     }
-}
-
-pub(crate) fn settings_section_label(
-    label: &'static str,
-    theme: &crate::app::theme::Theme,
-    d: &Ds,
-) -> impl IntoElement {
-    div()
-        .pt(d.pad_y)
-        .text_size(d.text_xs)
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(theme.text_secondary)
-        .child(label)
 }
 
 pub(crate) fn server_editable_field(
