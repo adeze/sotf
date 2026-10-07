@@ -166,6 +166,7 @@ fn documentation_specs() -> Vec<DocumentationSpec> {
         documentation!(ScreenSwitch, "Library", actions::SwitchToLibrary),
         documentation!(ScreenSwitch, "Queue", actions::SwitchToQueue),
         documentation!(ScreenSwitch, "Plugins", actions::SwitchToStudio),
+        documentation!(ScreenSwitch, "Ear Training", actions::SwitchToListeningTest),
         documentation!(ScreenSwitch, "Devices", actions::SwitchToDevices),
         documentation!(
             ScreenSwitch,

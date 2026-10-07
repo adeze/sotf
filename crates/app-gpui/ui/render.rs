@@ -466,6 +466,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::open_config))
             .on_action(cx.listener(Self::quit_app))
             .on_action(cx.listener(Self::cycle_theme))
+            .on_action(cx.listener(Self::select_theme))
+            .on_action(cx.listener(Self::select_community_theme))
             .on_action(cx.listener(Self::cycle_language))
             // Design system actions
             .on_action(cx.listener(Self::set_design_neutral))

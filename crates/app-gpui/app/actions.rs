@@ -3,7 +3,22 @@
 //! All keyboard actions are defined here and used by both keybindings
 //! and the UI layer.
 
+use crate::app::theme::{CommunityThemeId, ThemeId};
 use gpui::*;
+
+/// Select a built-in appearance theme from the application menu.
+#[derive(Debug, Clone, PartialEq, Action)]
+#[action(namespace = player_ui, no_json)]
+pub struct SelectTheme {
+    pub theme_id: ThemeId,
+}
+
+/// Select a curated community theme from the application menu.
+#[derive(Debug, Clone, PartialEq, Action)]
+#[action(namespace = player_ui, no_json)]
+pub struct SelectCommunityTheme {
+    pub theme_id: CommunityThemeId,
+}
 
 // Actions for keyboard shortcuts
 actions!(

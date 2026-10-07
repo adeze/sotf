@@ -7,6 +7,7 @@ use sotf_audio_player::{Player, ReleaseChannel};
 use sotf_audio_player_gpui::app::actions::*;
 use sotf_audio_player_gpui::app::player_handle::PlayerHandle;
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
+use sotf_audio_player_gpui::app::theme::{CommunityThemeId, ThemeId};
 use sotf_audio_player_gpui::app::{
     App, AppState, Screen,
     i18n::{Language, Translations},
@@ -353,12 +354,34 @@ fn main() {
                     disabled: false,
                 },
                 Menu {
-                    name: "Design".into(),
+                    name: "Look&Feel".into(),
                     items: vec![
-                        MenuItem::action("Neutral", SetDesignNeutral),
-                        MenuItem::action("Apple HIG", SetDesignAppleHig),
-                        MenuItem::action("Material 3", SetDesignMaterial3),
-                        MenuItem::action("Fluent", SetDesignFluent),
+                        MenuItem::submenu(Menu {
+                            name: "Design".into(),
+                            items: vec![
+                                MenuItem::action("Neutral", SetDesignNeutral),
+                                MenuItem::action("Apple HIG", SetDesignAppleHig),
+                                MenuItem::action("Material 3", SetDesignMaterial3),
+                                MenuItem::action("Fluent", SetDesignFluent),
+                            ],
+                            disabled: false,
+                        }),
+                        MenuItem::submenu(Menu {
+                            name: "Theme".into(),
+                            items: ThemeId::all()
+                                .iter()
+                                .map(|&theme_id| {
+                                    MenuItem::action(theme_id.name(), SelectTheme { theme_id })
+                                })
+                                .chain(CommunityThemeId::all().iter().map(|&theme_id| {
+                                    MenuItem::action(
+                                        theme_id.name(),
+                                        SelectCommunityTheme { theme_id },
+                                    )
+                                }))
+                                .collect(),
+                            disabled: false,
+                        }),
                     ],
                     disabled: false,
                 },

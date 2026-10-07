@@ -989,6 +989,38 @@ impl PlayerView {
         }
     }
 
+    pub(super) fn select_theme(
+        &mut self,
+        action: &SelectTheme,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, cx| {
+            state.app.set_theme(action.theme_id);
+            let layout = state.layout.read(cx);
+            if let Err(e) = state.app.save_config(layout) {
+                log::error!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
+    }
+
+    pub(super) fn select_community_theme(
+        &mut self,
+        action: &SelectCommunityTheme,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, cx| {
+            state.app.set_community_theme(action.theme_id);
+            let layout = state.layout.read(cx);
+            if let Err(e) = state.app.save_config(layout) {
+                log::error!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
+    }
+
     pub(super) fn cycle_theme(&mut self, _: &CycleTheme, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             state.app.next_theme();

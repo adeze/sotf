@@ -21,6 +21,32 @@ fn key_spec(binding: &gpui::KeyBinding) -> String {
 }
 
 #[test]
+fn ear_training_shortcut_is_executable_and_unique_in_every_preset() {
+    let expected_key = gpui::Keystroke::parse("secondary-7")
+        .expect("valid screen shortcut")
+        .to_string();
+    for preset in [
+        KeymapPreset::Default,
+        KeymapPreset::Vim,
+        KeymapPreset::Emacs,
+        KeymapPreset::VSCode,
+    ] {
+        let ear_training = action_name(preset, "Ear Training");
+        let runtime = get_keybindings_with_overrides(preset, &[]);
+        let matches = runtime
+            .iter()
+            .filter(|binding| key_spec(binding) == expected_key)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            matches.len(),
+            1,
+            "conflicting Ear Training shortcut: {preset:?}"
+        );
+        assert_eq!(matches[0].action().name(), ear_training);
+    }
+}
+
+#[test]
 fn conflict_is_named_and_overwrite_changes_the_executable_keymap() {
     let preset = KeymapPreset::Default;
     let play_pause = action_name(preset, "Play/Pause");

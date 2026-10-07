@@ -22,6 +22,7 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("secondary-4", actions::SwitchToRoomEQ, None),
         KeyBinding::new("secondary-5", actions::SwitchToHeadphoneEQ, None),
         KeyBinding::new("secondary-6", actions::SwitchToSpinorama, None),
+        KeyBinding::new("secondary-7", actions::SwitchToListeningTest, None),
         // Documented, preset-independent screen jumps.
         KeyBinding::new("shift-l", actions::SwitchToLibrary, Some("PlayerView")),
         KeyBinding::new("shift-q", actions::SwitchToQueue, Some("PlayerView")),
