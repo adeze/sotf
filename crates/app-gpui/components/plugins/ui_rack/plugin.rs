@@ -1977,13 +1977,14 @@ impl PlayerView {
                     .theme(theme_c.to_button_theme())
                     .on_click_event(move |_, _, cx| {
                         state_for_add.update(cx, |state, cx| {
-                            state.app.add_plugin(&pt);
-                            state.app.update_level_meter_groups();
-                            state.app.plugin_ui.show_add_plugin_menu = false;
-                            // The single add slot follows the editable plugins.
-                            rack_scroll.scroll_to_item(
-                                state.app.plugin_state.graph.user_plugin_insert_index(),
-                            );
+                            if state.app.try_add_plugin(&pt) {
+                                state.app.update_level_meter_groups();
+                                state.app.plugin_ui.show_add_plugin_menu = false;
+                                // The single add slot follows the editable plugins.
+                                rack_scroll.scroll_to_item(
+                                    state.app.plugin_state.graph.user_plugin_insert_index(),
+                                );
+                            }
                             cx.notify();
                         });
                     });

@@ -1,0 +1,19 @@
+# Seed a multichannel upstream graph, then add the upmixer through its real picker.
+# AAE supplies six channels; the upmixer requires stereo input.
+resize 1440 900
+action PluginClear
+plugin_add aae
+action SwitchToStudio
+wait_idle 1s
+assert plugins.user_count == 1
+click rack.add.open
+wait_visible rack.add.upmixer timeout=3s
+scroll_into_view rack.add.menu rack.add.upmixer
+click rack.add.upmixer
+wait_idle 1s
+assert toast.type == "Error"
+assert toast.message == "Could not add Upmixer: Cannot apply rack change: plugin `Upmixer` at position 4 requires 2 input channel(s), but upstream provides 6"
+assert plugins.user_count == 1
+assert_visible rack.add.upmixer
+screenshot studio-upmixer-add-channel-error
+assert playback.is_playing == false

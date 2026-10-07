@@ -6,6 +6,43 @@ use crate::{PluginSettings, PluginType};
 use crate::plugin_graph::NodePosition;
 
 #[test]
+fn try_add_plugin_selects_the_inserted_plugin() {
+    let mut controller = PluginController::new();
+    let index = controller.graph.user_plugin_insert_index();
+    let effect = controller.try_add_plugin(&PluginType::EQ).unwrap();
+    assert!(matches!(effect, PluginUpdateEffect::Structural));
+    assert_eq!(controller.selected_plugin_index, index);
+    assert_eq!(
+        controller.graph.get_plugin(index).unwrap().plugin_type(),
+        PluginType::EQ
+    );
+}
+
+#[test]
+fn try_add_plugin_returns_channel_error_without_mutating_graph_or_selection() {
+    let mut controller = PluginController::new();
+    controller.try_add_plugin(&PluginType::AAE).unwrap();
+    let before = serde_json::to_value(&controller.graph).unwrap();
+    let selected = controller.selected_plugin_index;
+
+    let error = controller.try_add_plugin(&PluginType::Upmixer).unwrap_err();
+    assert!(
+        error.contains("requires 2 input channel(s), but upstream provides 6"),
+        "{error}"
+    );
+    assert_eq!(serde_json::to_value(&controller.graph).unwrap(), before);
+    assert_eq!(controller.selected_plugin_index, selected);
+
+    // Existing non-GPUI callers retain their no-effect result on rejection.
+    assert!(matches!(
+        controller.add_plugin(&PluginType::Upmixer),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&controller.graph).unwrap(), before);
+    assert_eq!(controller.selected_plugin_index, selected);
+}
+
+#[test]
 fn eq_order_edit_targets_one_channel_and_rejects_svf() {
     let (mut ctrl, id) = make_controller_with_eq();
     if let PluginSettings::EQ {

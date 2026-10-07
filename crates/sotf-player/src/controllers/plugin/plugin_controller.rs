@@ -367,24 +367,33 @@ impl PluginController {
     // Chain management
     // ========================================================================
 
-    /// Add a plugin to the chain. Returns `Structural` effect.
+    /// Add a plugin, logging rejected insertions for legacy callers.
     pub fn add_plugin(&mut self, plugin_type: &PluginType) -> PluginUpdateEffect {
-        let insert_idx = self.graph.user_plugin_insert_index();
-        match self.graph.insert_plugin(insert_idx, plugin_type) {
-            Ok(_) => {
-                self.selected_plugin_index = insert_idx;
-                PluginUpdateEffect::Structural
-            }
+        match self.try_add_plugin(plugin_type) {
+            Ok(effect) => effect,
             Err(err) => {
                 log::warn!(
-                    "[PluginController] Failed to insert {:?} at {}: {}",
+                    "[PluginController] Failed to insert {:?}: {}",
                     plugin_type,
-                    insert_idx,
                     err
                 );
                 PluginUpdateEffect::None
             }
         }
+    }
+
+    /// Add a plugin, returning validation failures without changing the graph.
+    ///
+    /// # Errors
+    /// Returns the graph error when the chain or channel layout rejects insertion.
+    pub fn try_add_plugin(
+        &mut self,
+        plugin_type: &PluginType,
+    ) -> Result<PluginUpdateEffect, String> {
+        let insert_idx = self.graph.user_plugin_insert_index();
+        self.graph.insert_plugin(insert_idx, plugin_type)?;
+        self.selected_plugin_index = insert_idx;
+        Ok(PluginUpdateEffect::Structural)
     }
 
     /// Add a plugin whose complete settings are already known. This preserves

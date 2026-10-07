@@ -36,6 +36,7 @@ fn active_eq_edit_target(app: &App, plugin_idx: usize) -> Option<EqEditTarget> {
 pub trait PluginEditingManager {
     fn sync_spectrum_visible(&mut self);
     fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType);
+    fn try_add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) -> bool;
     fn toggle_plugin(&mut self, index: usize);
     fn move_plugin_up(&mut self, index: usize);
     fn move_plugin_down(&mut self, index: usize);
@@ -121,9 +122,24 @@ impl PluginEditingManager for App {
     }
 
     fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
-        let effect = self.plugin_state.add_plugin(plugin_type);
-        self.plugin_state.record_editor_effect(effect);
-        self.sync_spectrum_visible();
+        self.try_add_plugin(plugin_type);
+    }
+
+    fn try_add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) -> bool {
+        match self.plugin_state.try_add_plugin(plugin_type) {
+            Ok(effect) => {
+                self.plugin_state.record_editor_effect(effect);
+                self.sync_spectrum_visible();
+                true
+            }
+            Err(error) => {
+                self.ui_state.toast_message = Some(ToastMessage::error(format!(
+                    "Could not add {}: {error}",
+                    plugin_type.name()
+                )));
+                false
+            }
+        }
     }
 
     fn toggle_plugin(&mut self, index: usize) {
