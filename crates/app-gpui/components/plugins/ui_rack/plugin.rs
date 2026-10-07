@@ -932,6 +932,11 @@ impl PlayerView {
                                             el.child(
                                                 div()
                                                     .id(("plugin-close-tooltip", idx))
+                                                    // The card clears confirmations on mouse-up;
+                                                    // keep this control's event inside the remove button.
+                                                    .on_mouse_up(MouseButton::Left, |_, _, cx| {
+                                                        cx.stop_propagation();
+                                                    })
                                                     .tooltip(move |_window, cx| {
                                                         make_tooltip(
                                                             remove_tooltip,
@@ -940,7 +945,7 @@ impl PlayerView {
                                                         )
                                                     })
                                                     .child(
-                                                        IconButton::with_child(
+                                                        dev_track!(IconButton::with_child(
                                                             ("plugin-close", idx),
                                                             div()
                                                                 .text_size(d.text_xs)
@@ -956,7 +961,8 @@ impl PlayerView {
                                                         .theme(remove_theme.to_icon_button_theme())
                                                         .aria_label(remove_tooltip)
                                                         .on_click_event(move |_event, _window, cx| {
-                                                            remove_state.update(cx, |state, _| {
+                                                            cx.stop_propagation();
+                                                            remove_state.update(cx, |state, cx| {
                                                                 if state.app.plugin_state.preset_state.confirm_remove_plugin == Some(idx) {
                                                                     state.app.plugin_state.preset_state.confirm_remove_plugin = None;
                                                                     state.app.remove_plugin(idx);
@@ -964,8 +970,9 @@ impl PlayerView {
                                                                 } else {
                                                                     state.app.plugin_state.preset_state.confirm_remove_plugin = Some(idx);
                                                                 }
+                                                                cx.notify();
                                                             });
-                                                        }),
+                                                        }), format!("rack.plugin.{idx}.remove")),
                                                     ),
                                             )
                                         })

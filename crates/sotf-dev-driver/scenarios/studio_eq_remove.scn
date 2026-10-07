@@ -1,0 +1,44 @@
+# 2026-10-07: The Studio rack card's mouse-up handler cleared the EQ removal
+# confirmation before the small X IconButton click handler ran, preventing
+# deletion on repeated clicks (app-gpui/components/plugins/ui_rack/plugin.rs:762).
+# Fix: app-gpui/components/plugins/ui_rack/plugin.rs:935
+# isolates the remove control's mouse-up and click events and notifies state.
+# Run with a private profile (two terminals):
+# export SOTF_QA_DIR=$(mktemp -d)
+# cargo run -p sotf-gpui --bin sotf-desktop --features dev-api -- --qa "$SOTF_QA_DIR"
+# cargo run -p sotf-dev-driver -- run crates/sotf-dev-driver/scenarios/studio_eq_remove.scn
+# Click the actual picker and small X; never use plugin_add/plugin_remove.
+action PluginClear
+resize 1440 900
+action SwitchToStudio
+wait_idle
+click rack.add.open
+wait_visible rack.add.eq timeout=3s
+scroll_into_view rack.add.menu rack.add.eq
+click rack.add.eq
+wait_until plugins.user_count == 1 timeout=3s
+assert plugins.first_user_type == "EQ"
+wait_visible rack.plugin.2.remove timeout=3s
+assert_accessible button Remove plugin
+click rack.plugin.2.remove
+wait_idle
+# First click must retain the plugin and display its confirmation.
+assert plugins.user_count == 1
+assert_accessible button Confirm plugin removal
+screenshot studio-eq-remove-confirmation
+click rack.plugin.2.remove
+wait_until plugins.user_count == 0 timeout=3s
+assert_absent rack.plugin.2.remove
+# Add another instance to check that the old confirmation was cleared.
+click rack.add.open
+wait_visible rack.add.eq timeout=3s
+scroll_into_view rack.add.menu rack.add.eq
+click rack.add.eq
+wait_until plugins.user_count == 1 timeout=3s
+click rack.plugin.2.remove
+wait_idle
+assert plugins.user_count == 1
+assert_accessible button Confirm plugin removal
+click rack.plugin.2.remove
+wait_until plugins.user_count == 0 timeout=3s
+screenshot studio-eq-removed
