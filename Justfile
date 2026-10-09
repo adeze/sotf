@@ -3,7 +3,12 @@
 #	  cargo install just
 # ----------------------------------------------------------------------
 
-cargo := `if command -v mbx >/dev/null 2>&1; then echo mbx; else echo cargo; fi`
+cargo_bin := `if command -v mbx >/dev/null 2>&1; then echo mbx; else echo cargo; fi`
+# Filter only vendored warnings from Cargo's structured diagnostics on Unix.
+# Direct Cargo commands and Windows recipes retain their existing output.
+cargo := if os() == "windows" { cargo_bin } else {
+    "python3 '" + justfile_directory() + "/../scripts/cargo/quiet-thirdparty-lints.py' " + cargo_bin
+}
 
 _default:
 	just --list
@@ -308,7 +313,7 @@ tui:
 tui:
 	{{cargo}} run --release --bin sotf-tui -p sotf-tui {{test_features_windows}}
 
-alias terminal := gpui
+alias terminal := tui
 
 [group('build')]
 gpui:

@@ -3,15 +3,17 @@ use super::TickSnapshot;
 use super::consts::estimate_grid_dimensions;
 pub use crate::app::actions::*;
 use crate::app::keybindings::keybinding_conflict;
+use crate::app::state::plugin::PluginUiView;
 use crate::app::{AppState, Screen};
 use crate::components::plugins::actions::{
-    OpenAbConfigFile, OpenIrFile, OpenSofaFile, ResetPluginParam, SelectPluginParam, StartKnobDrag,
-    UpdatePluginParam,
+    OpenAbConfigFile, OpenHrtfDatabase, OpenIrFile, OpenSofaFile, ResetPluginParam,
+    SelectPluginParam, StartKnobDrag, UpdatePluginParam,
 };
 use crate::components::plugins::editing::PluginEditingManager;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::QueuePlaybackEffect;
+use std::cell::RefCell;
 use std::time::Duration;
 
 #[cfg(target_os = "ios")]
@@ -34,6 +36,8 @@ pub(super) struct ViewWindowState {
     pub(super) suppress_geometry_sync: bool,
     pub(super) navigation_focus: FocusHandle,
     pub(super) compact_navigation: Option<bool>,
+    pub(super) interface_model_open: bool,
+    pub(super) interface_model_highlight: Option<usize>,
 }
 
 pub(crate) struct ViewScrollHandles {
@@ -46,6 +50,11 @@ pub(crate) struct ViewScrollHandles {
     pub(crate) studio_workspace: ScrollHandle,
     pub(crate) rack_modules: ScrollHandle,
     pub(crate) rack_detail: ScrollHandle,
+    pub(crate) controller_grid: ScrollHandle,
+    pub(crate) matrix_grid: ScrollHandle,
+    pub(crate) graph_matrix_grid: ScrollHandle,
+    graph_matrix_grid_owner: RefCell<Option<sotf_audio_player::GraphNodeId>>,
+    rack_detail_owner: RefCell<Option<(sotf_audio_player::GraphNodeId, PluginUiView)>>,
     pub(crate) rack_config: ScrollHandle,
     pub(crate) rack_add_menu: ScrollHandle,
     pub(crate) listening_practice: ScrollHandle,
@@ -60,6 +69,29 @@ pub(crate) struct ViewScrollHandles {
 }
 
 impl ViewScrollHandles {
+    /// Start each selected instance/editor at its primary controls.
+    pub(crate) fn retain_rack_detail(
+        &self,
+        owner: Option<(sotf_audio_player::GraphNodeId, PluginUiView)>,
+    ) {
+        let mut current = self.rack_detail_owner.borrow_mut();
+        if *current != owner {
+            self.rack_detail.set_offset(Point::default());
+            self.controller_grid.set_offset(Point::default());
+            self.matrix_grid.set_offset(Point::default());
+            *current = owner;
+        }
+    }
+
+    /// Start a newly selected graph Matrix at its first column.
+    pub(crate) fn retain_graph_matrix(&self, owner: Option<sotf_audio_player::GraphNodeId>) {
+        let mut current = self.graph_matrix_grid_owner.borrow_mut();
+        if *current != owner {
+            self.graph_matrix_grid.set_offset(Point::default());
+            *current = owner;
+        }
+    }
+
     /// Preserve visible positions without sharing layout measurements between windows.
     #[cfg(feature = "visual-qa")]
     pub(crate) fn detached_copy(&self) -> Self {
@@ -78,6 +110,11 @@ impl ViewScrollHandles {
             studio_workspace: copy(&self.studio_workspace),
             rack_modules: copy(&self.rack_modules),
             rack_detail: copy(&self.rack_detail),
+            controller_grid: copy(&self.controller_grid),
+            matrix_grid: copy(&self.matrix_grid),
+            graph_matrix_grid: copy(&self.graph_matrix_grid),
+            graph_matrix_grid_owner: RefCell::new(*self.graph_matrix_grid_owner.borrow()),
+            rack_detail_owner: RefCell::new(self.rack_detail_owner.borrow().clone()),
             rack_config: copy(&self.rack_config),
             rack_add_menu: copy(&self.rack_add_menu),
             listening_practice: copy(&self.listening_practice),
@@ -238,6 +275,18 @@ impl PlayerView {
 impl PlayerView {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         Self::new_with_runtime(state, cx, true)
+    }
+
+    pub(crate) fn interface_model_menu(&self) -> (bool, Option<usize>) {
+        (
+            self.window_state.interface_model_open,
+            self.window_state.interface_model_highlight,
+        )
+    }
+
+    pub(crate) fn set_interface_model_menu(&mut self, open: bool, highlight: Option<usize>) {
+        self.window_state.interface_model_open = open;
+        self.window_state.interface_model_highlight = highlight;
     }
 
     fn new_with_runtime(
@@ -473,6 +522,35 @@ impl PlayerView {
                                 Self::apply_plugin_update(state, update_type);
                                 plugin_update_applied = true;
                             }
+                            if state.app.plugin_state.update_state.pending_ack.is_none()
+                                && state
+                                    .app
+                                    .plugin_state
+                                    .update_state
+                                    .pending_plugin_update
+                                    .is_none()
+                                && let Some(action) = state
+                                    .app
+                                    .plugin_state
+                                    .update_state
+                                    .pending_actions
+                                    .pop_front()
+                            {
+                                if state.app.plugin_state.update_state.action_topology_unavailable {
+                                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
+                                        "Profile action needs an active plugin graph. Apply the graph before trying again.".to_string(),
+                                    ));
+                                    #[cfg(feature = "dev-api")]
+                                    {
+                                        Self::record_action_rejection(
+                                            state, &action, "plugin graph has no active engine",
+                                        );
+                                    }
+                                } else {
+                                    Self::apply_plugin_update(state, action);
+                                }
+                                plugin_update_applied = true;
+                            }
 
                             #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                             for event in &media_events {
@@ -582,6 +660,11 @@ impl PlayerView {
                 studio_workspace: ScrollHandle::new(),
                 rack_modules: ScrollHandle::new(),
                 rack_detail: ScrollHandle::new(),
+                controller_grid: ScrollHandle::new(),
+                matrix_grid: ScrollHandle::new(),
+                graph_matrix_grid: ScrollHandle::new(),
+                graph_matrix_grid_owner: RefCell::new(None),
+                rack_detail_owner: RefCell::new(None),
                 rack_config: ScrollHandle::new(),
                 rack_add_menu: ScrollHandle::new(),
                 listening_practice: ScrollHandle::new(),
@@ -600,6 +683,8 @@ impl PlayerView {
                 suppress_geometry_sync: !start_runtime,
                 navigation_focus: cx.focus_handle(),
                 compact_navigation: None,
+                interface_model_open: false,
+                interface_model_highlight: None,
             },
             update_frame_count: 0,
             geometry_save_task: None,
@@ -1032,6 +1117,29 @@ impl PlayerView {
         cx.notify();
     }
 
+    pub(super) fn select_design(
+        &mut self,
+        action: &SelectDesign,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let system = action
+            .language
+            .map(gpui_design::DesignSystem::for_language)
+            .unwrap_or_else(gpui_design::DesignSystem::platform_default);
+        cx.set_global(gpui_design::DesignSystemState::with_system(system));
+        self.state.update(cx, |state, cx| {
+            state.app.ui_state.design_language =
+                action.language.map(|language| language.as_str().to_owned());
+            let layout = state.layout.read(cx);
+            if let Err(error) = state.app.save_config(layout) {
+                log::error!("Failed to save config: {error}");
+            }
+            cx.notify();
+        });
+        cx.notify();
+    }
+
     pub(super) fn set_design_system(
         &mut self,
         name: &str,
@@ -1344,6 +1452,52 @@ impl PlayerView {
     }
 
     pub(super) fn cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
+        if self.state.read(cx).app.ui_state.current_screen == Screen::Studio
+            && self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Normal
+            && !self
+                .state
+                .read(cx)
+                .app
+                .ui_state
+                .navigation
+                .studio_picker_open
+            && !self.state.read(cx).app.ui_state.show_studio_menu
+            && self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .eq_band_popup_open
+            && self.state.read(cx).app.plugin_state.editing_plugin_index
+                == Some(self.state.read(cx).app.plugin_state.selected_plugin_index)
+            && self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .graph
+                .plugins()
+                .get(self.state.read(cx).app.plugin_state.selected_plugin_index)
+                .is_some_and(|plugin| {
+                    plugin.settings.plugin_type() == sotf_audio_player::PluginType::EQ
+                })
+        {
+            self.state.update(cx, |state, _| {
+                let ui = &mut state.app.plugin_state.plugin_ui_state;
+                if ui.eq_filter_type_open {
+                    ui.eq_filter_type_open = false;
+                    ui.eq_filter_type_highlight = None;
+                } else {
+                    ui.eq_band_popup_open = false;
+                }
+            });
+            let band = self.state.read(cx).app.plugin_state.selected_eq_band;
+            let band_focus = gpui_ui_kit::Button::focus_handle_for(("eq-band-chip", band), cx);
+            band_focus.focus(window, cx);
+            cx.notify();
+            return;
+        }
         if self.state.read(cx).app.ui_state.current_screen == Screen::Library
             && self.state.read(cx).app.library_state.sort_menu_open
         {
@@ -2120,6 +2274,14 @@ impl PlayerView {
 
         let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
 
+        let processing_graph = (!state.app.plugin_state.graph.is_linear()).then(|| {
+            state
+                .app
+                .plugin_state
+                .graph
+                .to_plugin_graph_config(sample_rate)
+        });
+
         // `AudioSource::ServiceStream` sources are resolved by the engine's
         // decoder thread through the service-stream resolver installed at
         // startup (`install_service_stream_resolver`); failures surface as
@@ -2131,6 +2293,7 @@ impl PlayerView {
             device_name,
             position,
             prefer_smooth_switch,
+            processing_graph,
         );
 
         state.app.audio_device_state.audio_apply.last_submission =
@@ -2145,6 +2308,15 @@ impl PlayerView {
                 .record_playback_error(format!("Play track failed: {}", e));
         } else {
             state.app.playback.is_playing = true;
+            if state
+                .app
+                .plugin_state
+                .update_state
+                .action_topology_unavailable
+            {
+                state.app.plugin_state.update_state.pending_plugin_update =
+                    Some(crate::app::types::PluginUpdateType::Structural);
+            }
             state.app.audio_device_state.playback_source = crate::app::types::PlaybackSource::File;
             state.app.audio_device_state.pending_output_restart = None;
             if track_queue_playback {
@@ -2231,10 +2403,14 @@ impl PlayerView {
         {
             let plugin_idx = action.plugin_idx;
             let param_idx = action.param_idx;
-            let graph_target = {
-                let state = self.state.read(cx);
-                let graph = &state.app.plugin_state.graph_state;
-                (graph.editing_graph_node_uuid, graph.draft_generation)
+            let Some(graph_target) = self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .resource_target(plugin_idx)
+            else {
+                return;
             };
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
@@ -2250,8 +2426,7 @@ impl PlayerView {
                     };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
-                        let graph = &state.app.plugin_state.graph_state;
-                        if (graph.editing_graph_node_uuid, graph.draft_generation) != graph_target {
+                        if !graph_target.matches(&state.app.plugin_state) {
                             return;
                         }
 
@@ -2260,6 +2435,58 @@ impl PlayerView {
                             .set_plugin_param_string(plugin_idx, param_idx, path)
                         {
                             log::error!("[GPUI] Invalid SOFA file path: {}", e);
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::error(e));
+                        }
+                        cx.notify();
+                    });
+                }
+            })
+            .detach();
+        }
+    }
+
+    pub(crate) fn on_open_hrtf_database(
+        &mut self,
+        action: &OpenHrtfDatabase,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            let plugin_idx = action.plugin_idx;
+            let param_idx = action.param_idx;
+            let Some(graph_target) = self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .resource_target(plugin_idx)
+            else {
+                return;
+            };
+            let weak_state = self.state.downgrade();
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .set_title("Select HRTF Database Directory")
+                    .pick_folder()
+                    .await;
+
+                if let Some(file) = file {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        return;
+                    };
+                    let path = file.path().to_string_lossy().to_string();
+                    state_entity.update(&mut cx.clone(), |state, cx| {
+                        if !graph_target.matches(&state.app.plugin_state) {
+                            return;
+                        }
+
+                        if let Err(e) = state
+                            .app
+                            .set_plugin_param_string(plugin_idx, param_idx, path)
+                        {
+                            log::error!("[GPUI] Invalid HRTF database directory: {}", e);
                             state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::error(e));
                         }
@@ -2281,10 +2508,14 @@ impl PlayerView {
         {
             let plugin_idx = action.plugin_idx;
             let param_idx = action.param_idx;
-            let graph_target = {
-                let state = self.state.read(cx);
-                let graph = &state.app.plugin_state.graph_state;
-                (graph.editing_graph_node_uuid, graph.draft_generation)
+            let Some(graph_target) = self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .resource_target(plugin_idx)
+            else {
+                return;
             };
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
@@ -2300,8 +2531,7 @@ impl PlayerView {
                     };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
-                        let graph = &state.app.plugin_state.graph_state;
-                        if (graph.editing_graph_node_uuid, graph.draft_generation) != graph_target {
+                        if !graph_target.matches(&state.app.plugin_state) {
                             return;
                         }
 
@@ -2331,6 +2561,15 @@ impl PlayerView {
         {
             let plugin_idx = action.plugin_idx;
             let path_id = action.path_id.clone();
+            let Some(resource_target) = self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .resource_target(plugin_idx)
+            else {
+                return;
+            };
             // Capture graph identity before the async dialog opens. Reading the
             // live modal context after await could redirect the result.
             let target_node_id = self
@@ -2399,15 +2638,11 @@ impl PlayerView {
                                     param_key,
                                 );
                                 state_entity.update(&mut cx.clone(), |state, cx| {
+                                    if !resource_target.matches(&state.app.plugin_state) {
+                                        return;
+                                    }
                                     let effect = if let Some(node_id) = target_node_id {
-                                        if !state.app.plugin_state.graph.nodes.contains_key(&node_id)
-                                        {
-                                            log::warn!(
-                                                "AB Compare: target node disappeared while file dialog was open"
-                                            );
-                                            return;
-                                        }
-                                        state.app.plugin_state.set_ab_compare_config_file_by_node_id(
+                                        state.app.plugin_state.routing_controller_mut().set_ab_compare_config_file_by_node_id(
                                             node_id,
                                             param_idx,
                                             content,
@@ -2429,8 +2664,7 @@ impl PlayerView {
                                         log::info!(
                                             "AB Compare QA: model updated plugin_idx={plugin_idx} path_id={path_id}"
                                         );
-                                        state.app.plugin_state.update_state.pending_plugin_update =
-                                            Some(crate::app::types::PluginUpdateType::Structural);
+                                        state.app.plugin_state.record_editor_effect(effect);
                                         state.app.plugin_state.ab_compare_state.ab_add_menu_target =
                                             None;
                                         cx.notify();

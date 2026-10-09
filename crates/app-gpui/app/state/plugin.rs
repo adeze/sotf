@@ -17,6 +17,37 @@ use sotf_audio_player::{
 use sotf_audio_player_midi::MidiMappingEngine;
 use std::collections::HashMap;
 
+mod resource_edits;
+use resource_edits::{ResourceEdits, ResourcePaths};
+
+fn resource_paths(graph: &sotf_audio_player::PluginGraph) -> ResourcePaths {
+    let mut paths = ResourcePaths::new();
+    for node in graph.nodes.values() {
+        let plugin = &node.plugin;
+        match &plugin.settings {
+            PluginSettings::BinauralDecoder {
+                sofa_file,
+                hrtf_database_dir,
+                ..
+            } => {
+                paths.insert((node.id.as_u128(), 0), sofa_file.clone());
+                paths.insert((node.id.as_u128(), 13), hrtf_database_dir.clone());
+            }
+            PluginSettings::Convolution { ir_file, .. } => {
+                paths.insert((node.id.as_u128(), 0), ir_file.clone());
+            }
+            PluginSettings::XTC { room_ir_file, .. } => {
+                paths.insert(
+                    (node.id.as_u128(), 16),
+                    room_ir_file.clone().unwrap_or_default(),
+                );
+            }
+            _ => {}
+        }
+    }
+    paths
+}
+
 #[derive(Debug, Clone)]
 pub struct PluginState {
     ctrl: PluginController,
@@ -64,6 +95,11 @@ pub struct PluginState {
 
 #[derive(Debug, Clone, Default)]
 pub struct ExternalPluginUiState {
+    /// The stable instance whose nonessential host details are expanded.
+    pub advanced_instance: Option<usize>,
+    /// Open native choice control, owned by stable instance and parameter index.
+    pub choice_menu: Option<(usize, usize)>,
+    pub choice_highlight: Option<usize>,
     pub scan_in_progress: bool,
     pub scan_completed: bool,
     pub scan_error: Option<String>,
@@ -199,13 +235,77 @@ impl From<sotf_audio_player::config::PluginSandboxRuntimeStatus> for ExternalPlu
 /// what kind of engine update is queued.
 #[derive(Debug, Clone, Default)]
 pub struct PluginUpdateState {
+    resource_edits: ResourceEdits,
     /// Whether the chain has been modified since last save.
     pub plugin_graph_modified: bool,
     /// Pending plugin update to apply on the next tick.
     pub pending_plugin_update: Option<PluginUpdateType>,
+    /// Momentary commands cannot be coalesced with a graph rebuild or each other.
+    pub pending_actions: std::collections::VecDeque<PluginUpdateType>,
+    /// Invalidates actor snapshots issued before a plugin editor gesture.
+    pub profile_observation_revision: u64,
+    /// A direct Use Profile edit wins over older cached actor data until the
+    /// actor publishes the same requested flag for this stable instance.
+    pub denoiser_direct_use_guard: std::collections::HashMap<usize, bool>,
+    /// Failed or deferred rebuilds must not route actions through desired graph indices.
+    pub action_topology_unavailable: bool,
     /// The actor accepted a structural update; the Player result is still pending.
     pub pending_ack: Option<PluginUpdateAcknowledgement>,
     pub acknowledged_processing_graph: Option<serde_json::Value>,
+    pub engine_generation: u64,
+    #[cfg(feature = "dev-api")]
+    pub parameter_request_id: u64,
+    #[cfg(feature = "dev-api")]
+    pub last_edit_target: Option<(usize, usize)>,
+    #[cfg(feature = "dev-api")]
+    pub last_parameter_receipt: Option<DevParameterReceipt>,
+    #[cfg(feature = "dev-api")]
+    pub last_edit_rejection: Option<&'static str>,
+}
+
+impl PluginUpdateState {
+    /// Settle the topology fence before considering a newer desired graph.
+    /// The newest rejected action is returned for a user-visible receipt.
+    pub fn settle_action_topology(
+        &mut self,
+        successful: bool,
+        no_engine: bool,
+    ) -> Option<PluginUpdateType> {
+        self.action_topology_unavailable = !successful && !no_engine;
+        if successful {
+            return None;
+        }
+        let latest = self.pending_actions.pop_back();
+        self.pending_actions.clear();
+        latest
+    }
+}
+
+/// One UI gesture's requested value and its worker/processing acknowledgement.
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone)]
+pub struct DevParameterReceipt {
+    pub request_id: u64,
+    pub transport_epoch: u64,
+    pub instance_id: usize,
+    pub engine_generation: u64,
+    /// Set only when this exact structural command completed in the engine.
+    pub accepted_generation: Option<u64>,
+    pub engine_index: usize,
+    pub param_index: usize,
+    pub key: String,
+    pub requested_value: String,
+    pub outcome: DevParameterOutcome,
+}
+
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone)]
+pub enum DevParameterOutcome {
+    Parameter(crate::app::player_handle::PlayerCommandReceipt),
+    Action(crate::app::player_handle::PlayerCommandReceipt),
+    Structural(crate::app::player_handle::PlayerCommandReceipt),
+    Deferred(&'static str),
+    SubmissionError(String),
 }
 
 /// Attribution for the graph actually sent to the actor.
@@ -464,6 +564,8 @@ pub struct PluginUiState {
     /// Last measured rack content-box width, independent of sidebar and panel ratios.
     pub rack_width: Option<f32>,
     pub rack_editor_width: Option<f32>,
+    /// Measured visible parameter scrollport height, updated with the rack divider.
+    pub rack_editor_height: Option<f32>,
     pub listening_width: Option<f32>,
     /// Comparison workspace presentation; blind assignments remain in the controller.
     pub listening_workspace: ListeningWorkspaceState,
@@ -471,6 +573,12 @@ pub struct PluginUiState {
     pub plugin_sections: HashMap<usize, Vec<String>>,
     /// Open Matrix route selector: plugin instance and whether it selects output.
     pub matrix_route_menu: Option<(usize, bool)>,
+    /// Open Matrix preset dropdown, keyed by stable plugin instance.
+    pub matrix_preset_menu: Option<usize>,
+    /// Keyboard cursor for the active Matrix preset/route dropdown.
+    pub matrix_choice_highlight: Option<usize>,
+    /// Keyboard cursor for the active Spectrum display dropdown.
+    pub spectrum_header_highlight: Option<usize>,
     /// Which plugin UI view mode to show
     pub plugin_ui_view: PluginUiView,
     /// Whether the controller picker dropdown is open
@@ -479,10 +587,22 @@ pub struct PluginUiState {
     pub rack_config_overlay_open: bool,
     /// Whether the plugin skin picker dropdown is open.
     pub rack_skin_picker_open: bool,
+    /// Keyboard cursors for the rack View and Skin dropdowns.
+    pub rack_view_highlight: Option<usize>,
+    pub rack_skin_highlight: Option<usize>,
     /// Compact EQ: whether the global config panel is expanded.
     pub eq_compact_config_open: bool,
     /// Compact EQ: whether the graph is visible in inspector mode.
     pub eq_compact_graph_visible: bool,
+    /// Selected EQ band editor anchored to its band chip.
+    pub eq_band_popup_open: bool,
+    pub eq_header_menu: Option<usize>,
+    pub eq_header_highlight: Option<usize>,
+    pub eq_filter_type_open: bool,
+    pub eq_filter_type_highlight: Option<usize>,
+    pub eq_band_details_open: bool,
+    /// Compact compressor detail controls below the always-visible dynamics.
+    pub compressor_advanced_open: bool,
     /// FIR EQ point currently being previewed. Committed on pointer release.
     pub eq_drag_preview: Option<EqDragPreview>,
 }
@@ -657,6 +777,99 @@ impl DerefMut for PluginState {
 }
 
 impl PluginState {
+    pub(crate) fn resource_path_before_edit(
+        &self,
+        plugin_idx: usize,
+        param_idx: usize,
+    ) -> Option<((u128, usize), String)> {
+        let plugin = self.graph.get_plugin(plugin_idx)?;
+        let node = self
+            .graph
+            .nodes
+            .values()
+            .find(|node| node.plugin.id == plugin.id)?;
+        let key = (node.id.as_u128(), param_idx);
+        resource_paths(&self.graph)
+            .remove(&key)
+            .map(|path| (key, path))
+    }
+
+    pub(crate) fn remember_resource_edit(&mut self, previous: Option<((u128, usize), String)>) {
+        if let Some((key, path)) = previous {
+            self.update_state.resource_edits.record(key, path);
+        }
+    }
+
+    pub(crate) fn settle_resource_edits(
+        &mut self,
+        submitted: &serde_json::Value,
+        accepted: bool,
+    ) -> bool {
+        let Ok(graph) = serde_json::from_value::<sotf_audio_player::PluginGraph>(submitted.clone())
+        else {
+            return false;
+        };
+        let current = resource_paths(&self.graph);
+        let restored =
+            self.update_state
+                .resource_edits
+                .settle(&resource_paths(&graph), &current, accepted);
+        let changed = !restored.is_empty();
+        for ((instance, param), path) in restored {
+            if let Some(node) = self
+                .graph
+                .nodes
+                .values_mut()
+                .find(|node| node.id.as_u128() == instance)
+            {
+                let plugin = &mut node.plugin;
+                match &mut plugin.settings {
+                    PluginSettings::BinauralDecoder { sofa_file, .. } if param == 0 => {
+                        *sofa_file = path
+                    }
+                    PluginSettings::BinauralDecoder {
+                        hrtf_database_dir, ..
+                    } if param == 13 => *hrtf_database_dir = path,
+                    PluginSettings::Convolution { ir_file, .. } if param == 0 => *ir_file = path,
+                    PluginSettings::XTC { room_ir_file, .. } if param == 16 => {
+                        *room_ir_file = (!path.is_empty()).then_some(path);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if changed {
+            self.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+        }
+        changed
+    }
+
+    /// Capture the original target of an asynchronous resource picker.
+    pub fn resource_target(&self, plugin_idx: usize) -> Option<PluginResourceTarget> {
+        let editor_node_id = self.graph_state.editing_graph_node_uuid;
+        let graph = if editor_node_id.is_some() {
+            &self.routing_controller().graph
+        } else {
+            &self.ctrl.graph
+        };
+        let node = if let Some(id) = editor_node_id {
+            graph.nodes.get(&id)?
+        } else {
+            let instance_id = graph.get_plugin(plugin_idx)?.id;
+            graph
+                .nodes
+                .values()
+                .find(|node| node.plugin.id == instance_id)?
+        };
+        Some(PluginResourceTarget {
+            plugin_idx,
+            node_id: node.id,
+            instance_id: node.plugin.id,
+            editor_node_id,
+            draft_generation: self.graph_state.draft_generation,
+        })
+    }
+
     /// Resolve custom-editor instance IDs in the same controller as the editor.
     /// A draft-only node must never fall back to an active playback node.
     pub fn editor_settings_mut_by_instance_id(
@@ -688,10 +901,82 @@ impl PluginState {
     }
 
     pub fn record_editor_effect(&mut self, effect: PluginUpdateEffect) {
-        if self.graph_state.editing_graph_node_uuid.is_some() && self.graph_state.draft.is_some() {
+        self.update_state.profile_observation_revision = self
+            .update_state
+            .profile_observation_revision
+            .wrapping_add(1);
+        let draft_edit =
+            self.graph_state.editing_graph_node_uuid.is_some() && self.graph_state.draft.is_some();
+        #[cfg(feature = "dev-api")]
+        {
+            self.update_state.parameter_request_id =
+                self.update_state.parameter_request_id.wrapping_add(1);
+            self.update_state.last_parameter_receipt = None;
+            self.update_state.last_edit_target = None;
+            self.update_state.last_edit_rejection = if draft_edit {
+                Some("routing draft has not been applied")
+            } else if matches!(effect, PluginUpdateEffect::None) {
+                Some("edit produced no settings change")
+            } else {
+                None
+            };
+        }
+        if draft_edit {
             return;
         }
+        let direct_denoiser = match &effect {
+            PluginUpdateEffect::Parameter {
+                plugin_index,
+                param_index: 21,
+            } => self.graph.get_plugin(*plugin_index),
+            PluginUpdateEffect::ParameterByNodeId {
+                node_id,
+                param_index: 21,
+            } => self.graph.nodes.get(node_id).map(|node| &node.plugin),
+            _ => None,
+        };
+        if let Some(plugin) = direct_denoiser
+            && let sotf_audio_player::PluginSettings::Denoiser {
+                use_captured_profile,
+                ..
+            } = &plugin.settings
+        {
+            self.update_state
+                .denoiser_direct_use_guard
+                .insert(plugin.id, *use_captured_profile);
+        }
+        if let PluginUpdateEffect::Action {
+            node_id: Some(node_id),
+            param_index: 20 | 22,
+            ..
+        } = &effect
+            && let Some(action_id) = self.graph.nodes.get(node_id).map(|node| node.plugin.id)
+            && self
+                .update_state
+                .denoiser_direct_use_guard
+                .contains_key(&action_id)
+        {
+            // A later Learn/Clear on this instance can change the flag in
+            // the engine; its stamped snapshots supersede the direct edit.
+            self.update_state
+                .denoiser_direct_use_guard
+                .remove(&action_id);
+        }
         self.record_ab_test_effect(effect);
+    }
+
+    #[cfg(feature = "dev-api")]
+    pub fn record_qa_target(&mut self, plugin_idx: usize, param_idx: usize) {
+        let instance_id = if let Some(node_id) = self.graph_state.editing_graph_node_uuid {
+            self.routing_controller()
+                .graph
+                .nodes
+                .get(&node_id)
+                .map(|node| node.plugin.id)
+        } else {
+            self.graph.get_plugin(plugin_idx).map(|plugin| plugin.id)
+        };
+        self.update_state.last_edit_target = instance_id.map(|id| (id, param_idx));
     }
     pub fn begin_routing_draft(&mut self) {
         if self.graph_state.draft.is_none() {
@@ -703,6 +988,26 @@ impl PluginState {
 
     pub fn routing_controller(&self) -> &PluginController {
         self.graph_state.draft.as_ref().unwrap_or(&self.ctrl)
+    }
+
+    /// Profile actions are immediate named commands, so route them against
+    /// the applied graph only. An unapplied draft cannot provide a stable
+    /// engine target and must not queue an action for later replay.
+    pub fn dispatch_applied_graph_profile_action(
+        &mut self,
+        node_id: GraphNodeId,
+        param_idx: usize,
+        value: f64,
+    ) -> Option<PluginUpdateEffect> {
+        if self.graph_state.draft.is_some() {
+            return None;
+        }
+        let node = self.ctrl.graph.nodes.get(&node_id)?;
+        sotf_audio_player::momentary_action_param(&node.plugin.settings, param_idx)?;
+        Some(
+            self.ctrl
+                .set_plugin_param_by_node_id(node_id, param_idx, value),
+        )
     }
 
     pub fn routing_controller_mut(&mut self) -> &mut PluginController {
@@ -805,6 +1110,29 @@ impl PluginState {
     }
 
     fn record_ab_test_effect(&mut self, effect: PluginUpdateEffect) {
+        if let PluginUpdateEffect::Action {
+            plugin_index,
+            node_id,
+            param_index,
+            key,
+            value,
+        } = effect
+        {
+            self.update_state
+                .pending_actions
+                .push_back(PluginUpdateType::Action {
+                    plugin_index,
+                    node_id,
+                    param_index,
+                    key,
+                    value,
+                    #[cfg(feature = "dev-api")]
+                    request_id: self.update_state.parameter_request_id,
+                    #[cfg(not(feature = "dev-api"))]
+                    request_id: 0,
+                });
+            return;
+        }
         // A cue can arrive before the tick publishes the runtime graph. Never
         // replace that rebuild with a parameter command for a not-yet-live slot,
         // or erase teardown work when leaving an already inactive runtime.
@@ -833,6 +1161,7 @@ impl PluginState {
                 node_id,
                 param_index,
             }),
+            PluginUpdateEffect::Action { .. } => unreachable!("actions are queued separately"),
         };
     }
 
@@ -959,6 +1288,23 @@ impl PluginState {
                     PluginBuildTarget::Host => false,
                 }
             })
+    }
+}
+
+/// Stable target for a resource selection completed after an asynchronous dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PluginResourceTarget {
+    plugin_idx: usize,
+    node_id: GraphNodeId,
+    instance_id: usize,
+    editor_node_id: Option<GraphNodeId>,
+    draft_generation: u64,
+}
+
+impl PluginResourceTarget {
+    /// Whether the original instance still owns the editor's target slot.
+    pub fn matches(&self, state: &PluginState) -> bool {
+        state.resource_target(self.plugin_idx).as_ref() == Some(self)
     }
 }
 

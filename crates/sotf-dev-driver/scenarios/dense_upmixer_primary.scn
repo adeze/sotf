@@ -1,0 +1,26 @@
+resize 1000 700
+focus Studio
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/upmixer-before.json
+assert_within plugin.upmixer.exact.2.1 rack.params
+assert_within plugin.upmixer.exact.2.2 rack.params
+assert_within plugin.upmixer.exact.2.3 rack.params
+assert_within plugin.upmixer.exact.2.5 rack.params
+assert_within plugin.upmixer.exact.2.12 rack.params
+assert_within plugin.upmixer.exact.2.13 rack.params
+assert_within plugin.upmixer.exact.2.34 rack.params
+click plugin.upmixer.exact.2.1
+key cmd-a
+type "0.8"
+key enter
+assert plugins.plugin.2.param.1.value == 0.8 tolerance=0.001
+click plugin.upmixer.exact.2.12
+key cmd-a
+type "0.7"
+key enter
+assert plugins.plugin.2.param.12.value == 0.7 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/upmixer-edited.json
+screenshot upmixer-edited

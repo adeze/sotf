@@ -69,55 +69,89 @@ wait_idle
 assert plugins.plugin.2.param.12.value == 0 tolerance=0.001
 assert plugins.plugin.2.enabled == true
 screenshot crossfeed-numeric-bounds
-scroll_into_view rack.params plugin.choice.2.0.1
-click plugin.choice.2.0.1
+scroll_into_view rack.params plugin.select.2.0
+click plugin.select.2.0
+key up
+key up
+key enter
+wait_idle 300ms
 assert plugins.plugin.2.param.0.value == 1
 assert_accessible slider Bauer Cutoff
 assert_inaccessible slider Meier Level
 screenshot crossfeed-bauer
-click plugin.choice.2.0.2
+click plugin.select.2.0
+key down
+key enter
+wait_idle 300ms
 assert plugins.plugin.2.param.0.value == 2
 assert_accessible slider Meier Level
 assert_inaccessible slider Bauer Cutoff
 screenshot crossfeed-meier
-click plugin.choice.2.0.3
+click plugin.select.2.0
+key down
+key enter
+wait_idle 300ms
 assert plugins.plugin.2.param.0.value == 3
 assert_accessible slider MB Low Freq
 assert_inaccessible slider Meier Level
 screenshot crossfeed-multiband
-click rack.config.toggle
-scroll_into_view rack.config.scroll plugin.choice.2.1.2
-click plugin.choice.2.1.2
+# Preset is an existing header dropdown, not a DSP control in the gear.
+click plugin.select.2.1
+key down
+key down
+key enter
+wait_idle 300ms
 assert plugins.plugin.2.param.1.value == 2
 assert plugins.plugin.2.param.0.value == 2
 assert plugins.plugin.2.param.6.value == 30
-scroll_into_view rack.config.scroll plugin.choice.2.1.1
-click plugin.choice.2.1.1
+click plugin.select.2.1
+key up
+key enter
+wait_idle 300ms
 assert plugins.plugin.2.param.1.value == 1
 assert plugins.plugin.2.param.0.value == 1
 assert plugins.plugin.2.param.4.value == 700
 assert plugins.plugin.2.param.5.value == 6
-scroll_into_view rack.config.scroll plugin.choice.2.1.4
-click plugin.choice.2.1.4
+click plugin.select.2.1
+key down
+key down
+key down
+key enter
+wait_idle 300ms
 assert plugins.plugin.2.param.1.value == 4
 assert plugins.plugin.2.param.0.value == 0
 screenshot crossfeed-preset-off
-scroll_into_view rack.config.scroll plugin.choice.2.1.0
-click plugin.choice.2.1.0
+click plugin.select.2.1
+key down
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 0
 assert plugins.plugin.2.param.0.value == 1
 assert plugins.plugin.2.param.5.value == 4.5
-scroll_into_view rack.config.scroll plugin.choice.2.1.3
-click plugin.choice.2.1.3
+click plugin.select.2.1
+key down
+key down
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 3
 assert plugins.plugin.2.param.0.value == 3
 assert plugins.plugin.2.param.7.value == 150
 assert plugins.plugin.2.param.8.value == 5700
-scroll_into_view rack.config.scroll plugin.choice.2.1.5
-click plugin.choice.2.1.5
+click plugin.select.2.1
+key down
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 5
 assert plugins.plugin.2.param.0.value == 4
 screenshot crossfeed-preset-hrtf
-scroll_into_view rack.config.scroll plugin.choice.2.1.4
-click plugin.choice.2.1.4
-click rack.config.toggle
+click plugin.select.2.1
+key up
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 4
 scroll rack.params 5000
 screenshot crossfeed-off-summary
 plugin_remove 2

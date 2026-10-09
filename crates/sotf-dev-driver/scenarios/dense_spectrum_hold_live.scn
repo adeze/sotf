@@ -1,0 +1,67 @@
+# 2026-10-09: Native real-playback Hold acceptance for ui_spectrum_screen.rs.
+# Verify held values/full-chain isolation with the retained artifact verifier.
+resize 1440 1000
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add SpectrumAnalyzer
+action PluginSelectFirstUser
+click meters.group.0.mute
+assert meters.group.0.muted == true
+plugin_chain_save $SOTF_QA_DIR/before.json
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"analysis-muted"}
+wait_until playback.is_playing == true timeout=12s
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+wait_until plugins.spectrum.bins == 30 timeout=12s
+click sidebar.nav-spectrum
+wait_until spectrum.has_data == true timeout=12s
+wait_visible spectrum.plot timeout=5s
+scroll spectrum.content -2000
+wait_idle 250ms
+click spectrum.details
+wait_visible spectrum.inspect-frequency timeout=5s
+click spectrum.inspect-frequency
+key cmd-a
+type "440"
+key enter
+wait_until spectrum.cursor_level > -70 timeout=5s
+scroll spectrum.content 2000
+wait_idle 250ms
+click spectrum.hold
+wait_until spectrum.hold == true timeout=5s
+query spectrum.cursor_level
+query spectrum.output_rate
+screenshot spectrum-held-live
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "64"
+key enter
+wait_until plugins.spectrum.bins == 64 timeout=12s
+plugin_chain_save $SOTF_QA_DIR/edited.json
+click sidebar.nav-spectrum
+wait_until spectrum.hold == true timeout=5s
+query spectrum.cursor_level
+query spectrum.output_rate
+screenshot spectrum-held-after-bin-change
+click transport.play
+wait_until playback.is_playing == false timeout=5s
+assert spectrum.hold == true
+assert_visible spectrum.plot
+query spectrum.cursor_level
+query spectrum.output_rate
+screenshot spectrum-held-paused
+click spectrum.hold
+wait_until spectrum.hold == false timeout=5s
+click transport.play
+wait_until playback.is_playing == true timeout=12s
+wait_until spectrum.has_data == true timeout=12s
+wait_until spectrum.cursor_level > -70 timeout=5s
+query spectrum.cursor_level
+screenshot spectrum-live-released
+assert meters.group.0.muted == true
+click transport.play
+wait_until playback.is_playing == false timeout=5s

@@ -1,0 +1,37 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Aec
+action PluginSelectFirstUser
+wait_idle 500ms
+assert_text plugin.layout.aec.channel_status.2 == "Input 1: microphone · Input 2: far-end reference · Output: mono"
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "300"
+key enter
+assert plugins.plugin.2.param.0.value == 300 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "0.65"
+key enter
+assert plugins.plugin.2.param.1.value == 0.65 tolerance=0.001
+click plugin.choice.2.2.0
+assert plugins.plugin.2.param.2.value == 0
+wait_idle 500ms
+assert_text plugin.layout.aec.channel_status.2 == "Input 1: microphone · Input 2: far-end reference · Output: mono"
+screenshot aec-wide
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.layout.aec.channel_status.2 rack.params
+screenshot aec-narrow
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert_text plugin.layout.aec.channel_status.2 == "Input 1: microphone · Input 2: far-end reference · Output: mono"
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

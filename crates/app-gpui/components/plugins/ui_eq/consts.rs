@@ -149,10 +149,10 @@ pub(crate) const BAND_COLOR_FALLBACK: u32 = 0x9ca3af;
 
 /// Chart layout constants for control point positioning
 /// These MUST match gpui-px line chart margins (see gpui-px/src/line.rs)
-/// Left margin = Y-axis total_size() = 60 (base) + 20 (title: font_size 12 + padding 8)
-pub const CHART_LEFT_MARGIN: f32 = 80.0; // Y-axis rendered width when y_label is set
+/// Left margin = untitled Y-axis total_size() = 60.
+pub const CHART_LEFT_MARGIN: f32 = 60.0; // Untitled Y-axis tick width.
 
-pub const CHART_RIGHT_MARGIN: f32 = 20.0; // gpui-px margin_right (no secondary axis)
+pub const CHART_RIGHT_MARGIN: f32 = 0.0; // EQ opts into an edge-to-edge plot.
 
 pub const CHART_TOP_MARGIN: f32 = 0.0;
 

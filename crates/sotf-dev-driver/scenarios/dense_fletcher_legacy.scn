@@ -1,0 +1,66 @@
+resize 1440 1000
+focus Studio
+plugin_clear
+plugin_chain_load crates/app-gpui/tests/fixtures/legacy-fletcher-dense-chain.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.11.value == 2
+assert plugins.plugin.2.param.13.value == 69
+assert plugins.plugin.2.param.14.value == -18
+assert_absent plugin.param.2.14.exact
+plugin_chain_save $SOTF_QA_DIR/before.json
+screenshot legacy-fletcher-auto
+scroll_into_view rack.params plugin.param.2.13.exact
+click plugin.param.2.13.exact
+key cmd-a
+type "86"
+key enter
+assert plugins.plugin.2.param.13.value == 86
+scroll_into_view rack.params plugin.choice.2.11.0
+click plugin.choice.2.11.0
+assert plugins.plugin.2.param.11.value == 0
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "5"
+key enter
+assert plugins.plugin.2.param.1.value == 5
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "2"
+key enter
+assert plugins.plugin.2.param.3.value == 2
+scroll_into_view rack.params plugin.choice.2.15.1
+click plugin.choice.2.15.1
+assert plugins.plugin.2.param.15.value == 1
+assert plugins.plugin.2.param.8.value == 1
+scroll_into_view rack.params plugin.choice.2.16.1
+click plugin.choice.2.16.1
+assert plugins.plugin.2.param.16.value == 1
+scroll_into_view rack.params plugin.choice.2.11.1
+click plugin.choice.2.11.1
+assert plugins.plugin.2.param.11.value == 1
+scroll_into_view rack.params plugin.param.2.12.exact
+click plugin.param.2.12.exact
+key cmd-a
+type "65"
+key enter
+assert plugins.plugin.2.param.12.value == 65
+plugin_chain_save $SOTF_QA_DIR/edited.json
+screenshot legacy-fletcher-iso
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.13.value == 86
+assert plugins.plugin.2.param.11.value == 1
+assert plugins.plugin.2.param.12.value == 65
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.setup.2.header
+assert_within plugin.param.2.13.exact rack.params
+assert_within plugin.param.2.12.exact rack.params
+assert_absent plugin.param.2.1.exact
+assert_absent plugin.param.2.3.exact
+screenshot legacy-fletcher-narrow

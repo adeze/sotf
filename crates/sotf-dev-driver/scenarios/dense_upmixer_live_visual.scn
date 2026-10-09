@@ -1,0 +1,76 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+wait_until meters.group_count == 4 timeout=5s
+assert meters.group_count == 4
+click meters.group.0.mute
+wait_until meters.group.0.muted == true timeout=5s
+click meters.group.1.mute
+wait_until meters.group.1.muted == true timeout=5s
+click meters.group.2.mute
+wait_until meters.group.2.muted == true timeout=5s
+click meters.group.3.mute
+wait_until meters.group.3.muted == true timeout=5s
+plugin_chain_save $SOTF_QA_DIR/muted.json
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"analysis-muted"}
+wait_until playback.is_playing == true timeout=12s
+wait_until playback.position_secs > 1 timeout=15s
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+wait_idle 500ms
+wait_until meters.has_data == true timeout=10s
+assert_visible upmixer.visualization
+assert_text upmixer.visualization == "2D:SPL"
+screenshot upmixer-live-spl
+click upmixer.metric.correlation
+wait_idle 500ms
+assert_text upmixer.metric.reference == "FL"
+assert_visible upmixer.visualization
+assert_text upmixer.visualization == "2D:Correlation"
+click upmixer.metric.reference
+wait_idle 500ms
+# FR row measured from native reference-open run-1791564087.
+click_at 1060 510
+wait_idle 500ms
+assert_text upmixer.metric.reference == "FR"
+# Arrow/Enter must edit the reference without selecting another rack card.
+click upmixer.metric.reference
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert_text upmixer.metric.reference == "C"
+click upmixer.metric.reference
+wait_idle 300ms
+key up
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert_text upmixer.metric.reference == "FR"
+# Escape cancels a highlighted option without changing the reference.
+click upmixer.metric.reference
+wait_idle 300ms
+key down
+wait_idle 300ms
+key escape
+wait_idle 300ms
+assert_text upmixer.metric.reference == "FR"
+assert_visible upmixer.visualization
+screenshot upmixer-live-correlation
+click plugin.shell.2.spatial
+wait_idle 300ms
+click_at 686 478
+wait_idle 500ms
+assert_text plugin.shell.2.spatial == "3D"
+assert_visible upmixer.visualization
+assert_text upmixer.visualization == "3D:Correlation"
+screenshot upmixer-live-3d
+click transport.play
+wait_until playback.is_playing == false timeout=5s
+plugin_chain_save $SOTF_QA_DIR/after-live.json

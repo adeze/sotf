@@ -16,7 +16,7 @@ pub use data::{ChannelMetric, SpeakerVertex, SpiderMode, SpiderPolygon};
 pub use render::SpiderView3D;
 pub use render::{
     SpiderColors, SpiderDisc2D, render_spatial_spider_controls, render_spatial_spider_graph,
-    render_spatial_spider_panel, resolve_speaker_config,
+    render_spatial_spider_metric_controls, render_spatial_spider_panel, resolve_speaker_config,
 };
 
 #[cfg(feature = "gpu-3d")]
@@ -29,6 +29,8 @@ use std::rc::Rc;
 /// Top-level rendering mode for the spider widget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpiderViewMode {
+    /// Hide the spatial visualization.
+    Off,
     /// Top-down horizontal disc.
     #[default]
     Disc2D,
@@ -43,6 +45,8 @@ pub enum SpiderViewMode {
 #[derive(Clone)]
 pub struct SpatialSpiderUiState {
     pub view_mode: SpiderViewMode,
+    pub menu_open: bool,
+    pub correlation_menu_open: bool,
     pub spider_mode: SpiderMode,
     /// Reference channel for correlation mode. Default 0 (FL).
     pub correlation_ref_channel: usize,
@@ -50,6 +54,8 @@ pub struct SpatialSpiderUiState {
     /// Drives the `is_open` prop on the gpui-ui-kit `Select` so it stays
     /// expanded between renders.
     pub ref_channel_select_open: bool,
+    /// Highlighted option in the reference-channel dropdown.
+    pub ref_channel_highlight: Option<usize>,
     /// Shared orbit-camera state for the 3D view. Wrapped in `Rc<RefCell>`
     /// so the GPUI element can mutate it from mouse handlers without
     /// borrowing `AppState`.
@@ -65,9 +71,12 @@ impl Default for SpatialSpiderUiState {
         let camera_3d = Rc::new(RefCell::new(Lines3DState::new(3.5, 20.0, 20.0)));
         Self {
             view_mode: SpiderViewMode::Disc2D,
+            menu_open: false,
+            correlation_menu_open: false,
             spider_mode: SpiderMode::Spl,
             correlation_ref_channel: 0,
             ref_channel_select_open: false,
+            ref_channel_highlight: None,
             #[cfg(feature = "gpu-3d")]
             camera_3d,
         }

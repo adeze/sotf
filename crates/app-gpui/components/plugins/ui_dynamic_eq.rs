@@ -1,20 +1,28 @@
 //! Dynamic EQ plugin UI.
 
-use super::common::{render_knob_sized, render_toggle};
+use super::ui_layout_renderer::{
+    render_compact_choice_param, render_compact_selector_param, render_horizontal_param,
+};
 use crate::app::AppState;
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::components::design::Ds;
 use crate::components::graphs::common::rgba_to_u32;
 use crate::components::graphs::response_graphs::{ChartConfig, Series, render_line_chart};
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::render_gr_meter;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_audio_kit::PotentiometerSize;
 use gpui_px::ScaleType;
+use gpui_ui_kit::{
+    Accordion, AccordionItem, AccordionMode, Button, ButtonSize, ButtonVariant, NumberInput,
+    NumberInputSize, Text,
+};
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::DynamicEqData;
-use sotf_plugins::param_specs::{dynamic_eq as specs, find_by_key as pk};
+use sotf_plugins::param_specs::dynamic_eq as specs;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -43,16 +51,7 @@ pub fn render_dynamic_eq_plugin(
         .hal_config
         .sample_rate;
     let PluginSettings::DynamicEq {
-        num_bands,
-        threshold,
-        ratio,
-        attack,
-        release,
-        knee,
-        link_channels,
-        mix,
-        bands,
-        ..
+        num_bands, bands, ..
     } = settings
     else {
         return div().into_any_element();
@@ -60,7 +59,7 @@ pub fn render_dynamic_eq_plugin(
 
     let num_bands = (*num_bands as usize).clamp(1, 8);
     let selected_band_idx = selected_band_idx.min(num_bands.saturating_sub(1));
-    let compact = available_width / layout_scale.max(0.01) < 720.0;
+    let wide = available_width / layout_scale.max(0.01) >= 800.0;
     let gr = plugin_data
         .and_then(|data| data.downcast::<DynamicEqData>().ok())
         .map(|data| data.gain_reduction_db.clone());
@@ -68,25 +67,33 @@ pub fn render_dynamic_eq_plugin(
     div()
         .flex()
         .flex_col()
-        .gap(d.section_lg)
+        .gap(d.grid)
         .w_full()
-        .child(render_global_controls(
+        .min_w_0()
+        .child(render_band_tabs(
             &d,
             entity.clone(),
             plugin_idx,
-            num_bands as f64,
-            *threshold,
-            *ratio,
-            *attack,
-            *release,
-            *knee,
-            *link_channels,
-            *mix,
-            selected_param,
-            is_editing,
-            compact,
+            bands,
+            num_bands,
+            selected_band_idx,
+            gr.as_deref(),
             text,
             theme,
+        ))
+        .child(render_selected_band(
+            &d,
+            entity.clone(),
+            plugin_idx,
+            bands,
+            selected_band_idx,
+            selected_param,
+            is_editing,
+            wide,
+            settings.param_value(7).unwrap_or(1.0),
+            text,
+            theme,
+            cx,
         ))
         .child(render_dynamic_eq_response(
             &d,
@@ -99,36 +106,25 @@ pub fn render_dynamic_eq_plugin(
             text,
             theme,
         ))
-        .child(render_band_tabs(
-            &d,
-            entity.clone(),
-            plugin_idx,
-            bands,
-            num_bands,
-            selected_band_idx,
-            gr.as_deref(),
-            theme,
-        ))
-        .child(render_selected_band(
+        .child(render_global_controls(
             &d,
             entity,
             plugin_idx,
-            bands,
-            selected_band_idx,
+            settings,
             selected_param,
             is_editing,
-            compact,
             text,
             theme,
+            cx,
         ))
         .into_any_element()
 }
 
 /// Render the static response of the active bands and a live GR meter for the
 /// selected band. The response is intentionally derived from the same
-/// peaking-EQ coefficients used by the DSP, rather than from a decorative
-/// bell-shaped approximation, so changing frequency, Q, or gain is visible in
-/// the chart immediately.
+/// coefficient designers used by the DSP, including shelves and tilt. Routing
+/// is shown on the selected band; a combined target is only meaningful when
+/// every active band uses Stereo routing.
 #[allow(clippy::too_many_arguments)]
 fn render_dynamic_eq_response(
     d: &Ds,
@@ -167,59 +163,75 @@ fn render_dynamic_eq_response(
     let active_bands: Vec<&sotf_plugins::DynEqBandParams> =
         bands.iter().take(num_bands).filter(audible_band).collect();
 
+    let stereo_combination = active_bands
+        .iter()
+        .all(|band| band.placement == sotf_plugins::plugin_dynamic_eq::DynEqPlacement::Stereo);
     let combined: Vec<f64> = frequencies
         .iter()
         .map(|frequency| {
             active_bands
                 .iter()
                 .map(|band| {
-                    peaking_eq_response_db(
+                    sotf_plugins::plugin_dynamic_eq::target_band_response_db(
+                        band,
                         *frequency,
-                        f64::from(band.frequency),
-                        f64::from(band.q),
-                        f64::from(band.gain),
                         sample_rate,
                     )
+                    .unwrap_or(0.0)
                 })
                 .sum()
         })
         .collect();
 
+    let selected_gain = bands
+        .get(selected_band_idx)
+        .map_or(0.0, |band| f64::from(band.gain).abs());
     let y_limit = (combined
         .iter()
         .map(|value| value.abs())
-        .fold(0.0_f64, f64::max)
+        .fold(selected_gain, f64::max)
         + 3.0)
         .clamp(12.0, 36.0);
-    let chart_width = available_width.clamp(280.0, 900.0);
+    let chart_width = available_width.max(280.0);
     let chart_height = (chart_width * 0.34).clamp(130.0, 210.0);
 
-    let mut series = vec![
-        Series::new(
-            "Combined",
-            rgba_to_u32(theme.accent),
-            frequencies.clone(),
-            combined,
-        )
-        .with_width(2.5),
-    ];
+    let mut series = Vec::new();
+    if stereo_combination {
+        series.push(
+            Series::new(
+                "Combined target",
+                rgba_to_u32(theme.accent),
+                frequencies.clone(),
+                combined,
+            )
+            .with_width(2.5),
+        );
+    }
 
-    if let Some(selected_band) = bands.get(selected_band_idx).filter(audible_band) {
+    if let Some(selected_band) = bands.get(selected_band_idx) {
         let selected_response = frequencies
             .iter()
             .map(|frequency| {
-                peaking_eq_response_db(
+                sotf_plugins::plugin_dynamic_eq::target_band_response_db(
+                    selected_band,
                     *frequency,
-                    f64::from(selected_band.frequency),
-                    f64::from(selected_band.q),
-                    f64::from(selected_band.gain),
                     sample_rate,
                 )
+                .unwrap_or(0.0)
             })
             .collect();
         series.push(
             Series::new(
-                format!("{} {}", text.label("Band"), selected_band_idx + 1),
+                format!(
+                    "{} {} · {}",
+                    text.label("Band"),
+                    selected_band_idx + 1,
+                    specs::ROUTING_PARAMS[0]
+                        .choice_labels()
+                        .get(selected_band.placement.choice_index() as usize)
+                        .copied()
+                        .unwrap_or("Stereo")
+                ),
                 rgba_to_u32(theme.warning),
                 frequencies,
                 selected_response,
@@ -234,7 +246,7 @@ fn render_dynamic_eq_response(
         ChartConfig {
             title: None,
             x_label: Some("Hz".to_string()),
-            y_label: Some("dB".to_string()),
+            y_label: None,
             x_range: (MIN_FREQ, max_freq),
             y_range: (-y_limit, y_limit),
             x_scale: ScaleType::Log,
@@ -257,9 +269,8 @@ fn render_dynamic_eq_response(
         .flex()
         .flex_col()
         .gap(d.gap)
-        .p(d.card)
-        .rounded(d.r_lg)
-        .bg(theme.surface)
+        .w_full()
+        .min_w_0()
         .child(
             div()
                 .flex()
@@ -268,7 +279,7 @@ fn render_dynamic_eq_response(
                 .text_size(d.text_sm)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_primary)
-                .child(text.label("Response"))
+                .child("Target response")
                 .child(
                     div()
                         .text_size(d.text_xs)
@@ -287,217 +298,149 @@ fn render_dynamic_eq_response(
         .into_any_element()
 }
 
-/// Magnitude response of a peaking biquad at `frequency` in Hz.
-fn peaking_eq_response_db(
-    frequency: f64,
-    center_frequency: f64,
-    q: f64,
-    gain_db: f64,
-    sample_rate: f64,
-) -> f64 {
-    if !frequency.is_finite()
-        || !center_frequency.is_finite()
-        || !q.is_finite()
-        || !gain_db.is_finite()
-        || !sample_rate.is_finite()
-        || frequency <= 0.0
-        || center_frequency <= 0.0
-        || q <= 0.0
-        || sample_rate <= 0.0
-    {
-        return 0.0;
-    }
-
-    let center_omega = 2.0 * std::f64::consts::PI * center_frequency / sample_rate;
-    let alpha = center_omega.sin() / (2.0 * q);
-    let amplitude = 10.0_f64.powf(gain_db / 40.0);
-    let center_cos = center_omega.cos();
-
-    let b0 = 1.0 + alpha * amplitude;
-    let b1 = -2.0 * center_cos;
-    let b2 = 1.0 - alpha * amplitude;
-    let a0 = 1.0 + alpha / amplitude;
-    let a1 = -2.0 * center_cos;
-    let a2 = 1.0 - alpha / amplitude;
-
-    let omega = 2.0 * std::f64::consts::PI * frequency / sample_rate;
-    let cos_omega = omega.cos();
-    let sin_omega = omega.sin();
-    let cos_2omega = (2.0 * omega).cos();
-    let sin_2omega = (2.0 * omega).sin();
-    let numerator =
-        (b0 + b1 * cos_omega + b2 * cos_2omega).hypot(-b1 * sin_omega - b2 * sin_2omega);
-    let denominator =
-        (a0 + a1 * cos_omega + a2 * cos_2omega).hypot(-a1 * sin_omega - a2 * sin_2omega);
-
-    if denominator > f64::EPSILON && numerator.is_finite() && denominator.is_finite() {
-        (20.0 * (numerator / denominator).log10()).clamp(-60.0, 60.0)
-    } else {
-        0.0
-    }
-}
-
+/// Global dynamics defaults stay below the selected-band editor.
 #[allow(clippy::too_many_arguments)]
 fn render_global_controls(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
-    num_bands: f64,
-    threshold: f64,
-    ratio: f64,
-    attack: f64,
-    release: f64,
-    knee: f64,
-    link_channels: bool,
-    mix: f64,
+    settings: &PluginSettings,
     selected_param: usize,
     is_editing: bool,
-    compact: bool,
     text: PluginCommonTranslations,
     theme: &Theme,
-) -> impl IntoElement {
-    let params = specs::PARAMS;
-    let knob_size = if compact {
-        PotentiometerSize::Xs
-    } else {
-        PotentiometerSize::Sm
-    };
+    cx: &App,
+) -> AnyElement {
+    let app = &entity.read(cx).app;
+    let instance_id = app
+        .plugin_state
+        .graph_state
+        .editing_graph_node_uuid
+        .and_then(|id| app.plugin_state.routing_controller().graph.nodes.get(&id))
+        .map(|node| node.plugin.id)
+        .or_else(|| {
+            app.plugin_state
+                .graph
+                .get_plugin(plugin_idx)
+                .map(|plugin| plugin.id)
+        })
+        .unwrap_or(plugin_idx);
+    let section = "dynamic-eq-global";
+    let expanded = app
+        .plugin_state
+        .plugin_ui_state
+        .plugin_sections
+        .get(&instance_id)
+        .is_some_and(|sections| sections.iter().any(|id| id == section));
+    let mut controls = div().flex().flex_col().gap(d.grid).w_full();
+    for index in 1..=5 {
+        let mut param = specs::PARAMS[index];
+        param.name = text.label(param.name);
+        controls = controls.child(render_horizontal_param(
+            d,
+            entity.clone(),
+            plugin_idx,
+            index,
+            &param,
+            settings.param_value(index).unwrap_or(param.default_f64()),
+            is_editing,
+            selected_param,
+            true,
+            theme,
+        ));
+    }
+    let accordion = Accordion::new()
+        .items(vec![
+            AccordionItem::new(section, text.label("Advanced")).content(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.grid)
+                    .child(Text::caption(text.global).color(theme.text_muted))
+                    .child(controls),
+            ),
+        ])
+        .mode(AccordionMode::Multiple)
+        .expanded(if expanded {
+            vec![SharedString::from(section)]
+        } else {
+            Vec::new()
+        })
+        .bordered(false)
+        .rounded(false)
+        .theme(theme.to_accordion_theme());
+    #[cfg(feature = "dev-api")]
+    let accordion = accordion
+        .header_wrapper(move |_, header| header.dev_track("dyneq.advanced").into_any_element());
+    accordion
+        .on_change(move |id, open, _, cx| {
+            entity.update(cx, |state, cx| {
+                let sections = state
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .plugin_sections
+                    .entry(instance_id)
+                    .or_default();
+                sections.retain(|section| section != id.as_ref());
+                if open {
+                    sections.push(id.to_string());
+                }
+                cx.notify();
+            });
+        })
+        .into_any_element()
+}
+
+/// Compact structural controls live between the title and Active.
+pub(crate) fn render_dynamic_eq_header_controls(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    settings: &PluginSettings,
+    text: PluginCommonTranslations,
+    theme: &Theme,
+) -> AnyElement {
+    let param = specs::PARAMS[0];
+    let count_entity = entity.clone();
+    let count = NumberInput::new(("dyneq-band-count", plugin_idx))
+        .value(settings.param_value(0).unwrap_or(param.default_f64()))
+        .min(param.min_f64())
+        .max(param.max_f64())
+        .step(1.0)
+        .decimals(0)
+        .size(NumberInputSize::Xs)
+        .theme(theme.to_number_input_theme())
+        .aria_label(text.label("Bands"))
+        .on_change(move |value, _, cx| {
+            count_entity.update(cx, |state, cx| {
+                state.app.set_plugin_param(plugin_idx, 0, value);
+                cx.notify();
+            });
+        });
+    #[cfg(feature = "dev-api")]
+    let count = count.dev_track(format!("plugin.param.{plugin_idx}.0.exact"));
+    let mut link = specs::PARAMS[6];
+    link.name = text.label(link.name);
     div()
+        .flex_1()
+        .min_w_0()
         .flex()
-        .flex_col()
-        .gap(d.gap)
-        .p(d.card)
-        .rounded(d.r_lg)
-        .bg(theme.surface)
-        .child(
-            div()
-                .text_size(d.text_sm)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_primary)
-                .child(text.global),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(d.section)
-                .items_center()
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Bands"),
-                    num_bands,
-                    pk(params, "num_bands").min_f64(),
-                    pk(params, "num_bands").max_f64(),
-                    "",
-                    0,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Thresh"),
-                    threshold,
-                    pk(params, "threshold").min_f64(),
-                    pk(params, "threshold").max_f64(),
-                    "dB",
-                    1,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Ratio"),
-                    ratio,
-                    pk(params, "ratio").min_f64(),
-                    pk(params, "ratio").max_f64(),
-                    ":1",
-                    2,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Attack"),
-                    attack,
-                    pk(params, "attack").min_f64(),
-                    pk(params, "attack").max_f64(),
-                    "ms",
-                    3,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Release"),
-                    release,
-                    pk(params, "release").min_f64(),
-                    pk(params, "release").max_f64(),
-                    "ms",
-                    4,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Knee"),
-                    knee,
-                    pk(params, "knee").min_f64(),
-                    pk(params, "knee").max_f64(),
-                    "dB",
-                    5,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_toggle(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Link"),
-                    link_channels,
-                    6,
-                    selected_param,
-                    is_editing,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity,
-                    plugin_idx,
-                    text.label("Mix"),
-                    mix,
-                    pk(params, "mix").min_f64(),
-                    pk(params, "mix").max_f64(),
-                    "%",
-                    7,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                )),
-        )
+        .flex_wrap()
+        .items_center()
+        .gap(d.grid)
+        .child(Text::label(text.label("Bands")))
+        .child(count)
+        .child(render_compact_choice_param(
+            d,
+            entity,
+            plugin_idx,
+            6,
+            &link,
+            settings.param_value(6).unwrap_or(1.0),
+            theme,
+        ))
+        .into_any_element()
 }
 
 fn render_band_tabs(
@@ -507,105 +450,74 @@ fn render_band_tabs(
     bands: &[sotf_plugins::DynEqBandParams],
     num_bands: usize,
     selected_band_idx: usize,
-    gr: Option<&Vec<f32>>,
+    _gr: Option<&Vec<f32>>,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
-    let mut row = div()
+    let strip = div()
+        .id(("dyneq-band-strip", plugin_idx))
         .flex()
-        .flex_wrap()
         .items_center()
-        .justify_center()
+        .flex_1()
+        .min_w_0()
+        .overflow_x_scroll()
+        // The strip handles wheel scrolling before this bubble listener.
+        // Keep its wheel event from scrolling the surrounding rack as well.
+        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+        .gap(d.grid)
+        .children((0..num_bands).map(|band_idx| {
+            let band = bands.get(band_idx).cloned().unwrap_or_default();
+            let entity = entity.clone();
+            let button = Button::new(
+                SharedString::from(format!("dyneq-band-{band_idx}")),
+                format!("#{} {:.0} Hz", band_idx + 1, band.frequency),
+            )
+            .aria_label(format!("Dynamic EQ band {}", band_idx + 1))
+            .size(ButtonSize::Xs)
+            .variant(if selected_band_idx == band_idx {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Ghost
+            })
+            .theme(theme.to_button_theme())
+            .on_click_event(move |_, _, cx| {
+                entity.update(cx, |state, cx| {
+                    state.app.plugin_state.selected_eq_band = band_idx;
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    cx.notify();
+                });
+            });
+            #[cfg(feature = "dev-api")]
+            let button = button.dev_track(format!("dyneq.band.{band_idx}.select"));
+            div()
+                .flex_none()
+                .opacity(if band.active { 1.0 } else { 0.5 })
+                .child(button)
+        }));
+    let band = bands.get(selected_band_idx).cloned().unwrap_or_default();
+    let base = BAND_PARAM_BASE + selected_band_idx * BAND_PARAM_STRIDE;
+    let mut controls = div().flex().flex_none().items_center().gap(d.grid);
+    for (index, value) in [(5, band.active), (6, band.solo)] {
+        let mut param = specs::BAND_PARAMS[index];
+        param.name = text.label(if index == 5 { "Band" } else { "Solo" });
+        controls = controls.child(render_compact_choice_param(
+            d,
+            entity.clone(),
+            plugin_idx,
+            base + index,
+            &param,
+            if value { 1.0 } else { 0.0 },
+            theme,
+        ));
+    }
+    div()
+        .flex()
+        .items_center()
+        .gap(d.grid)
         .w_full()
         .min_w_0()
-        .gap(d.gap)
-        .p(d.grid)
-        .rounded(d.r_lg)
-        .bg(theme.surface);
-
-    for band_idx in 0..num_bands {
-        let band = bands.get(band_idx).cloned().unwrap_or_default();
-        let is_selected = band_idx == selected_band_idx;
-        let gain_reduction = gr.and_then(|g| g.get(band_idx)).copied().unwrap_or(0.0);
-        let entity = entity.clone();
-        let key_entity = entity.clone();
-        let focus_color = theme.border_focused;
-        row = row.child(
-            div()
-                .id(("dyneq-band", band_idx))
-                .flex()
-                .flex_col()
-                .items_center()
-                .gap(d.grid)
-                .px(d.pad_x)
-                .py(d.pad_y)
-                .rounded(d.r_md)
-                .cursor_pointer()
-                .bg(if is_selected {
-                    theme.accent
-                } else {
-                    theme.background_secondary
-                })
-                .text_color(if is_selected {
-                    theme.text_on_accent
-                } else {
-                    theme.text_secondary
-                })
-                .opacity(if band.active { 1.0 } else { 0.5 })
-                .focusable()
-                .focus_visible(move |s| s.border_1().border_color(focus_color))
-                .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                    entity.update(cx, |state, _| {
-                        state.app.plugin_state.selected_eq_band = band_idx;
-                        state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                    });
-                })
-                .on_key_down(move |event, _window, cx| {
-                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                        key_entity.update(cx, |state, _| {
-                            state.app.plugin_state.selected_eq_band = band_idx;
-                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                        });
-                        cx.stop_propagation();
-                    }
-                })
-                .child(
-                    div()
-                        .text_size(d.text_sm)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(format!("B{}", band_idx + 1)),
-                )
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .child(format!("{:.0} Hz", band.frequency)),
-                )
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .child(format!("{gain_reduction:.1} dB GR")),
-                )
-                .child(
-                    div()
-                        .w(rems(4.0))
-                        .h(rems(0.25))
-                        .rounded_full()
-                        .overflow_hidden()
-                        .bg(theme.background)
-                        .child(
-                            div()
-                                .h_full()
-                                .w(relative((gain_reduction.abs() / 24.0).clamp(0.0, 1.0)))
-                                .bg(if is_selected {
-                                    theme.text_on_accent
-                                } else {
-                                    theme.accent
-                                }),
-                        ),
-                ),
-        );
-    }
-
-    row
+        .child(strip)
+        .child(controls)
 }
 
 fn render_selected_band(
@@ -616,134 +528,111 @@ fn render_selected_band(
     selected_band_idx: usize,
     selected_param: usize,
     is_editing: bool,
-    compact: bool,
+    wide: bool,
+    mix: f64,
     text: PluginCommonTranslations,
     theme: &Theme,
-) -> impl IntoElement {
+    cx: &App,
+) -> AnyElement {
     let band = bands.get(selected_band_idx).cloned().unwrap_or_default();
-    let bt = specs::BAND_PARAMS;
     let base = BAND_PARAM_BASE + selected_band_idx * BAND_PARAM_STRIDE;
-    let knob_size = if compact {
-        PotentiometerSize::Xs
-    } else {
-        PotentiometerSize::Sm
+    let values = [
+        f64::from(band.frequency),
+        f64::from(band.q),
+        f64::from(band.gain),
+        f64::from(band.band_threshold),
+        f64::from(band.band_ratio),
+    ];
+    let mut choices = div().flex().flex_wrap().items_center().gap(d.grid);
+    for (index, spec, value) in [
+        (
+            7,
+            specs::SHELF_PARAMS[0],
+            f64::from(band.shape.choice_index()),
+        ),
+        (
+            9,
+            specs::ROUTING_PARAMS[0],
+            f64::from(band.placement.choice_index()),
+        ),
+    ] {
+        let mut spec = spec;
+        spec.name = text.label(spec.name);
+        choices = choices.child(render_compact_selector_param(
+            d,
+            entity.clone(),
+            plugin_idx,
+            base + index,
+            &spec,
+            value,
+            theme,
+            cx,
+        ));
+    }
+    let render_rows = |indices: &[usize]| {
+        let mut rows = div().flex().flex_col().gap(d.grid).flex_1().min_w_0();
+        for &index in indices {
+            let (index, mut param, value) =
+                if index == 1 && band.shape != sotf_plugins::plugin_dynamic_eq::DynEqShape::Peak {
+                    if band.shape == sotf_plugins::plugin_dynamic_eq::DynEqShape::Tilt {
+                        continue;
+                    }
+                    (8, specs::SHELF_PARAMS[1], f64::from(band.shelf_slope))
+                } else {
+                    (index, specs::BAND_PARAMS[index], values[index])
+                };
+            if index == 0 {
+                param.name = match band.shape {
+                    sotf_plugins::plugin_dynamic_eq::DynEqShape::Tilt => "Pivot",
+                    sotf_plugins::plugin_dynamic_eq::DynEqShape::Peak => "Frequency",
+                    _ => "Cutoff",
+                };
+            }
+            param.name = text.label(param.name);
+            rows = rows.child(render_horizontal_param(
+                d,
+                entity.clone(),
+                plugin_idx,
+                base + index,
+                &param,
+                value,
+                is_editing,
+                selected_param,
+                true,
+                theme,
+            ));
+        }
+        rows
     };
-
+    let mut mix_param = specs::PARAMS[7];
+    mix_param.name = text.label(mix_param.name);
+    let rows = div()
+        .flex()
+        .gap(d.grid)
+        .w_full()
+        .min_w_0()
+        .when(!wide, |rows| rows.flex_col())
+        .child(render_rows(&[0, 1, 2]))
+        .child(render_rows(&[3, 4]).child(render_horizontal_param(
+            d,
+            entity.clone(),
+            plugin_idx,
+            7,
+            &mix_param,
+            mix,
+            is_editing,
+            selected_param,
+            true,
+            theme,
+        )));
     div()
         .flex()
         .flex_col()
-        .gap(d.gap)
-        .p(d.card)
-        .rounded(d.r_lg)
-        .bg(theme.background_secondary)
-        .child(
-            div()
-                .text_size(d.text_sm)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_primary)
-                .child(format!("{} {}", text.label("Band"), selected_band_idx + 1)),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(d.section)
-                .items_center()
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Freq"),
-                    band.frequency as f64,
-                    pk(bt, "frequency").min_f64(),
-                    pk(bt, "frequency").max_f64(),
-                    "Hz",
-                    base,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Q"),
-                    band.q as f64,
-                    pk(bt, "q").min_f64(),
-                    pk(bt, "q").max_f64(),
-                    "",
-                    base + 1,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Gain"),
-                    band.gain as f64,
-                    pk(bt, "gain").min_f64(),
-                    pk(bt, "gain").max_f64(),
-                    "dB",
-                    base + 2,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Thresh"),
-                    band.band_threshold as f64,
-                    pk(bt, "band_threshold").min_f64(),
-                    pk(bt, "band_threshold").max_f64(),
-                    "dB",
-                    base + 3,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_knob_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Ratio"),
-                    band.band_ratio as f64,
-                    pk(bt, "band_ratio").min_f64(),
-                    pk(bt, "band_ratio").max_f64(),
-                    ":1",
-                    base + 4,
-                    selected_param,
-                    is_editing,
-                    None,
-                    knob_size,
-                    theme,
-                ))
-                .child(render_toggle(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Active"),
-                    band.active,
-                    base + 5,
-                    selected_param,
-                    is_editing,
-                    theme,
-                ))
-                .child(render_toggle(
-                    entity,
-                    plugin_idx,
-                    text.label("Solo"),
-                    band.solo,
-                    base + 6,
-                    selected_param,
-                    is_editing,
-                    theme,
-                )),
-        )
+        .gap(d.grid)
+        .w_full()
+        .min_w_0()
+        .child(choices)
+        .child(rows)
+        .into_any_element()
 }
 use crate::app::i18n::PluginCommonTranslations;

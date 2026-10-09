@@ -9,6 +9,19 @@ pub(super) fn ensure_below_nyquist(freq: f32, sr: u32, label: &str) -> Result<()
     }
 }
 
+pub(super) fn ensure_sti_sample_rate(sr: u32) -> Result<(), String> {
+    // The 8 kHz STI octave reaches 8000 * sqrt(2) Hz; lower rates narrow
+    // it, so STI signals require the IEC reference minimum instead.
+    if sr < sotf_audio::signals::STI_MIN_SAMPLE_RATE_HZ {
+        Err(format!(
+            "Nyquist violation: STI needs sr >= {} Hz for the 8 kHz octave, got {sr} Hz (skipped)",
+            sotf_audio::signals::STI_MIN_SAMPLE_RATE_HZ
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 pub(super) fn clip(sample: f32) -> f32 {
     sample.clamp(-1.0, 1.0)
 }

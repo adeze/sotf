@@ -1,0 +1,99 @@
+# Header count/choices and selected-band schema increments remain real bindings.
+resize 1440 1100
+focus Studio
+plugin_clear
+plugin_add DynamicEq
+action PluginSelectFirstUser
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/before.json
+assert_within plugin.param.2.0.exact rack.params
+click plugin.param.2.0.exact
+key up
+wait_idle 1s
+assert plugins.plugin.2.param.0.value == 5
+key down
+wait_idle 1s
+assert plugins.plugin.2.param.0.value == 4
+key escape
+click plugin.choice.2.6.0
+assert plugins.plugin.2.param.6.value == 0
+click plugin.choice.2.6.1
+assert plugins.plugin.2.param.6.value == 1
+click dyneq.band.1.select
+wait_idle 1s
+assert_within plugin.param.2.110.exact rack.params
+click plugin.param.2.110.exact
+key cmd-a
+type "750"
+key enter
+assert plugins.plugin.2.param.110.value == 750 tolerance=0.001
+assert_within plugin.param.2.111.exact rack.params
+click plugin.param.2.111.exact
+key cmd-a
+type "2.34"
+key enter
+assert plugins.plugin.2.param.111.value == 2.34 tolerance=0.001
+assert_within plugin.param.2.112.exact rack.params
+click plugin.param.2.112.exact
+key cmd-a
+type "-3.4"
+key enter
+assert plugins.plugin.2.param.112.value == -3.4 tolerance=0.001
+assert_within plugin.param.2.113.exact rack.params
+click plugin.param.2.113.exact
+key cmd-a
+type "-28.5"
+key enter
+assert plugins.plugin.2.param.113.value == -28.5 tolerance=0.001
+assert_within plugin.param.2.114.exact rack.params
+click plugin.param.2.114.exact
+key cmd-a
+type "3.1"
+key enter
+assert plugins.plugin.2.param.114.value == 3.1 tolerance=0.001
+click plugin.param.2.111.exact
+key up
+wait_idle 1s
+assert plugins.plugin.2.param.111.value == 2.35 tolerance=0.001
+key escape
+wait_idle 1s
+assert plugins.plugin.2.param.111.value == 2.35 tolerance=0.001
+click plugin.choice.2.115.0
+assert plugins.plugin.2.param.115.value == 0
+click plugin.choice.2.115.1
+assert plugins.plugin.2.param.115.value == 1
+click plugin.choice.2.116.0
+assert plugins.plugin.2.param.116.value == 0
+click plugin.choice.2.116.1
+assert plugins.plugin.2.param.116.value == 1
+snapshot $SOTF_QA_DIR/wide.json
+screenshot dynamic-eq-wide
+resize 1000 700
+wait_idle 1s
+assert_within plugin.param.2.110.exact rack.params
+assert_within plugin.param.2.111.exact rack.params
+assert_within plugin.param.2.112.exact rack.params
+assert_within plugin.param.2.113.exact rack.params
+assert_within plugin.param.2.114.exact rack.params
+assert_within plugin.param.2.7.exact rack.params
+snapshot $SOTF_QA_DIR/narrow.json
+screenshot dynamic-eq-narrow
+scroll_into_view rack.params dyneq.advanced
+click dyneq.advanced
+wait_idle 1s
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "-31"
+key enter
+assert plugins.plugin.2.param.1.value == -31 tolerance=0.001
+assert plugins.plugin.2.param.113.value == -28.5 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 1s
+assert plugins.plugin.2.param.110.value == 750 tolerance=0.001
+assert plugins.plugin.2.param.111.value == 2.35 tolerance=0.001
+assert plugins.plugin.2.param.1.value == -31 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+snapshot $SOTF_QA_DIR/advanced.json
+screenshot dynamic-eq-advanced

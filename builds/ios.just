@@ -74,77 +74,46 @@ ios-build-device: ios-build-rust-device ios-xcodegen
 		build
 
 # ----------------------------------------------------------------------
-# GPUI UI Kit Showcase (crates/gpui-toolkit/gpui-ui-kit/ios)
+# GPUI UI Kit Showcase (../gpui-toolkit sibling workspace)
 # ----------------------------------------------------------------------
+# The Showcase app lives in the gpui-toolkit repo with its own recipes.
+# These targets delegate there so `just ios-sim` / `just ios-device` keep
+# building both apps. Requires a sibling checkout of gpui-toolkit.
 
 # Build Showcase iOS Rust static library for simulator (arm64)
 [group('ios')]
 showcase-rust-sim:
-	cargo build -p gpui-ui-kit-ios-showcase --target aarch64-apple-ios-sim --release
+	cd ../gpui-toolkit && just showcase-rust-sim
 
 # Build Showcase iOS Rust static library for device (arm64)
 [group('ios')]
 showcase-rust-device:
-	cargo build -p gpui-ui-kit-ios-showcase --target aarch64-apple-ios --release
+	cd ../gpui-toolkit && just showcase-rust-device
 
 # Build Showcase iOS Rust lib and copy to Xcode project (simulator)
 [group('ios')]
-showcase-build-rust-sim: showcase-rust-sim
-	#!/usr/bin/env bash
-	set -euo pipefail
-	IOS_DIR="crates/gpui-toolkit/gpui-ui-kit/ios"
-	mkdir -p "$IOS_DIR/lib"
-	cp target/aarch64-apple-ios-sim/release/libshowcase_ios.a "$IOS_DIR/lib/"
-	echo "Copied libshowcase_ios.a to $IOS_DIR/lib/"
+showcase-build-rust-sim:
+	cd ../gpui-toolkit && just showcase-build-rust-sim
 
 # Build Showcase iOS Rust lib and copy to Xcode project (device)
 [group('ios')]
-showcase-build-rust-device: showcase-rust-device
-	#!/usr/bin/env bash
-	set -euo pipefail
-	IOS_DIR="crates/gpui-toolkit/gpui-ui-kit/ios"
-	mkdir -p "$IOS_DIR/lib"
-	cp target/aarch64-apple-ios/release/libshowcase_ios.a "$IOS_DIR/lib/"
-	echo "Copied libshowcase_ios.a to $IOS_DIR/lib/"
+showcase-build-rust-device:
+	cd ../gpui-toolkit && just showcase-build-rust-device
 
 # Generate Showcase iOS Xcode project with XcodeGen
 [group('ios')]
 showcase-xcodegen:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	cd crates/gpui-toolkit/gpui-ui-kit/ios
-	if [ ! -d "GPUIShowcase.xcodeproj" ] || [ "project.yml" -nt "GPUIShowcase.xcodeproj/project.pbxproj" ]; then
-		echo "Generating Xcode project..."
-		xcodegen generate
-	else
-		echo "Xcode project is up to date"
-	fi
+	cd ../gpui-toolkit && just showcase-xcodegen
 
 # Build Showcase iOS app for simulator
 [group('ios')]
-showcase-build-sim: showcase-build-rust-sim showcase-xcodegen
-	#!/usr/bin/env bash
-	set -euo pipefail
-	cd crates/gpui-toolkit/gpui-ui-kit/ios
-	xcodebuild -project GPUIShowcase.xcodeproj \
-		-scheme GPUIShowcase \
-		-configuration Release \
-		-sdk iphonesimulator \
-		-arch arm64 \
-		build
+showcase-build-sim:
+	cd ../gpui-toolkit && just showcase-build-sim
 
 # Build Showcase iOS app for device
 [group('ios')]
-showcase-build-device: showcase-build-rust-device showcase-xcodegen
-	#!/usr/bin/env bash
-	set -euo pipefail
-	cd crates/gpui-toolkit/gpui-ui-kit/ios
-	xcodebuild -project GPUIShowcase.xcodeproj \
-		-scheme GPUIShowcase \
-		-configuration Release \
-		-sdk iphoneos \
-		-arch arm64 \
-		build
+showcase-build-device:
+	cd ../gpui-toolkit && just showcase-build-device
 
 # ----------------------------------------------------------------------
 # Aggregate targets

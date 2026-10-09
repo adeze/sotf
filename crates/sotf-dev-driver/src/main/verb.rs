@@ -733,6 +733,35 @@ pub(super) fn verb_wait_until(rest: &str, ctx: &Ctx) -> Result<()> {
     );
 }
 
+/// Wait for rendered text to match an asynchronous status transition.
+pub(super) fn verb_wait_text(rest: &str, ctx: &Ctx) -> Result<()> {
+    let comparison = parse_compare(rest)?;
+    let timeout = comparison.timeout.unwrap_or(Duration::from_secs(2));
+    let deadline = Instant::now() + timeout;
+    let mut last = Value::Null;
+    loop {
+        let elements = fetch_elements(ctx)?;
+        if let Some(element) = find_element(&elements, &comparison.path) {
+            last = element_state_value(element, &comparison.path, "text")?.clone();
+            if comparison.matches(&last) {
+                if ctx.verbose {
+                    println!("    -> matched rendered text ({last})");
+                }
+                return Ok(());
+            }
+        }
+        if Instant::now() >= deadline {
+            bail!(
+                "wait_text timed out after {timeout:?}: `{}` text {} {} (last seen: {last})",
+                comparison.path,
+                comparison.op.as_str(),
+                comparison.expected_text,
+            );
+        }
+        sleep(Duration::from_millis(50));
+    }
+}
+
 /// Wait for a real rendered element after asynchronous UI work such as a file dialog.
 pub(super) fn verb_wait_visible(rest: &str, ctx: &Ctx) -> Result<()> {
     let mut parts = rest.split_whitespace();
@@ -834,9 +863,54 @@ pub(super) fn verb_click(rest: &str, ctx: &Ctx) -> Result<()> {
     if selector.is_empty() {
         bail!("click verb needs a selector");
     }
+    // Routing nodes are resolved to a point within the tracked canvas by the
+    // server, rather than having a separate tracked selector here.
+    if !selector.starts_with("routing.node.") {
+        let elements = fetch_elements(ctx)?;
+        let element = find_element(&elements, selector)
+            .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
+        let health = fetch_health(ctx)?;
+        let viewport = health
+            .get("value")
+            .and_then(|value| value.get("viewport"))
+            .ok_or_else(|| anyhow!("health response does not contain a viewport"))?;
+        if !element_center_is_within_viewport(element, viewport) {
+            bail!(
+                "click target `{selector}` is outside the viewport; scroll it into view first: {element}"
+            );
+        }
+    }
     let body = serde_json::json!({ "selector": selector });
     post_dev_json(ctx, "/click", &body, &format!("click `{selector}`"))?;
     Ok(())
+}
+
+/// Double-click the current measured center of a tracked control.
+pub(super) fn verb_double_click(rest: &str, ctx: &Ctx) -> Result<()> {
+    let selector = rest.trim();
+    if selector.is_empty() {
+        bail!("double_click verb needs a selector");
+    }
+    let elements = fetch_elements(ctx)?;
+    let element = find_element(&elements, selector)
+        .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
+    let health = fetch_health(ctx)?;
+    let viewport = health
+        .get("value")
+        .and_then(|value| value.get("viewport"))
+        .ok_or_else(|| anyhow!("health response does not contain a viewport"))?;
+    if !element_center_is_within_viewport(element, viewport) {
+        bail!("double-click target `{selector}` is outside the viewport: {element}");
+    }
+    let x = element
+        .get("cx")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| anyhow!("tracked selector `{selector}` has no center x"))?;
+    let y = element
+        .get("cy")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| anyhow!("tracked selector `{selector}` has no center y"))?;
+    coordinate_click(&format!("{x} {y}"), ctx, 2)
 }
 
 /// Move the pointer over a tracked element without pressing a button.
@@ -891,6 +965,46 @@ pub(super) fn verb_scroll(rest: &str, ctx: &Ctx) -> Result<()> {
         "/scroll",
         &body,
         &format!("scroll `{selector}` by {delta_y}"),
+    )?;
+    Ok(())
+}
+
+/// Send horizontal wheel input at a tracked control's measured center.
+pub(super) fn verb_scroll_horizontal(rest: &str, ctx: &Ctx) -> Result<()> {
+    let (selector, delta) = split2(rest);
+    let delta: f64 = delta
+        .trim()
+        .parse()
+        .context("scroll_horizontal needs `<selector> <delta_x>`")?;
+    if selector.is_empty() || !delta.is_finite() {
+        bail!("scroll_horizontal needs a selector and finite delta_x");
+    }
+    let elements = fetch_elements(ctx)?;
+    let element = find_element(&elements, selector)
+        .ok_or_else(|| anyhow!("horizontal scroll target `{selector}` is not rendered"))?;
+    let x = element
+        .get("cx")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| anyhow!("scroll target has no center x"))?;
+    let y = element
+        .get("cy")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| anyhow!("scroll target has no center y"))?;
+    let response = ctx.client.get(format!("{}/snapshot", ctx.base)).send()?;
+    let snapshot = parse_dev_response(response, "snapshot for horizontal scroll")?;
+    let snapshot = snapshot.get("value").unwrap_or(&snapshot);
+    let revision = snapshot
+        .get("state_revision")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow!("snapshot contains no state revision"))?;
+    post_dev_json(
+        ctx,
+        "/input",
+        &json!({
+            "kind": "scroll", "x": x, "y": y, "delta_x": delta, "delta_y": 0.0,
+            "viewport_revision": revision,
+        }),
+        "horizontal scroll",
     )?;
     Ok(())
 }
@@ -1017,11 +1131,20 @@ pub(super) fn verb_scroll_into_view(rest: &str, ctx: &Ctx) -> Result<()> {
         } else {
             visible_bottom - item_bottom
         };
-        post_dev_json(
+        // The center may contain a slider that consumes wheel input as a value
+        // edit. Use the scrollport's one-pixel inset gutter instead, preserving
+        // native event dispatch without changing a parameter to reach another.
+        let port_left = port
+            .get("x")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| anyhow!("scroll container has no left edge"))?;
+        verb_scroll_at(
+            &format!(
+                "{} {} {delta}",
+                port_left.max(0.0) + 1.0,
+                (visible_top + visible_bottom) / 2.0
+            ),
             ctx,
-            "/scroll",
-            &json!({"selector": container, "delta_y": delta}),
-            "scroll full target into view",
         )?;
         sleep(Duration::from_millis(100));
     }
@@ -1326,6 +1449,29 @@ pub(super) fn verb_assert_in_viewport(rest: &str, ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
+/// Assert that a control fits within its scrollport, not merely the window.
+pub(super) fn verb_assert_within(rest: &str, ctx: &Ctx) -> Result<()> {
+    let mut parts = rest.split_whitespace();
+    let selector = parts
+        .next()
+        .ok_or_else(|| anyhow!("assert_within needs `<child> <container>`"))?;
+    let container = parts
+        .next()
+        .ok_or_else(|| anyhow!("assert_within needs `<child> <container>`"))?;
+    if parts.next().is_some() {
+        bail!("assert_within accepts exactly `<child> <container>`");
+    }
+    let elements = fetch_elements(ctx)?;
+    let child = find_element(&elements, selector)
+        .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
+    let parent = find_element(&elements, container)
+        .ok_or_else(|| anyhow!("rendered container `{container}` is not present"))?;
+    if !element_is_within_element(child, parent) {
+        bail!("`{selector}` is outside `{container}`: child={child}, container={parent}");
+    }
+    Ok(())
+}
+
 /// Assert that two rendered selectors do not overlap.
 pub(super) fn verb_assert_non_overlapping(rest: &str, ctx: &Ctx) -> Result<()> {
     let mut selectors = rest.split_whitespace();
@@ -1454,6 +1600,19 @@ fn element_is_visible(element: &Value) -> bool {
     matches!((width, height), (Some(width), Some(height)) if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0)
 }
 
+fn element_center_is_within_viewport(element: &Value, viewport: &Value) -> bool {
+    let center_x = element.get("cx").and_then(Value::as_f64);
+    let center_y = element.get("cy").and_then(Value::as_f64);
+    let width = viewport.get("width").and_then(Value::as_f64);
+    let height = viewport.get("height").and_then(Value::as_f64);
+    matches!(
+        (center_x, center_y, width, height),
+        (Some(x), Some(y), Some(width), Some(height))
+            if x.is_finite() && y.is_finite() && width.is_finite() && height.is_finite()
+                && x >= 0.0 && y >= 0.0 && x < width && y < height
+    )
+}
+
 fn element_is_within_viewport(element: &Value, viewport: &Value) -> bool {
     let x = element.get("x").and_then(Value::as_f64);
     let y = element.get("y").and_then(Value::as_f64);
@@ -1478,6 +1637,33 @@ fn element_is_within_viewport(element: &Value, viewport: &Value) -> bool {
                 && x + width <= viewport_width
                 && y + height <= viewport_height
     )
+}
+
+fn element_is_within_element(child: &Value, parent: &Value) -> bool {
+    let number = |value: &Value, key| value.get(key).and_then(Value::as_f64);
+    let (Some(cx), Some(cy), Some(cw), Some(ch), Some(px), Some(py), Some(pw), Some(ph)) = (
+        number(child, "x"),
+        number(child, "y"),
+        number(child, "w"),
+        number(child, "h"),
+        number(parent, "x"),
+        number(parent, "y"),
+        number(parent, "w"),
+        number(parent, "h"),
+    ) else {
+        return false;
+    };
+    [cx, cy, cw, ch, px, py, pw, ph]
+        .iter()
+        .all(|value| value.is_finite())
+        && cw > 0.0
+        && ch > 0.0
+        && pw > 0.0
+        && ph > 0.0
+        && cx >= px
+        && cy >= py
+        && cx + cw <= px + pw
+        && cy + ch <= py + ph
 }
 
 fn elements_overlap(first: &Value, second: &Value) -> bool {
@@ -1508,8 +1694,9 @@ fn elements_overlap(first: &Value, second: &Value) -> bool {
 #[cfg(test)]
 mod rendered_selector_tests {
     use super::{
-        accessibility_element_matches, element_is_visible, element_is_within_viewport,
-        element_state_value, elements_overlap, find_element,
+        accessibility_element_matches, element_center_is_within_viewport, element_is_visible,
+        element_is_within_element, element_is_within_viewport, element_state_value,
+        elements_overlap, find_element,
     };
     use crate::parse::parse_compare;
     use serde_json::json;
@@ -1558,6 +1745,32 @@ mod rendered_selector_tests {
         assert!(!element_is_within_viewport(
             &json!({ "x": 10.0, "y": 2.0, "w": 100.0, "h": 50.0 }),
             &viewport
+        ));
+    }
+
+    #[test]
+    fn click_target_center_must_be_in_live_viewport() {
+        let viewport = json!({ "width": 1000.0, "height": 700.0 });
+        assert!(!element_center_is_within_viewport(
+            &json!({ "cx": 429.0, "cy": 801.75 }),
+            &viewport
+        ));
+        assert!(element_center_is_within_viewport(
+            &json!({ "cx": 429.0, "cy": 501.75 }),
+            &viewport
+        ));
+    }
+
+    #[test]
+    fn primary_control_must_fit_scrollport() {
+        let port = json!({ "x": 192.0, "y": 241.5, "w": 623.0, "h": 358.5 });
+        assert!(element_is_within_element(
+            &json!({ "x": 225.0, "y": 337.0, "w": 94.0, "h": 249.5 }),
+            &port
+        ));
+        assert!(!element_is_within_element(
+            &json!({ "x": 225.0, "y": 554.0, "w": 94.0, "h": 100.0 }),
+            &port
         ));
     }
 

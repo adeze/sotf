@@ -7,6 +7,7 @@
 //! - App methods for level meter group management (mute/solo/dim)
 
 mod level_meter_manager;
+mod matrix_channel_states;
 mod misc;
 mod render;
 

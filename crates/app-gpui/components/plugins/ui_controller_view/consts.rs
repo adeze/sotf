@@ -1,7 +1,9 @@
 use gpui::prelude::*;
 use gpui::*;
 
-pub(super) const CELL_W: f32 = 92.0;
+// Leave room for a value with units and both 16-pixel step buttons.
+pub(super) const CELL_W: f32 = 144.0;
+pub(super) const MIN_CELL_W: f32 = 128.0;
 
 pub(super) const CELL_H: f32 = 110.0;
 

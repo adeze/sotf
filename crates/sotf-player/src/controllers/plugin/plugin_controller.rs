@@ -1,6 +1,9 @@
+use super::super::plugin_param_map::momentary_action_param;
 pub use super::super::plugin_param_map::param_index_to_engine_param;
 use super::adjust::adjust_plugin_param;
-use super::misc::{apply_structural_side_effects, get_param_count, reset_multiband_override};
+use super::misc::{
+    apply_structural_side_effects, get_param_count, reset_dynamic_eq_band, reset_multiband_override,
+};
 use super::set::set_eq_param_value_for_target;
 use super::set::set_plugin_param_value;
 use super::types::EqEditTarget;
@@ -13,10 +16,108 @@ const AB_PATH_A_CONFIG_IDX: usize = sotf_plugins::param_specs::index_of(
     sotf_plugins::param_specs::ab_compare::PARAMS,
     "path_a_config",
 );
+
+fn has_inherited_multiband_numeric_override(settings: &PluginSettings, index: usize) -> bool {
+    if index < 100 {
+        return false;
+    }
+    let band = index / 100 - 1;
+    let field = index % 100;
+    match settings {
+        PluginSettings::MultibandCompressor { bands, .. } => {
+            let selected = bands.get(band);
+            match field {
+                6 => selected.and_then(|band| band.threshold_db).is_none(),
+                7 => selected.and_then(|band| band.ratio).is_none(),
+                8 => selected.and_then(|band| band.attack_ms).is_none(),
+                9 => selected.and_then(|band| band.release_ms).is_none(),
+                10 => selected.and_then(|band| band.knee_db).is_none(),
+                18 => selected.and_then(|band| band.range_db).is_none(),
+                19 => selected.and_then(|band| band.hold_ms).is_none(),
+                _ => false,
+            }
+        }
+        PluginSettings::MultibandExpander { bands, .. } => {
+            let selected = bands.get(band);
+            match field {
+                6 => selected.and_then(|band| band.threshold_db).is_none(),
+                7 => selected.and_then(|band| band.ratio).is_none(),
+                8 => selected.and_then(|band| band.attack_ms).is_none(),
+                9 => selected.and_then(|band| band.release_ms).is_none(),
+                10 => selected.and_then(|band| band.range_db).is_none(),
+                11 => selected.and_then(|band| band.knee_db).is_none(),
+                12 => selected.and_then(|band| band.hysteresis_db).is_none(),
+                13 => selected.and_then(|band| band.hold_ms).is_none(),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
 const AB_PATH_B_CONFIG_IDX: usize = sotf_plugins::param_specs::index_of(
     sotf_plugins::param_specs::ab_compare::PARAMS,
     "path_b_config",
 );
+const GATE_EXTERNAL_SIDECHAIN_IDX: usize = sotf_plugins::param_specs::index_of(
+    sotf_plugins::param_specs::gate::PARAMS,
+    "sidechain_external",
+);
+const DE_ESSER_EXTERNAL_SIDECHAIN_IDX: usize = sotf_plugins::param_specs::index_of(
+    sotf_plugins::param_specs::de_esser::PARAMS,
+    "sidechain_external",
+);
+const DOWNMIX_MATRIX_LTRT_IDX: usize =
+    sotf_plugins::param_specs::index_of(sotf_plugins::param_specs::downmix::PARAMS, "matrix_ltrt");
+const DOWNMIX_PHASE_COHERENCE_IDX: usize = sotf_plugins::param_specs::index_of(
+    sotf_plugins::param_specs::downmix::PARAMS,
+    "phase_coherence",
+);
+const LOUDNESS_AUTO_CALIBRATED_IDX: usize = sotf_plugins::param_specs::index_of(
+    sotf_plugins::param_specs::loudness_compensation::PARAMS,
+    "auto_calibrated",
+);
+const LOUDNESS_MODE_IDX: usize = sotf_plugins::param_specs::index_of(
+    sotf_plugins::param_specs::loudness_compensation::PARAMS,
+    "mode",
+);
+
+fn rejects_parameter_transition(
+    settings: &PluginSettings,
+    param_idx: usize,
+    value: f64,
+    linear_host: bool,
+) -> bool {
+    if super::misc::ambisonics_layout_transition_error(settings, param_idx, value).is_some() {
+        return true;
+    }
+    match settings {
+        PluginSettings::Gate { .. } if linear_host => {
+            param_idx == GATE_EXTERNAL_SIDECHAIN_IDX && value > 0.5
+        }
+        PluginSettings::DeEsser { .. } if linear_host => {
+            param_idx == DE_ESSER_EXTERNAL_SIDECHAIN_IDX && value > 0.5
+        }
+        PluginSettings::Downmix {
+            phase_coherence,
+            matrix_ltrt,
+            ..
+        } => {
+            (param_idx == DOWNMIX_MATRIX_LTRT_IDX && value > 0.5 && *phase_coherence)
+                || (param_idx == DOWNMIX_PHASE_COHERENCE_IDX && value > 0.5 && *matrix_ltrt)
+        }
+        PluginSettings::LoudnessCompensation {
+            mode,
+            auto_calibrated,
+            ..
+        } => {
+            (param_idx == LOUDNESS_AUTO_CALIBRATED_IDX && value <= 0.5 && *mode == 2)
+                || (param_idx == LOUDNESS_MODE_IDX
+                    && value.round() as usize == 2
+                    && !auto_calibrated)
+        }
+        _ => false,
+    }
+}
 
 fn set_ab_compare_config_file_in_settings(
     settings: &mut PluginSettings,
@@ -95,6 +196,37 @@ fn add_eq_band_to(settings: &mut PluginSettings, target: EqEditTarget) -> Result
     let filters = eq_filters_mut(settings, target)
         .ok_or_else(|| "Selected EQ edit target is unavailable".to_string())?;
     filters.push(EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0));
+    Ok(())
+}
+
+fn sync_linear_phase_eq_band_count(settings: &mut PluginSettings) {
+    if let PluginSettings::LinearPhaseEq {
+        num_filters,
+        filters,
+        ..
+    } = settings
+    {
+        // The DSP uses num_filters to limit the designed bands. Keep it in
+        // step with the actual list changed by the shared EQ add/remove UI.
+        *num_filters = filters.len() as f64;
+    }
+}
+
+fn validate_linear_phase_eq_band_count(
+    settings: &PluginSettings,
+    change: isize,
+) -> Result<(), String> {
+    if let PluginSettings::LinearPhaseEq { filters, .. } = settings {
+        let next = filters.len() as isize + change;
+        let maximum = sotf_plugins::param_specs::find_by_key(
+            sotf_plugins::param_specs::linear_phase_eq::PARAMS,
+            "num_filters",
+        )
+        .max_f64() as isize;
+        if !(1..=maximum).contains(&next) {
+            return Err(format!("Linear Phase EQ needs 1 to {maximum} bands"));
+        }
+    }
     Ok(())
 }
 
@@ -582,6 +714,41 @@ impl PluginController {
         param_idx: usize,
         value: f64,
     ) -> PluginUpdateEffect {
+        if self
+            .graph
+            .get_plugin(plugin_idx)
+            .is_some_and(|plugin| momentary_action_param(&plugin.settings, param_idx).is_some())
+        {
+            let key = momentary_action_param(
+                &self.graph.get_plugin(plugin_idx).unwrap().settings,
+                param_idx,
+            )
+            .unwrap();
+            if key == "clear_profile" && value <= 0.5 {
+                return PluginUpdateEffect::None;
+            }
+            let Some(node_id) = self
+                .graph
+                .plugins_linear()
+                .and_then(|plugins| plugins.get(plugin_idx).map(|plugin| plugin.id))
+            else {
+                return PluginUpdateEffect::None;
+            };
+            return PluginUpdateEffect::Action {
+                plugin_index: plugin_idx,
+                node_id: Some(node_id),
+                param_index: param_idx,
+                key,
+                value: value > 0.5,
+            };
+        }
+        // The linear host has no key-bus input. Keep the working Gate and its
+        // saved settings intact instead of submitting a candidate that skips it.
+        if self.graph.get_plugin(plugin_idx).is_some_and(|plugin| {
+            rejects_parameter_transition(&plugin.settings, param_idx, value, true)
+        }) {
+            return PluginUpdateEffect::None;
+        }
         let mut channel_count_changed = false;
         let mut update_needed = false;
 
@@ -1086,6 +1253,33 @@ impl PluginController {
         param_idx: usize,
         value: f64,
     ) -> PluginUpdateEffect {
+        if self
+            .graph
+            .nodes
+            .get(&node_id)
+            .is_some_and(|node| momentary_action_param(&node.plugin.settings, param_idx).is_some())
+        {
+            let key = momentary_action_param(
+                &self.graph.nodes.get(&node_id).unwrap().plugin.settings,
+                param_idx,
+            )
+            .unwrap();
+            if key == "clear_profile" && value <= 0.5 {
+                return PluginUpdateEffect::None;
+            }
+            return PluginUpdateEffect::Action {
+                plugin_index: usize::MAX,
+                node_id: Some(node_id),
+                param_index: param_idx,
+                key,
+                value: value > 0.5,
+            };
+        }
+        if self.graph.nodes.get(&node_id).is_some_and(|node| {
+            rejects_parameter_transition(&node.plugin.settings, param_idx, value, false)
+        }) {
+            return PluginUpdateEffect::None;
+        }
         let mut channel_count_changed = false;
         let mut update_needed = false;
 
@@ -1149,6 +1343,19 @@ impl PluginController {
                             .map_err(|e| e.to_string())?;
                     }
                     *room_ir_file = if value.is_empty() { None } else { Some(value) };
+                    update_needed = true;
+                }
+                PluginSettings::BinauralDecoder {
+                    hrtf_database_dir, ..
+                } if param_idx == 13 => {
+                    if !value.is_empty() {
+                        let path = crate::security::validate_plugin_file_path(Path::new(&value))
+                            .map_err(|e| e.to_string())?;
+                        if !path.is_dir() {
+                            return Err("HRTF database path must be a directory".to_string());
+                        }
+                    }
+                    *hrtf_database_dir = value;
                     update_needed = true;
                 }
                 PluginSettings::BinauralDecoder { sofa_file, .. } if param_idx == 0 => {
@@ -1243,6 +1450,19 @@ impl PluginController {
                     *room_ir_file = if value.is_empty() { None } else { Some(value) };
                     update_needed = true;
                 }
+                PluginSettings::BinauralDecoder {
+                    hrtf_database_dir, ..
+                } if param_idx == 13 => {
+                    if !value.is_empty() {
+                        let path = crate::security::validate_plugin_file_path(Path::new(&value))
+                            .map_err(|e| e.to_string())?;
+                        if !path.is_dir() {
+                            return Err("HRTF database path must be a directory".to_string());
+                        }
+                    }
+                    *hrtf_database_dir = value;
+                    update_needed = true;
+                }
                 PluginSettings::BinauralDecoder { sofa_file, .. } if param_idx == 0 => {
                     if !value.is_empty() {
                         crate::security::validate_plugin_sofa_file_path(Path::new(&value))
@@ -1329,10 +1549,18 @@ impl PluginController {
             .nodes
             .get_mut(&node_id)
             .map(|node| &mut node.plugin.settings)
-            .and_then(|settings| reset_multiband_override(settings, param_idx))
+            .and_then(|settings| {
+                super::linear_phase::reset(settings, param_idx)
+                    .or_else(|| super::crossover::reset(settings, param_idx))
+                    .or_else(|| reset_dynamic_eq_band(settings, param_idx))
+                    .or_else(|| reset_multiband_override(settings, param_idx))
+            })
         {
             return if reset {
-                self.determine_update_effect_by_node_id(node_id, param_idx, false)
+                // An inherited band override is represented as None. A live
+                // numeric setter would materialize Some(current_global) in
+                // the DSP, then stop following later global edits.
+                PluginUpdateEffect::Structural
             } else {
                 PluginUpdateEffect::None
             };
@@ -1350,19 +1578,34 @@ impl PluginController {
             Some(v) => v,
             None => return PluginUpdateEffect::None,
         };
+        if self.graph.nodes.get(&node_id).is_some_and(|node| {
+            rejects_parameter_transition(&node.plugin.settings, param_idx, default_value, false)
+        }) {
+            return PluginUpdateEffect::None;
+        }
 
         let mut channel_count_changed = false;
 
         if let Some(node) = self.graph.nodes.get_mut(&node_id) {
-            node.plugin
-                .settings
-                .set_param_value(param_idx, default_value);
-
-            apply_structural_side_effects(
-                &mut node.plugin.settings,
-                param_idx,
-                &mut channel_count_changed,
-            );
+            if matches!(&node.plugin.settings, PluginSettings::DynamicEq { .. })
+                && matches!(param_idx, 1 | 2)
+            {
+                set_plugin_param_value(
+                    &mut node.plugin.settings,
+                    param_idx,
+                    default_value,
+                    &mut channel_count_changed,
+                );
+            } else {
+                node.plugin
+                    .settings
+                    .set_param_value(param_idx, default_value);
+                apply_structural_side_effects(
+                    &mut node.plugin.settings,
+                    param_idx,
+                    &mut channel_count_changed,
+                );
+            }
         }
 
         if channel_count_changed {
@@ -1382,10 +1625,17 @@ impl PluginController {
             .graph
             .get_plugin_mut(plugin_idx)
             .map(|plugin| &mut plugin.settings)
-            .and_then(|settings| reset_multiband_override(settings, param_idx))
+            .and_then(|settings| {
+                super::linear_phase::reset(settings, param_idx)
+                    .or_else(|| super::crossover::reset(settings, param_idx))
+                    .or_else(|| reset_dynamic_eq_band(settings, param_idx))
+                    .or_else(|| reset_multiband_override(settings, param_idx))
+            })
         {
             return if reset {
-                self.determine_update_effect(Some(plugin_idx), param_idx, false)
+                // Rebuild so the DSP restores the absent override, rather
+                // than pinning it to the current global through a live set.
+                PluginUpdateEffect::Structural
             } else {
                 PluginUpdateEffect::None
             };
@@ -1403,17 +1653,32 @@ impl PluginController {
             Some(v) => v,
             None => return PluginUpdateEffect::None,
         };
+        if self.graph.get_plugin(plugin_idx).is_some_and(|plugin| {
+            rejects_parameter_transition(&plugin.settings, param_idx, default_value, true)
+        }) {
+            return PluginUpdateEffect::None;
+        }
 
         let mut channel_count_changed = false;
 
         if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
-            plugin.settings.set_param_value(param_idx, default_value);
-
-            apply_structural_side_effects(
-                &mut plugin.settings,
-                param_idx,
-                &mut channel_count_changed,
-            );
+            if matches!(&plugin.settings, PluginSettings::DynamicEq { .. })
+                && matches!(param_idx, 1 | 2)
+            {
+                set_plugin_param_value(
+                    &mut plugin.settings,
+                    param_idx,
+                    default_value,
+                    &mut channel_count_changed,
+                );
+            } else {
+                plugin.settings.set_param_value(param_idx, default_value);
+                apply_structural_side_effects(
+                    &mut plugin.settings,
+                    param_idx,
+                    &mut channel_count_changed,
+                );
+            }
         }
 
         if channel_count_changed {
@@ -1435,13 +1700,24 @@ impl PluginController {
     ) -> Result<PluginUpdateEffect, String> {
         crate::security::validate_plugin_apo_file_path(path).map_err(|e| e.to_string())?;
         let new_filters = EQFilter::from_apo_file(path)?;
-        let filters = self
+        let node = self
             .graph
             .nodes
             .get_mut(&node_id)
-            .and_then(|node| node.plugin.settings.eq_global_filters_mut())
             .ok_or_else(|| "Selected node is not an EQ".to_string())?;
+        let current_count = node
+            .plugin
+            .settings
+            .eq_global_filters()
+            .ok_or_else(|| "Selected node is not an EQ".to_string())?
+            .len();
+        validate_linear_phase_eq_band_count(
+            &node.plugin.settings,
+            new_filters.len() as isize - current_count as isize,
+        )?;
+        let filters = node.plugin.settings.eq_global_filters_mut().unwrap();
         *filters = new_filters;
+        sync_linear_phase_eq_band_count(&mut node.plugin.settings);
         Ok(PluginUpdateEffect::Structural)
     }
 
@@ -1474,11 +1750,21 @@ impl PluginController {
         let plugin = self
             .get_editing_plugin_mut()
             .ok_or_else(|| "No plugin being edited".to_string())?;
+        let current_count = plugin
+            .settings
+            .eq_global_filters()
+            .ok_or_else(|| "Selected plugin is not an EQ".to_string())?
+            .len();
+        validate_linear_phase_eq_band_count(
+            &plugin.settings,
+            new_filters.len() as isize - current_count as isize,
+        )?;
         let filters = plugin
             .settings
             .eq_global_filters_mut()
             .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
         *filters = new_filters;
+        sync_linear_phase_eq_band_count(&mut plugin.settings);
         Ok(PluginUpdateEffect::Structural)
     }
 
@@ -1544,11 +1830,13 @@ impl PluginController {
         let plugin = self
             .get_editing_plugin_mut()
             .ok_or_else(|| "No plugin being edited".to_string())?;
+        validate_linear_phase_eq_band_count(&plugin.settings, 1)?;
         let filters = plugin
             .settings
             .eq_global_filters_mut()
             .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
         filters.push(EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0));
+        sync_linear_phase_eq_band_count(&mut plugin.settings);
         Ok(PluginUpdateEffect::Structural)
     }
 
@@ -1564,12 +1852,14 @@ impl PluginController {
             .nodes
             .get_mut(&node_id)
             .ok_or_else(|| "Plugin node not found".to_string())?;
+        validate_linear_phase_eq_band_count(&node.plugin.settings, 1)?;
         let filters = node
             .plugin
             .settings
             .eq_global_filters_mut()
             .ok_or_else(|| "Selected plugin is not an EQ".to_string())?;
         filters.push(EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0));
+        sync_linear_phase_eq_band_count(&mut node.plugin.settings);
         Ok(PluginUpdateEffect::Structural)
     }
 
@@ -1607,6 +1897,7 @@ impl PluginController {
         let plugin = self
             .get_editing_plugin_mut()
             .ok_or_else(|| "No plugin being edited".to_string())?;
+        validate_linear_phase_eq_band_count(&plugin.settings, -1)?;
         let filters = plugin
             .settings
             .eq_global_filters_mut()
@@ -1615,6 +1906,7 @@ impl PluginController {
             return Err("Invalid band index".to_string());
         }
         filters.remove(band_idx);
+        sync_linear_phase_eq_band_count(&mut plugin.settings);
         Ok(PluginUpdateEffect::Structural)
     }
 
@@ -1629,6 +1921,7 @@ impl PluginController {
             .nodes
             .get_mut(&node_id)
             .ok_or_else(|| "Plugin node not found".to_string())?;
+        validate_linear_phase_eq_band_count(&node.plugin.settings, -1)?;
         let filters = node
             .plugin
             .settings
@@ -1638,6 +1931,7 @@ impl PluginController {
             return Err("Invalid band index".to_string());
         }
         filters.remove(band_idx);
+        sync_linear_phase_eq_band_count(&mut node.plugin.settings);
         Ok(PluginUpdateEffect::Structural)
     }
 
@@ -2185,6 +2479,9 @@ impl PluginController {
 
         if let Some(idx) = plugin_idx {
             if let Some(plugin) = self.graph.get_plugin(idx) {
+                if has_inherited_multiband_numeric_override(&plugin.settings, param_idx) {
+                    return PluginUpdateEffect::Structural;
+                }
                 if param_index_to_engine_param(&plugin.settings, param_idx).is_some() {
                     return PluginUpdateEffect::Parameter {
                         plugin_index: idx,
@@ -2208,6 +2505,9 @@ impl PluginController {
             return PluginUpdateEffect::Structural;
         }
         if let Some(node) = self.graph.nodes.get(&node_id) {
+            if has_inherited_multiband_numeric_override(&node.plugin.settings, param_idx) {
+                return PluginUpdateEffect::Structural;
+            }
             if param_index_to_engine_param(&node.plugin.settings, param_idx).is_some() {
                 return PluginUpdateEffect::ParameterByNodeId {
                     node_id,

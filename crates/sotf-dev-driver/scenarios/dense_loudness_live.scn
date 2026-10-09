@@ -1,0 +1,75 @@
+# 2026-10-08: Qualify dense Loudness lifecycle actions against a real monitor.
+# ui_loudness.rs submits instance-scoped commands; custom_view_registry/render.rs
+# chooses the selected monitor’s own snapshot. queries.rs exposes
+# its actual published acknowledgement, independently of the UI request map.
+# From sotf: target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The runner launches the dev-api desktop with an isolated QA directory.
+resize 1000 900
+focus Studio
+plugin_clear
+plugin_add LoudnessMonitor
+action PluginSelectFirstUser
+wait_idle 500ms
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"first"}
+wait_until playback.is_playing == true timeout=12s
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+wait_visible plugin.loudness.control.5.start timeout=10s
+wait_until plugins.loudness.instance_id > 0 timeout=10s
+wait_text plugin.loudness.control-status.5 == "I/LRA running" timeout=10s
+assert meters.input.integrated_instance_id > 0
+assert meters.output.integrated_request_id == 0
+assert meters.input.integrated_request_id == 0
+assert_enabled plugin.loudness.control.5.start == true
+assert_enabled plugin.loudness.control.retry.5 == false
+plugin_chain_save $SOTF_QA_DIR/loudness-live-before.json
+scroll_into_view rack.params plugin.loudness.control.5.start
+assert_within plugin.loudness.control.5.start rack.params
+click plugin.loudness.control.5.start
+wait_until plugins.loudness.request_id == 1 timeout=10s
+wait_idle 500ms
+assert_text plugin.loudness.control-status.5 == "I/LRA running"
+assert plugins.loudness.running == true
+assert meters.input.integrated_request_id == 0
+assert meters.output.integrated_request_id == 0
+assert_enabled plugin.loudness.control.retry.5 == false
+screenshot loudness-live-start
+scroll_into_view rack.params plugin.loudness.control.5.pause
+assert_within plugin.loudness.control.5.pause rack.params
+click plugin.loudness.control.5.pause
+wait_until plugins.loudness.request_id == 2 timeout=10s
+wait_idle 500ms
+assert_text plugin.loudness.control-status.5 == "I/LRA paused"
+assert plugins.loudness.running == false
+assert meters.input.integrated_request_id == 0
+assert meters.output.integrated_request_id == 0
+assert_enabled plugin.loudness.control.retry.5 == false
+screenshot loudness-live-pause
+scroll_into_view rack.params plugin.loudness.control.5.reset
+assert_within plugin.loudness.control.5.reset rack.params
+click plugin.loudness.control.5.reset
+wait_until plugins.loudness.request_id == 3 timeout=10s
+wait_idle 500ms
+assert_text plugin.loudness.control-status.5 == "I/LRA paused"
+assert plugins.loudness.running == false
+assert meters.input.integrated_request_id == 0
+assert meters.output.integrated_request_id == 0
+assert_enabled plugin.loudness.control.retry.5 == false
+screenshot loudness-live-reset
+scroll_into_view rack.params plugin.loudness.control.5.continue
+assert_within plugin.loudness.control.5.continue rack.params
+click plugin.loudness.control.5.continue
+wait_until plugins.loudness.request_id == 4 timeout=10s
+wait_idle 500ms
+assert_text plugin.loudness.control-status.5 == "I/LRA running"
+assert plugins.loudness.running == true
+assert meters.input.integrated_request_id == 0
+assert meters.output.integrated_request_id == 0
+assert_enabled plugin.loudness.control.retry.5 == false
+screenshot loudness-live-continue
+plugin_chain_save $SOTF_QA_DIR/loudness-live-after.json
+query meters.integrated_control_requests
+click transport.play
+wait_until playback.is_playing == false timeout=5s

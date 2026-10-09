@@ -1,0 +1,99 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Gain
+plugin_add DeEsser
+action PluginToggle {"index":1}
+action PluginSelectFirstUser
+wait_idle 500ms
+click meters.group.0.mute
+assert meters.group.0.muted == true
+plugin_chain_save $SOTF_QA_DIR/before.json
+focus PluginGraph
+wait_idle 500ms
+click routing.node.4
+action GraphEditSelectedNode
+wait_idle 500ms
+click plugin.param.3.0.exact
+key cmd-a
+type "2000"
+key enter
+click plugin.param.3.2.exact
+key cmd-a
+type "-40"
+key enter
+click plugin.param.3.3.exact
+key cmd-a
+type "8"
+key enter
+click plugin.choice.3.6.0
+wait_visible plugin.layout.header.3.detection timeout=10s
+click plugin.layout.header.3.detection
+wait_visible plugin.choice.3.13.1 timeout=10s
+click plugin.choice.3.13.1
+assert routing.dirty == true
+assert routing.active_matches_base == true
+click routing.inspector.close
+click routing.inspector.keep
+assert routing.dirty == true
+click routing-connections
+click routing.endpoint.0
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key enter
+click routing.endpoint.1
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key enter
+click routing-connect
+assert routing.dirty == true
+click routing.endpoint.0
+key down
+sleep 100ms
+key enter
+click routing.endpoint.1
+key down
+sleep 100ms
+key enter
+click routing-connect
+query routing.endpoints
+query routing.draft_connection_count
+screenshot deesser-key-connections
+click routing-apply
+wait_until plugins.update_pending == false timeout=10s
+query toast.message
+assert routing.dirty == false
+assert toast.type == null
+query plugins.acknowledged_processing_graph
+screenshot deesser-key-applied
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"analysis-muted"}
+wait_until playback.is_playing == true timeout=12s
+wait_until playback.position_secs > 1 timeout=15s
+click sidebar.nav-plugin-graph
+wait_idle 500ms
+click routing.node.4
+action GraphEditSelectedNode
+wait_until plugins.gain_reduction.kind == "DeEsser" timeout=12s
+assert plugins.gain_reduction.channels == 2
+wait_until plugins.gain_reduction.maximum_db > 1 timeout=12s
+query plugins.gain_reduction
+screenshot deesser-key-live-meter
+click transport.play
+wait_until playback.is_playing == false timeout=5s

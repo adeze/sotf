@@ -1,0 +1,249 @@
+# 2026-10-08: Table repeated shell-owned header/configuration controls.
+# ui_layout_renderer::shell_owned_param_indices now shares actual generated
+# ownership and specialized desktop addresses with ui_simple rows.
+# Run from sotf: target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# Every plugin must retain its header control and a directly editable table row.
+resize 1440 1000
+focus Studio
+plugin_clear
+plugin_add Compressor
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/Compressor-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_visible plugin.choice.2.7.0
+assert_absent plugin.simple.row.2.7
+assert_absent plugin.simple.row.2.8
+assert_absent plugin.simple.row.2.14
+scroll_into_view rack.params plugin.simple.row.2.0
+assert_visible plugin.simple.row.2.0
+plugin_chain_save $SOTF_QA_DIR/Compressor-after.json
+screenshot simple-shell-Compressor
+click rack.config.toggle
+click rack.config.view
+key up
+key up
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/Upmixer-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_visible plugin.shell.2.output
+assert_absent plugin.simple.row.2.0
+scroll_into_view rack.params plugin.simple.row.2.1
+assert_visible plugin.simple.row.2.1
+plugin_chain_save $SOTF_QA_DIR/Upmixer-after.json
+screenshot simple-shell-Upmixer
+
+click rack.config.toggle
+click rack.config.view
+key up
+key up
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+plugin_clear
+plugin_add DynamicEq
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/DynamicEq-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_visible plugin.param.2.0.exact
+assert_absent plugin.simple.row.2.0
+assert_absent plugin.simple.row.2.6
+scroll_into_view rack.params plugin.simple.row.2.100
+assert_visible plugin.simple.row.2.100
+plugin_chain_save $SOTF_QA_DIR/DynamicEq-after.json
+screenshot simple-shell-DynamicEq
+
+click rack.config.toggle
+click rack.config.view
+key up
+key up
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/LinearPhaseEq-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_visible plugin.param.2.100.exact
+assert_absent plugin.simple.row.2.100
+assert_absent plugin.simple.row.2.101
+assert_absent plugin.simple.row.2.102
+assert_absent plugin.simple.row.2.103
+scroll_into_view rack.params plugin.simple.row.2.104
+assert_visible plugin.simple.row.2.104
+plugin_chain_save $SOTF_QA_DIR/LinearPhaseEq-after.json
+screenshot simple-shell-LinearPhaseEq
+
+click rack.config.toggle
+click rack.config.view
+key up
+key up
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+plugin_clear
+plugin_add MultibandCompressor
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/MultibandCompressor-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_visible plugin.param.2.0.exact
+assert_absent plugin.simple.row.2.0
+assert_absent plugin.simple.row.2.1
+assert_absent plugin.simple.row.2.12
+assert_absent plugin.simple.row.2.14
+scroll_into_view rack.params plugin.simple.row.2.2
+assert_visible plugin.simple.row.2.2
+plugin_chain_save $SOTF_QA_DIR/MultibandCompressor-after.json
+screenshot simple-shell-MultibandCompressor
+
+click rack.config.toggle
+click rack.config.view
+key up
+key up
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+plugin_clear
+plugin_add MultibandExpander
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/MultibandExpander-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_visible plugin.param.2.0.exact
+assert_absent plugin.simple.row.2.0
+assert_absent plugin.simple.row.2.1
+assert_absent plugin.simple.row.2.15
+scroll_into_view rack.params plugin.simple.row.2.2
+assert_visible plugin.simple.row.2.2
+plugin_chain_save $SOTF_QA_DIR/MultibandExpander-after.json
+screenshot simple-shell-MultibandExpander
+
+click rack.config.toggle
+click rack.config.view
+key up
+key up
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+plugin_clear
+plugin_add SpectrumAnalyzer
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/SpectrumAnalyzer-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_visible spectrum.header.tilt
+assert_absent plugin.simple.row.2.4
+assert_absent plugin.simple.row.2.5
+scroll_into_view rack.params plugin.simple.row.2.0
+assert_visible plugin.simple.row.2.0
+plugin_chain_save $SOTF_QA_DIR/SpectrumAnalyzer-after.json
+screenshot simple-shell-SpectrumAnalyzer
+
+click rack.config.toggle
+click rack.config.view
+key up
+key up
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+plugin_clear
+plugin_add ChannelMuteSolo
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/ChannelMuteSolo-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_visible plugin.choice.2.0.0
+assert_absent plugin.simple.row.2.0
+scroll_into_view rack.params plugin.simple.row.2.1
+assert_visible plugin.simple.row.2.1
+plugin_chain_save $SOTF_QA_DIR/ChannelMuteSolo-after.json
+screenshot simple-shell-ChannelMuteSolo

@@ -1,0 +1,51 @@
+resize 1440 1100
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add Gain
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/gain-before.json
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "-8"
+key enter
+assert plugins.plugin.2.param.0.value == -8 tolerance=0.00001
+click plugin.param.2.0.exact
+key up
+key escape
+assert plugins.plugin.2.param.0.value == -7.5
+click plugin.slider.2.0
+key home
+assert plugins.plugin.2.param.0.value == -60
+key right
+# Slider arrows use the toolkit's 5% travel, snapped to Gain's 0.5 dB grid.
+assert plugins.plugin.2.param.0.value == -56
+double_click plugin.slider.2.0
+assert plugins.plugin.2.param.0.value == 0
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "-6.5"
+key enter
+assert plugins.plugin.2.param.0.value == -6.5 tolerance=0.00001
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "25"
+key enter
+assert plugins.plugin.2.param.1.value == 25 tolerance=0.00001
+click plugin.param.2.1.exact
+key up
+key escape
+assert plugins.plugin.2.param.1.value == 26
+plugin_chain_save $SOTF_QA_DIR/gain-edited.json
+plugin_chain_load $SOTF_QA_DIR/gain-edited.json
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/gain-reloaded.json
+screenshot gain-wide
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+screenshot gain-narrow

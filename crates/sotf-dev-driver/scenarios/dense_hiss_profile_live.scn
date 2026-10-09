@@ -1,0 +1,58 @@
+resize 1000 1000
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add HissReducer
+action PluginSelectFirstUser
+wait_idle 500ms
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"first"}
+wait_until playback.is_playing == true timeout=12s
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+wait_until plugins.profile.kind == "HissReducer" timeout=12s
+wait_until plugins.profile.learning == false timeout=5s
+sleep 100ms
+assert plugins.profile.present == false
+plugin_chain_save $SOTF_QA_DIR/profile-live-before.json
+scroll_into_view rack.params plugin.action.2.5
+wait_text plugin.action.2.5 == "Learn Noise" timeout=5s
+click plugin.action.2.5
+wait_until plugins.profile.learning == true timeout=5s
+wait_until plugins.profile.progress > 0 timeout=5s
+sleep 100ms
+wait_text plugin.action.2.5 == "Cancel Learn" timeout=5s
+click plugin.action.2.5
+wait_until plugins.profile.learning == false timeout=5s
+sleep 100ms
+assert plugins.profile.present == false
+wait_text plugin.action.2.5 == "Learn Noise" timeout=5s
+click plugin.action.2.5
+wait_until plugins.profile.present == true timeout=8s
+wait_until plugins.profile.learning == false timeout=5s
+sleep 100ms
+scroll_into_view rack.params plugin.choice.2.6.0
+click plugin.choice.2.6.0
+wait_until plugins.profile.requested == false timeout=5s
+wait_until plugins.profile.using == false timeout=5s
+sleep 100ms
+scroll_into_view rack.params plugin.hiss.profile_status.2
+wait_text plugin.hiss.profile_status.2 == "Noise profile · Captured" timeout=5s
+screenshot hiss-captured
+scroll_into_view rack.params plugin.choice.2.6.1
+click plugin.choice.2.6.1
+wait_until plugins.profile.requested == true timeout=5s
+wait_until plugins.profile.using == true timeout=5s
+sleep 100ms
+scroll_into_view rack.params plugin.hiss.profile_status.2
+wait_text plugin.hiss.profile_status.2 == "Noise profile · Active" timeout=5s
+scroll_into_view rack.params plugin.action.2.7
+click plugin.action.2.7
+wait_until plugins.profile.present == false timeout=5s
+sleep 100ms
+assert plugins.profile.using == false
+scroll_into_view rack.params plugin.hiss.profile_status.2
+wait_text plugin.hiss.profile_status.2 == "Noise profile · None" timeout=5s
+screenshot hiss-cleared
+plugin_chain_save $SOTF_QA_DIR/profile-live-after.json
+click transport.play
+wait_until playback.is_playing == false timeout=5s

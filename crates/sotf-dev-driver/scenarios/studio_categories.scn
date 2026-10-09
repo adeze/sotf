@@ -1,6 +1,6 @@
 focus Home
 wait_idle 2s
-click sidebar.nav-studiohub
+click sidebar.nav-studio-rack
 assert screen.focused == "Studio"
 click studio.category.1
 assert screen.focused == "Recording"
@@ -23,8 +23,8 @@ assert screen.focused == "Spinorama"
 click studio.category.0
 assert screen.focused == "Spectrum"
 focus Home
-click sidebar.nav-studiohub
-assert screen.focused == "Spectrum"
+click sidebar.nav-studio-rack
+assert screen.focused == "Studio"
 click studio.subtool.Studio
 assert screen.focused == "Studio"
 resize 600 800

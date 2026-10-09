@@ -89,11 +89,24 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
     });
 }
 
+/// Prepare a new SPL capture generation before marking it running.
+pub(super) fn prepare_spl_calibration_capture(app: &mut App, started_at_ms: u64) -> u64 {
+    use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
+
+    app.recording
+        .model
+        .spl_cancel_requested
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let cal = &mut app.recording.model.spl_calibration_capture;
+    // Generation invalidation clears prior calibration data and resets status to Idle.
+    let generation = cal.next_capture_generation();
+    cal.status = SplCalibrationCaptureStatus::Running { started_at_ms };
+    generation
+}
+
 /// Spawn the SPL calibration capture on a background thread (mirrors
 /// `spawn_probe_capture`).
 pub(super) fn spawn_spl_calibration_capture(app: &mut App) {
-    use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
-
     let cal = &mut app.recording.model.spl_calibration_capture;
     let reference_freq_hz = cal.reference_freq_hz;
     let tone_amp = cal.tone_amp;
@@ -104,24 +117,8 @@ pub(super) fn spawn_spl_calibration_capture(app: &mut App) {
     let output_device = Some(app.recording.model.playback_config.device_name.clone());
     let input_device = Some(app.recording.model.recording_config.device_name.clone());
 
-    // Reset the cancel flag and capture status so the new run starts
-    // clean. `engine_result` is cleared on every fresh capture.
-    app.recording
-        .model
-        .spl_cancel_requested
-        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let capture_generation = prepare_spl_calibration_capture(app, now_ms());
     let cancel_flag = app.recording.model.spl_cancel_requested.clone();
-
-    let cal = &mut app.recording.model.spl_calibration_capture;
-    cal.status = SplCalibrationCaptureStatus::Running {
-        started_at_ms: now_ms(),
-    };
-    cal.engine_result = None;
-    let capture_generation = app
-        .recording
-        .model
-        .spl_calibration_capture
-        .next_capture_generation();
 
     let slot = SPL_CAPTURE_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))

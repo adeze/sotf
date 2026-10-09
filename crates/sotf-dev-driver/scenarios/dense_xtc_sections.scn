@@ -1,0 +1,197 @@
+# All XTC secondary numeric and boolean bindings, prerequisites and sections.
+resize 1440 1100
+action CycleLanguage
+assert settings.language == "French"
+focus Studio
+plugin_clear
+plugin_add XTC
+action PluginSelectFirstUser
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params xtc.section.xtc-tracking
+click xtc.section.xtc-tracking
+wait_idle 1s
+scroll_into_view rack.params plugin.param.2.3.exact
+assert_within plugin.param.2.3.exact rack.params
+click plugin.param.2.3.exact
+key cmd-a
+type "0.12"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.3.value == 0.12 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.4.exact
+assert_within plugin.param.2.4.exact rack.params
+click plugin.param.2.4.exact
+key cmd-a
+type "-0.08"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.4.value == -0.08 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.5.exact
+assert_within plugin.param.2.5.exact rack.params
+click plugin.param.2.5.exact
+key cmd-a
+type "15"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.5.value == 15 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.6.exact
+assert_within plugin.param.2.6.exact rack.params
+click plugin.param.2.6.exact
+key cmd-a
+type "0.25"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.6.value == 0.25 tolerance=0.000001
+snapshot $SOTF_QA_DIR/xtc-tracking.json
+screenshot xtc-tracking
+scroll_into_view rack.params xtc.section.xtc-tracking
+click xtc.section.xtc-tracking
+scroll_into_view rack.params xtc.section.xtc-filters
+click xtc.section.xtc-filters
+wait_idle 1s
+scroll_into_view rack.params plugin.choice.2.14.1
+click plugin.choice.2.14.1
+wait_idle 1s
+scroll_into_view rack.params plugin.param.2.8.exact
+assert_within plugin.param.2.8.exact rack.params
+click plugin.param.2.8.exact
+key cmd-a
+type "8.5"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.8.value == 8.5 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.9.exact
+assert_within plugin.param.2.9.exact rack.params
+click plugin.param.2.9.exact
+key cmd-a
+type "12.5"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.9.value == 12.5 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.10.exact
+assert_within plugin.param.2.10.exact rack.params
+click plugin.param.2.10.exact
+key cmd-a
+type "3500"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.10.value == 3500 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.11.exact
+assert_within plugin.param.2.11.exact rack.params
+click plugin.param.2.11.exact
+key cmd-a
+type "7.5"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.11.value == 7.5 tolerance=0.000001
+screenshot xtc-filters
+scroll_into_view rack.params xtc.section.xtc-filters
+click xtc.section.xtc-filters
+scroll_into_view rack.params xtc.section.xtc-room
+click xtc.section.xtc-room
+wait_idle 1s
+snapshot $SOTF_QA_DIR/xtc-room-disabled.json
+scroll_into_view rack.params plugin.param.2.17.exact
+click plugin.param.2.17.exact
+wait_idle 1s
+assert plugins.plugin.2.param.17.value == 4
+scroll_into_view rack.params plugin.choice.2.15.1
+click plugin.choice.2.15.1
+wait_idle 1s
+assert plugins.plugin.2.param.15.value == 1
+scroll_into_view rack.params plugin.param.2.17.exact
+assert_within plugin.param.2.17.exact rack.params
+click plugin.param.2.17.exact
+key cmd-a
+type "4.5"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.17.value == 4.5 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.18.exact
+assert_within plugin.param.2.18.exact rack.params
+click plugin.param.2.18.exact
+key cmd-a
+type "6.5"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.18.value == 6.5 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.19.exact
+assert_within plugin.param.2.19.exact rack.params
+click plugin.param.2.19.exact
+key cmd-a
+type "0.45"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.19.value == 0.45 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.20.exact
+assert_within plugin.param.2.20.exact rack.params
+click plugin.param.2.20.exact
+key cmd-a
+type "3.5"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.20.value == 3.5 tolerance=0.000001
+snapshot $SOTF_QA_DIR/xtc-room-enabled.json
+screenshot xtc-room
+scroll_into_view rack.params xtc.section.xtc-room
+click xtc.section.xtc-room
+scroll_into_view rack.params plugin.choice.2.24.0
+click plugin.choice.2.24.0
+wait_idle 1s
+assert plugins.plugin.2.param.24.value == 0
+scroll_into_view rack.params xtc.section.xtc-output
+click xtc.section.xtc-output
+wait_idle 1s
+snapshot $SOTF_QA_DIR/xtc-output-disabled.json
+scroll_into_view rack.params plugin.param.2.25.exact
+click plugin.param.2.25.exact
+wait_idle 1s
+assert plugins.plugin.2.param.25.value == 12
+scroll_into_view rack.params plugin.choice.2.24.1
+click plugin.choice.2.24.1
+wait_idle 1s
+assert plugins.plugin.2.param.24.value == 1
+scroll_into_view rack.params plugin.param.2.25.exact
+assert_within plugin.param.2.25.exact rack.params
+click plugin.param.2.25.exact
+key cmd-a
+type "9"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.25.value == 9 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.26.exact
+assert_within plugin.param.2.26.exact rack.params
+click plugin.param.2.26.exact
+key cmd-a
+type "150"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.26.value == 150 tolerance=0.000001
+snapshot $SOTF_QA_DIR/xtc-output-enabled.json
+screenshot xtc-output
+scroll_into_view rack.params xtc.section.xtc-output
+click xtc.section.xtc-output
+scroll_into_view rack.params xtc.section.xtc-diagnostics
+click xtc.section.xtc-diagnostics
+wait_idle 1s
+scroll_into_view rack.params plugin.choice.2.21.1
+click plugin.choice.2.21.1
+wait_idle 1s
+assert plugins.plugin.2.param.21.value == 1
+scroll_into_view rack.params plugin.choice.2.22.1
+click plugin.choice.2.22.1
+wait_idle 1s
+assert plugins.plugin.2.param.22.value == 1
+scroll_into_view rack.params plugin.choice.2.23.1
+click plugin.choice.2.23.1
+wait_idle 1s
+assert plugins.plugin.2.param.23.value == 1
+screenshot xtc-diagnostics
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 1s
+assert plugins.plugin.2.param.3.value == 0.12 tolerance=0.000001
+assert plugins.plugin.2.param.20.value == 3.5
+assert plugins.plugin.2.param.23.value == 1
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

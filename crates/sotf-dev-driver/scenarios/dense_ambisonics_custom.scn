@@ -1,0 +1,51 @@
+resize 1000 700
+focus Studio
+plugin_clear
+action PluginSetInputChannels {"channels":4}
+plugin_add AmbisonicsDecoder
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before-no-geometry.json
+click plugin.select.2.1
+key down
+key down
+key down
+key down
+key down
+key down
+key down
+key down
+key enter
+assert plugins.plugin.2.param.1.value == 0
+assert toast.type == "Error"
+assert toast.message == "Custom layout needs valid speaker geometry. Load a preset with a custom speaker layout before selecting Custom."
+plugin_chain_save $SOTF_QA_DIR/rejected.json
+screenshot ambisonics-custom-rejected
+plugin_chain_load crates/app-gpui/tests/fixtures/ambisonics-custom-chain.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 8
+plugin_chain_save $SOTF_QA_DIR/custom-before.json
+click plugin.select.2.1
+key down
+key enter
+assert plugins.plugin.2.param.1.value == 0
+click plugin.select.2.1
+key down
+key down
+key down
+key down
+key down
+key down
+key down
+key down
+key enter
+assert plugins.plugin.2.param.1.value == 8
+assert_within plugin.param.2.0.exact rack.params
+screenshot ambisonics-custom-valid
+plugin_chain_save $SOTF_QA_DIR/custom-edited.json
+plugin_chain_load $SOTF_QA_DIR/custom-edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 8
+plugin_chain_save $SOTF_QA_DIR/custom-reloaded.json

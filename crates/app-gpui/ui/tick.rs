@@ -275,16 +275,46 @@ impl PlayerView {
             poll_external_diagnostics && state.app.plugin_state.has_external_plugins();
 
         let was_playing = state.app.playback.is_playing;
-        let (input_monitor_idx, output_monitor_idx, spectrum_idx, compressor_idx, rack_plugin_idx) = {
+        let (
+            input_monitor_idx,
+            output_monitor_idx,
+            spectrum_idx,
+            compressor_idx,
+            rack_plugin_idx,
+            rack_plugin_identity,
+        ) = {
             let graph = &state.app.plugin_state.graph;
             // The graph editor's modal can be editing a node that is not the
             // rack's selected plugin. Request live data for that node while
             // the graph screen is active so generic output/GR meters do not
             // silently fall back to zero.
-            let graph_editor_plugin_idx = (current_screen == Screen::PluginGraph)
+            let graph_editor_node = (current_screen == Screen::PluginGraph)
                 .then_some(state.app.plugin_state.graph_state.editing_graph_node_uuid)
-                .flatten()
-                .and_then(|node_id| graph.linear_index_of_node(node_id));
+                .flatten();
+            let graph_editor_plugin_idx =
+                graph_editor_node.and_then(|node_id| graph.linear_index_of_node(node_id));
+            let rack_linear_idx =
+                graph_editor_plugin_idx.unwrap_or(state.app.plugin_state.selected_plugin_index);
+            let rack_plugin_identity = if include_rack_data {
+                let plugin = if let Some(node_id) = graph_editor_node {
+                    graph.nodes.get(&node_id).map(|node| &node.plugin)
+                } else {
+                    graph.get_plugin(rack_linear_idx)
+                };
+                plugin.map(|plugin| {
+                    (
+                        plugin.id,
+                        state
+                            .app
+                            .plugin_state
+                            .update_state
+                            .profile_observation_revision,
+                        state.app.plugin_state.update_state.engine_generation,
+                    )
+                })
+            } else {
+                None
+            };
             let compressor_idx = if include_compressor {
                 match *compressor_idx_cache {
                     Some(cached) => cached,
@@ -307,13 +337,15 @@ impl PlayerView {
                 },
                 compressor_idx,
                 if include_rack_data {
-                    graph.get_engine_index_by_linear_position(
-                        graph_editor_plugin_idx
-                            .unwrap_or(state.app.plugin_state.selected_plugin_index),
-                    )
+                    if let Some(node_id) = graph_editor_node {
+                        graph.get_engine_index(node_id)
+                    } else {
+                        graph.get_engine_index_by_linear_position(rack_linear_idx)
+                    }
                 } else {
                     None
                 },
+                rack_plugin_identity,
             )
         };
 
@@ -326,6 +358,7 @@ impl PlayerView {
                     spectrum_idx,
                     compressor_idx,
                     rack_plugin_idx,
+                    rack_plugin_identity,
                     include_external_diagnostics,
                 })
         {
@@ -437,13 +470,175 @@ impl PlayerView {
                 (Some(requested_idx), Some((snapshot_idx, data)))
                     if requested_idx == *snapshot_idx =>
                 {
-                    Some(data.clone())
+                    let external = data.downcast_ref::<sotf_plugins::ExternalPluginEditorData>();
+                    let updates_idle = state.app.plugin_state.update_state.pending_ack.is_none()
+                        && state
+                            .app
+                            .plugin_state
+                            .update_state
+                            .pending_plugin_update
+                            .is_none()
+                        && state
+                            .app
+                            .plugin_state
+                            .update_state
+                            .pending_actions
+                            .is_empty()
+                        && state.app.plugin_state.graph_state.draft.is_none();
+                    let external_current = external.is_none_or(|external| {
+                        let graph = &state.app.plugin_state.graph;
+                        let target = graph
+                            .nodes
+                            .values()
+                            .find(|node| Some(node.plugin.id) == external.plugin_instance_id);
+                        let engine_index_matches = target
+                            .and_then(|node| graph.get_engine_index(node.id))
+                            == Some(requested_idx);
+                        engine_index_matches
+                            && crate::app::player_handle::profile_request_matches(
+                                snapshot.rack_plugin_identity,
+                                external.plugin_instance_id.map(|id| {
+                                    (
+                                        id,
+                                        state
+                                            .app
+                                            .plugin_state
+                                            .update_state
+                                            .profile_observation_revision,
+                                        state.app.plugin_state.update_state.engine_generation,
+                                    )
+                                }),
+                                updates_idle,
+                            )
+                    });
+                    external_current.then(|| data.clone())
                 }
                 _ => None,
             }
         } else {
             None
         };
+
+        // Only current owned External snapshots are published above. Persist
+        // the accepted native blob without scheduling a graph rebuild, which
+        // would destroy and reload the instance we just edited.
+        if let Some(data) = state
+            .app
+            .playback
+            .rack_plugin_data
+            .as_ref()
+            .and_then(|data| data.downcast_ref::<sotf_plugins::ExternalPluginEditorData>())
+            && state
+                .app
+                .plugin_state
+                .graph
+                .reconcile_external_editor_state(data)
+        {
+            state.app.plugin_state.update_state.plugin_graph_modified = true;
+        }
+
+        // Learning completion and Clear can change the Denoiser's requested
+        // Use Profile flag inside the engine. Mirror that accepted live state
+        // into the saved graph without sending it back as a new command.
+        // Never let an older snapshot overwrite an edit or a graph draft.
+        if state.app.plugin_state.graph_state.draft.is_none()
+            && let Some(data) = state
+                .app
+                .playback
+                .rack_plugin_data
+                .as_ref()
+                .and_then(|data| data.downcast_ref::<sotf_plugins::DenoiserData>())
+            && let Some(requested_idx) = rack_plugin_idx
+        {
+            let graph = &state.app.plugin_state.graph;
+            let selected_node = (current_screen == Screen::PluginGraph)
+                .then_some(state.app.plugin_state.graph_state.editing_graph_node_uuid)
+                .flatten()
+                .or_else(|| {
+                    let plugin = graph.get_plugin(state.app.plugin_state.selected_plugin_index)?;
+                    graph
+                        .nodes
+                        .values()
+                        .find(|node| node.plugin.id == plugin.id)
+                        .map(|node| node.id)
+                });
+            let target_id = selected_node
+                .and_then(|id| graph.nodes.get(&id))
+                .and_then(|node| {
+                    matches!(
+                        node.plugin.settings,
+                        sotf_audio_player::PluginSettings::Denoiser { .. }
+                    )
+                    .then_some(node.plugin.id)
+                });
+            let updates_idle = state.app.plugin_state.update_state.pending_ack.is_none()
+                && state
+                    .app
+                    .plugin_state
+                    .update_state
+                    .pending_plugin_update
+                    .is_none()
+                && state
+                    .app
+                    .plugin_state
+                    .update_state
+                    .pending_actions
+                    .is_empty();
+            if let Some(instance_id) = target_id
+                && crate::app::player_handle::profile_request_matches(
+                    snapshot.rack_plugin_identity,
+                    Some((
+                        instance_id,
+                        state
+                            .app
+                            .plugin_state
+                            .update_state
+                            .profile_observation_revision,
+                        state.app.plugin_state.update_state.engine_generation,
+                    )),
+                    updates_idle,
+                )
+                && selected_node.and_then(|id| state.app.plugin_state.graph.get_engine_index(id))
+                    == Some(requested_idx)
+            {
+                let direct_edit_pending = match state
+                    .app
+                    .plugin_state
+                    .update_state
+                    .denoiser_direct_use_guard
+                    .get(&instance_id)
+                    .copied()
+                {
+                    Some(guarded_value) => {
+                        if guarded_value == data.requested_use_profile {
+                            state
+                                .app
+                                .plugin_state
+                                .update_state
+                                .denoiser_direct_use_guard
+                                .remove(&instance_id);
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    _ => false,
+                };
+                if !direct_edit_pending
+                    && let Some(plugin) = selected_node
+                        .and_then(|id| state.app.plugin_state.graph.nodes.get_mut(&id))
+                        .map(|node| &mut node.plugin)
+                    && let sotf_audio_player::PluginSettings::Denoiser {
+                        use_captured_profile,
+                        ..
+                    } = &mut plugin.settings
+                    && *use_captured_profile != data.requested_use_profile
+                {
+                    *use_captured_profile = data.requested_use_profile;
+                    state.app.plugin_state.update_state.plugin_graph_modified = true;
+                }
+            }
+        }
 
         if can_update_autogain
             && let Some((engine_index, next_gain_db)) =
@@ -646,6 +841,24 @@ impl PlayerView {
         state.app.library_state.ensure_cache_valid();
 
         for failure in state.player.drain_failures() {
+            if failure.label == "set_plugin_parameter" {
+                state
+                    .app
+                    .plugin_state
+                    .update_state
+                    .denoiser_direct_use_guard
+                    .clear();
+                state
+                    .app
+                    .plugin_state
+                    .update_state
+                    .profile_observation_revision = state
+                    .app
+                    .plugin_state
+                    .update_state
+                    .profile_observation_revision
+                    .wrapping_add(1);
+            }
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
                 "Audio command failed ({}): {}",
                 failure.label, failure.error

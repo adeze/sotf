@@ -5934,6 +5934,9 @@ const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
 pub struct SidebarTranslations {
     pub expand: &'static str,
     pub collapse: &'static str,
+    pub tools: &'static str,
+    pub learning: &'static str,
+    pub studio_graph: &'static str,
 }
 
 impl SidebarTranslations {
@@ -5943,18 +5946,30 @@ impl SidebarTranslations {
             Language::English => Self {
                 expand: "Expand sidebar",
                 collapse: "Collapse sidebar",
+                tools: "Tools",
+                learning: "Learning",
+                studio_graph: "Studio Graph",
             },
             Language::French => Self {
                 expand: "Développer la barre latérale",
                 collapse: "Réduire la barre latérale",
+                tools: "Outils",
+                learning: "Apprentissage",
+                studio_graph: "Graphe du studio",
             },
             Language::German => Self {
                 expand: "Seitenleiste erweitern",
                 collapse: "Seitenleiste einklappen",
+                tools: "Werkzeuge",
+                learning: "Lernen",
+                studio_graph: "Studio-Graph",
             },
             Language::Spanish => Self {
                 expand: "Expandir la barra lateral",
                 collapse: "Contraer la barra lateral",
+                tools: "Herramientas",
+                learning: "Aprendizaje",
+                studio_graph: "Grafo del estudio",
             },
         }
     }

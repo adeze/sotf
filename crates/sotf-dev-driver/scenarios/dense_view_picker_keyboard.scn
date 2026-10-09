@@ -1,0 +1,66 @@
+# Use real toolkit Select keyboard events, not injected view state.
+# Verify cancellation, Enter/Space reopening, wraparound and action routing.
+# Every view transition must preserve the complete saved DSP chain.
+resize 1000 900
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/view-before.json
+assert_visible fir.eq.band.0.select
+click rack.config.toggle
+click rack.config.view
+key down
+key escape
+key enter
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_absent fir.eq.band.0.select
+scroll_into_view rack.params plugin.simple.row.2.104
+assert_visible plugin.param.2.104.exact
+plugin_chain_save $SOTF_QA_DIR/view-table.json
+focus Library
+wait_idle 500ms
+assert_visible library.search_input
+focus Studio
+wait_idle 500ms
+assert_visible rack.params
+click rack.config.toggle
+click rack.config.view
+key escape
+key space
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_visible fir.eq.band.0.select
+assert_absent plugin.simple.row.2.104
+plugin_chain_save $SOTF_QA_DIR/view-native.json
+resize 700 900
+wait_idle 500ms
+click rack.config.toggle
+click rack.config.view
+key escape
+key enter
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.params plugin.simple.row.2.104
+assert_within plugin.param.2.104.exact rack.params
+plugin_chain_save $SOTF_QA_DIR/view-narrow-table.json
+screenshot view-keyboard-narrow
+focus Library
+wait_idle 500ms
+assert_visible library.search_input
+focus Studio
+wait_idle 500ms
+assert_visible rack.params

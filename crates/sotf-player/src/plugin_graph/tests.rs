@@ -328,7 +328,7 @@ fn test_to_plugin_graph_config_dedups_per_port_edges() {
 }
 
 #[test]
-fn test_to_plugin_graph_config_skips_disabled() {
+fn test_to_plugin_graph_config_retains_disabled_routes() {
     let mut g = PluginGraph::new();
     let a = g
         .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0))
@@ -337,13 +337,15 @@ fn test_to_plugin_graph_config_skips_disabled() {
         .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0))
         .unwrap();
     g.add_connection(a, 0, b, 0).unwrap();
-    // Disable b — `to_plugin_config(sr)` returns None for disabled plugins.
     g.nodes.get_mut(&b).unwrap().plugin.enabled = false;
-
     let config = g.to_plugin_graph_config(48000.0);
-    assert_eq!(config.nodes.len(), 1);
-    // Edge a→b is dropped because b is missing from the engine config.
-    assert!(config.edges.is_empty());
+    assert_eq!(config.nodes.len(), 2);
+    assert_eq!(config.edges.len(), 1);
+    let bypass = config.nodes.iter().find(|node| node.bypassed).unwrap();
+    assert_eq!(bypass.plugin_type, "gain");
+    assert_eq!(bypass.parameters["gain_db"], 0.0);
+    assert_eq!(bypass.input_channels, 2);
+    assert_eq!(config.edges[0].to_node, bypass.id);
 }
 
 #[test]
@@ -1129,6 +1131,155 @@ fn test_eq_channel_remap_preserves_valid_explicit_stereo_pairs() {
 }
 
 #[test]
+fn channel_mute_solo_tracks_topology_and_preserves_retained_channels() {
+    for channels in [1, 2, 6, 12] {
+        let mut graph = PluginGraph::with_default_rack();
+        graph.input_node_mut().unwrap().channels = channels;
+        let id = graph.add_user_plugin(&PluginType::ChannelMuteSolo).unwrap();
+        let linear_index = graph
+            .find_plugin_index(&PluginType::ChannelMuteSolo)
+            .unwrap();
+        assert_eq!(graph.plugin_input_channels(linear_index), Some(channels));
+        assert_eq!(graph.nodes[&id].input_channels, channels);
+        let PluginSettings::ChannelMuteSolo { channel_states, .. } =
+            &mut graph.nodes.get_mut(&id).unwrap().plugin.settings
+        else {
+            panic!("Expected ChannelMuteSolo settings");
+        };
+        assert_eq!(channel_states.len(), channels);
+        channel_states[0].muted = true;
+
+        graph.input_node_mut().unwrap().channels = channels + 1;
+        graph.update_channel_dependent_plugins();
+        let PluginSettings::ChannelMuteSolo { channel_states, .. } =
+            &graph.nodes[&id].plugin.settings
+        else {
+            panic!("Expected ChannelMuteSolo settings");
+        };
+        assert_eq!(channel_states.len(), channels + 1);
+        assert!(channel_states[0].muted);
+        assert!(!channel_states[channels].muted);
+
+        let saved = serde_json::to_string(&graph).unwrap();
+        let mut reloaded: PluginGraph = serde_json::from_str(&saved).unwrap();
+        reloaded.update_channel_dependent_plugins();
+        let PluginSettings::ChannelMuteSolo { channel_states, .. } =
+            &reloaded.nodes[&id].plugin.settings
+        else {
+            panic!("Expected ChannelMuteSolo settings after reload");
+        };
+        assert_eq!(channel_states.len(), channels + 1);
+        assert!(channel_states[0].muted);
+
+        reloaded.input_node_mut().unwrap().channels = channels;
+        reloaded.update_channel_dependent_plugins();
+        let PluginSettings::ChannelMuteSolo { channel_states, .. } =
+            &reloaded.nodes[&id].plugin.settings
+        else {
+            panic!("Expected ChannelMuteSolo settings after shrinking");
+        };
+        assert_eq!(channel_states.len(), channels);
+        assert!(channel_states[0].muted);
+    }
+}
+
+#[test]
+fn matrix_repairs_channel_states_without_replacing_same_topology_routing() {
+    let mut graph = PluginGraph::with_default_rack();
+    let matrix_id = graph.node_id_for_role(NodeRole::Matrix).unwrap();
+    let routing = vec![0.75, 0.25, 0.1, 0.9];
+    let PluginSettings::Matrix {
+        input_channels,
+        output_channels,
+        matrix,
+        channel_states,
+    } = &mut graph.nodes.get_mut(&matrix_id).unwrap().plugin.settings
+    else {
+        panic!("Expected Matrix settings");
+    };
+    *input_channels = 2;
+    *output_channels = 2;
+    *matrix = routing.clone();
+    channel_states.clear();
+
+    graph.update_channel_dependent_plugins();
+    let PluginSettings::Matrix {
+        matrix,
+        channel_states,
+        ..
+    } = &mut graph.nodes.get_mut(&matrix_id).unwrap().plugin.settings
+    else {
+        panic!("Expected Matrix settings");
+    };
+    assert_eq!(*matrix, routing);
+    assert_eq!(channel_states.len(), 2);
+    channel_states[0].muted = true;
+    channel_states.pop();
+
+    graph.update_channel_dependent_plugins();
+    let PluginSettings::Matrix {
+        matrix,
+        channel_states,
+        ..
+    } = &graph.nodes[&matrix_id].plugin.settings
+    else {
+        panic!("Expected Matrix settings");
+    };
+    assert_eq!(*matrix, routing);
+    assert_eq!(channel_states.len(), 2);
+    assert!(channel_states[0].muted);
+    assert!(!channel_states[1].muted);
+
+    let PluginSettings::Matrix {
+        output_channels,
+        matrix,
+        channel_states,
+        ..
+    } = &mut graph.nodes.get_mut(&matrix_id).unwrap().plugin.settings
+    else {
+        panic!("Expected Matrix settings");
+    };
+    *output_channels = 4;
+    let rectangular_routing = vec![0.75, 0.25, 0.1, 0.9, 0.2, 0.8, 0.6, 0.4];
+    *matrix = rectangular_routing.clone();
+    channel_states[0].soloed = true;
+    graph.update_channel_dependent_plugins();
+    let PluginSettings::Matrix {
+        output_channels,
+        matrix,
+        channel_states,
+        ..
+    } = &graph.nodes[&matrix_id].plugin.settings
+    else {
+        panic!("Expected Matrix settings");
+    };
+    assert_eq!(*output_channels, 4);
+    assert_eq!(*matrix, rectangular_routing);
+    assert_eq!(channel_states.len(), 4);
+    assert!(channel_states[0].muted && channel_states[0].soloed);
+}
+
+#[test]
+fn channel_mute_solo_renders_configured_channels_in_non_linear_graph() {
+    let mut graph = PluginGraph::new();
+    graph.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 6);
+    let mute_id = graph
+        .add_plugin_node(&PluginType::ChannelMuteSolo, NodePosition::new(100.0, 0.0))
+        .unwrap();
+    graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0))
+        .unwrap();
+    graph.nodes.get_mut(&mute_id).unwrap().input_channels = 6;
+    graph.update_channel_dependent_plugins();
+    let PluginSettings::ChannelMuteSolo { channel_states, .. } =
+        &graph.nodes[&mute_id].plugin.settings
+    else {
+        panic!("Expected ChannelMuteSolo settings");
+    };
+    assert_eq!(channel_states.len(), 6);
+}
+
+#[test]
 fn test_update_channel_dependent_plugins_gain_channels_propagate() {
     let mut g = PluginGraph::with_default_rack();
     let gain_id = g.add_user_plugin(&PluginType::Gain).unwrap();
@@ -1267,4 +1418,804 @@ fn test_move_user_plugin_preserves_channel_counts() {
         comp_in_before,
         "Compressor input channels should be preserved after move"
     );
+}
+
+#[test]
+fn preset_reload_preserves_live_permanent_controls() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut preset = PluginGraph::with_default_rack();
+    let user = preset.add_user_plugin(&PluginType::Gain).unwrap();
+    if let PluginSettings::Gain { gain_db, .. } =
+        &mut preset.nodes.get_mut(&user).unwrap().plugin.settings
+    {
+        *gain_db = -7.5;
+    }
+    preset.save_to_file(directory.path(), "processing").unwrap();
+
+    let mut current = PluginGraph::with_default_rack();
+    current.update_channel_dependent_plugins();
+    for role in [NodeRole::InputMonitor, NodeRole::OutputMonitor] {
+        let id = current.node_id_for_role(role).unwrap();
+        current.nodes.get_mut(&id).unwrap().plugin.enabled = false;
+    }
+    let replay = current.node_id_for_role(NodeRole::ReplayGain).unwrap();
+    let replay = &mut current.nodes.get_mut(&replay).unwrap().plugin;
+    replay.enabled = true;
+    if let PluginSettings::Gain { gain_db, .. } = &mut replay.settings {
+        *gain_db = -3.0;
+    }
+    let matrix = current.node_id_for_role(NodeRole::Matrix).unwrap();
+    if let PluginSettings::Matrix {
+        matrix,
+        channel_states,
+        ..
+    } = &mut current.nodes.get_mut(&matrix).unwrap().plugin.settings
+    {
+        *matrix = vec![0.75, 0.25, -0.25, 0.75];
+        channel_states[0].muted = true;
+        channel_states[1].soloed = true;
+        channel_states[1].dimmed = true;
+    }
+    let expected: Vec<_> = [
+        NodeRole::InputMonitor,
+        NodeRole::ReplayGain,
+        NodeRole::Matrix,
+        NodeRole::OutputMonitor,
+    ]
+    .into_iter()
+    .map(|role| {
+        let id = current.node_id_for_role(role).unwrap();
+        (
+            role,
+            serde_json::to_value(&current.nodes[&id].plugin).unwrap(),
+        )
+    })
+    .collect();
+
+    assert!(
+        current
+            .load_from_file(directory.path(), "processing")
+            .unwrap()
+            .is_empty()
+    );
+    for (role, plugin) in expected {
+        let id = current.node_id_for_role(role).unwrap();
+        assert_eq!(
+            serde_json::to_value(&current.nodes[&id].plugin).unwrap(),
+            plugin
+        );
+    }
+    let processing = current
+        .plugins_linear()
+        .unwrap()
+        .into_iter()
+        .find(|node| node.role == NodeRole::User)
+        .unwrap();
+    assert!(matches!(
+        processing.plugin.settings,
+        PluginSettings::Gain { gain_db: -7.5, .. }
+    ));
+}
+
+#[test]
+fn preset_reload_adapts_output_count_without_losing_retained_flags() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut preset = PluginGraph::with_default_rack();
+    let user = preset.add_user_plugin(&PluginType::Upmixer).unwrap();
+    let output_channels = preset.node_output_channels(user);
+    assert!(output_channels > 2);
+    preset.save_to_file(directory.path(), "surround").unwrap();
+
+    let mut current = PluginGraph::with_default_rack();
+    current.update_channel_dependent_plugins();
+    let matrix = current.node_id_for_role(NodeRole::Matrix).unwrap();
+    if let PluginSettings::Matrix { channel_states, .. } =
+        &mut current.nodes.get_mut(&matrix).unwrap().plugin.settings
+    {
+        channel_states[0].muted = true;
+        channel_states[1].soloed = true;
+        channel_states[1].dimmed = true;
+    }
+    current
+        .load_from_file(directory.path(), "surround")
+        .unwrap();
+    let matrix = current.node_id_for_role(NodeRole::Matrix).unwrap();
+    let PluginSettings::Matrix {
+        input_channels,
+        output_channels: actual_output,
+        channel_states,
+        ..
+    } = &current.nodes[&matrix].plugin.settings
+    else {
+        panic!("permanent Matrix missing")
+    };
+    assert_eq!(*input_channels, output_channels);
+    assert_eq!(*actual_output, output_channels);
+    assert!(channel_states[0].muted);
+    assert!(channel_states[1].soloed && channel_states[1].dimmed);
+    assert_eq!(channel_states.len(), output_channels);
+    assert!(
+        channel_states[2..]
+            .iter()
+            .all(|state| !state.muted && !state.soloed && !state.dimmed)
+    );
+}
+
+#[test]
+fn crossover_per_channel_adapts_to_actual_graph_width() {
+    use sotf_plugins::plugin_crossover::CrossoverTopology;
+    let mut graph = PluginGraph::with_default_rack();
+    graph.add_user_plugin(&PluginType::Upmixer).unwrap();
+    let id = graph.add_user_plugin(&PluginType::Crossover).unwrap();
+    let settings = &mut graph.nodes.get_mut(&id).unwrap().plugin.settings;
+    let PluginSettings::Crossover {
+        topology,
+        frequency,
+        ..
+    } = settings
+    else {
+        panic!("crossover fixture");
+    };
+    *topology = Some(CrossoverTopology::PerChannel);
+    *frequency = 700.0;
+    graph.update_channel_dependent_plugins();
+    let node = &graph.nodes[&id];
+    assert_eq!(node.input_channels, 6);
+    let PluginSettings::Crossover {
+        channel_frequencies_hz,
+        channel_modes,
+        ..
+    } = &node.plugin.settings
+    else {
+        panic!("crossover fixture");
+    };
+    assert_eq!(
+        channel_frequencies_hz.as_deref(),
+        Some([700.0; 6].as_slice())
+    );
+    assert_eq!(channel_modes.as_ref().unwrap().len(), 6);
+
+    let PluginSettings::Crossover {
+        crossover_type,
+        frequency,
+        output,
+        topology,
+        band_count,
+        extra_frequencies,
+        fir_taps,
+        channel_frequencies_hz,
+        channel_modes,
+    } = &node.plugin.settings
+    else {
+        panic!("crossover fixture");
+    };
+    let params = sotf_plugins::plugin_crossover::CrossoverPluginParams {
+        crossover_type: crossover_type.clone(),
+        frequency: *frequency,
+        output: output.clone(),
+        topology: *topology,
+        band_count: *band_count,
+        extra_frequencies: extra_frequencies.clone(),
+        fir_taps: Some(*fir_taps),
+        channel_frequencies_hz: channel_frequencies_hz
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|v| *v as f32)
+            .collect(),
+        channel_modes: channel_modes.clone(),
+    };
+    assert!(sotf_plugins::plugin_crossover::CrossoverPlugin::from_params(6, &params).is_ok());
+
+    let settings = &mut graph.nodes.get_mut(&id).unwrap().plugin.settings;
+    let PluginSettings::Crossover {
+        channel_frequencies_hz,
+        channel_modes,
+        ..
+    } = settings
+    else {
+        panic!("crossover fixture");
+    };
+    channel_frequencies_hz.as_mut().unwrap()[1] = 1200.0;
+    channel_modes.as_mut().unwrap()[1] = "mute".into();
+    let expected = settings.clone();
+    graph.update_channel_dependent_plugins();
+    assert_eq!(
+        serde_json::to_value(&graph.nodes[&id].plugin.settings).unwrap(),
+        serde_json::to_value(&expected).unwrap()
+    );
+}
+
+#[test]
+fn crossover_channel_adaptation_preserves_legacy_and_dormant_settings() {
+    use sotf_plugins::plugin_crossover::CrossoverTopology;
+    let mut graph = PluginGraph::with_default_rack();
+    let id = graph.add_user_plugin(&PluginType::Crossover).unwrap();
+    let settings = &mut graph.nodes.get_mut(&id).unwrap().plugin.settings;
+    let PluginSettings::Crossover {
+        topology,
+        output,
+        channel_frequencies_hz,
+        channel_modes,
+        ..
+    } = settings
+    else {
+        panic!("crossover fixture");
+    };
+    *topology = None;
+    *output = "highpass".into();
+    *channel_frequencies_hz = Some(vec![400.0, 900.0]);
+    *channel_modes = Some(vec!["mute".into()]);
+    graph.update_channel_dependent_plugins();
+    let PluginSettings::Crossover { channel_modes, .. } = &graph.nodes[&id].plugin.settings else {
+        panic!("crossover fixture");
+    };
+    assert_eq!(channel_modes.as_ref().unwrap(), &["mute", "highpass"]);
+    let settings = &mut graph.nodes.get_mut(&id).unwrap().plugin.settings;
+    if let PluginSettings::Crossover { topology, .. } = settings {
+        *topology = Some(CrossoverTopology::Bands);
+    }
+    let expected = settings.clone();
+    super::misc::adapt_crossover_channels(settings, 16);
+    assert_eq!(
+        serde_json::to_value(&*settings).unwrap(),
+        serde_json::to_value(&expected).unwrap()
+    );
+}
+
+#[test]
+fn crossover_channel_adaptation_resizes_and_retains_channel_values() {
+    use sotf_plugins::plugin_crossover::CrossoverTopology;
+    let mut settings = PluginSettings::Crossover {
+        crossover_type: "LR24".into(),
+        frequency: 1000.0,
+        output: "both".into(),
+        fir_taps: 1025,
+        topology: Some(CrossoverTopology::PerChannel),
+        band_count: None,
+        extra_frequencies: vec![],
+        channel_frequencies_hz: None,
+        channel_modes: None,
+    };
+    super::misc::adapt_crossover_channels(&mut settings, 2);
+    let PluginSettings::Crossover {
+        channel_frequencies_hz,
+        channel_modes,
+        ..
+    } = &mut settings
+    else {
+        panic!("crossover fixture");
+    };
+    assert_eq!(
+        channel_modes.as_ref().unwrap(),
+        &["passthrough", "passthrough"]
+    );
+    channel_frequencies_hz.as_mut().unwrap()[0] = 200.0;
+    channel_modes.as_mut().unwrap()[0] = "lowpass".into();
+    super::misc::adapt_crossover_channels(&mut settings, 4);
+    let PluginSettings::Crossover {
+        channel_frequencies_hz,
+        channel_modes,
+        ..
+    } = &settings
+    else {
+        panic!("crossover fixture");
+    };
+    assert_eq!(
+        channel_frequencies_hz.as_ref().unwrap(),
+        &[200.0, 1000.0, 1000.0, 1000.0]
+    );
+    assert_eq!(
+        channel_modes.as_ref().unwrap(),
+        &["lowpass", "passthrough", "passthrough", "passthrough"]
+    );
+    super::misc::adapt_crossover_channels(&mut settings, 1);
+    let PluginSettings::Crossover {
+        channel_frequencies_hz,
+        channel_modes,
+        ..
+    } = &settings
+    else {
+        panic!("crossover fixture");
+    };
+    assert_eq!(channel_frequencies_hz.as_ref().unwrap(), &[200.0]);
+    assert_eq!(channel_modes.as_ref().unwrap(), &["lowpass"]);
+}
+
+#[test]
+fn crossover_channel_adaptation_does_not_repair_invalid_explicit_modes() {
+    use sotf_plugins::plugin_crossover::CrossoverTopology;
+    let mut settings = PluginSettings::Crossover {
+        crossover_type: "LR24".into(),
+        frequency: 1000.0,
+        output: "lowpass".into(),
+        fir_taps: 1025,
+        topology: Some(CrossoverTopology::PerChannel),
+        band_count: None,
+        extra_frequencies: vec![],
+        channel_frequencies_hz: Some(vec![200.0, 400.0]),
+        channel_modes: Some(vec!["mute".into()]),
+    };
+    let before = serde_json::to_value(&settings).unwrap();
+    super::misc::adapt_crossover_channels(&mut settings, 4);
+    assert_eq!(serde_json::to_value(&settings).unwrap(), before);
+}
+
+#[test]
+fn restored_preset_cards_keep_signal_order_and_separate_hit_targets() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut preset = PluginGraph::with_default_rack();
+    for plugin in [
+        PluginType::EQ,
+        PluginType::DeEsser,
+        PluginType::LoudnessCompensation,
+    ] {
+        preset.add_user_plugin(&plugin).unwrap();
+    }
+    preset
+        .save_to_file(directory.path(), "separate-cards")
+        .unwrap();
+    let mut restored = PluginGraph::with_default_rack();
+    let warnings = restored
+        .load_from_file(directory.path(), "separate-cards")
+        .unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let order = restored.linear_order().unwrap();
+    let positions: Vec<_> = order
+        .iter()
+        .map(|id| restored.node_position(*id).unwrap())
+        .collect();
+    assert_eq!(positions.len(), 9);
+    for adjacent in positions.windows(2) {
+        assert_eq!(adjacent[1].y, adjacent[0].y);
+        assert_eq!(adjacent[1].x - adjacent[0].x, 180.0);
+    }
+    let users: Vec<_> = restored
+        .plugins_linear()
+        .unwrap()
+        .into_iter()
+        .filter(|node| !node.plugin.permanent)
+        .map(|node| node.plugin.plugin_type())
+        .collect();
+    assert_eq!(
+        users,
+        vec![
+            PluginType::EQ,
+            PluginType::DeEsser,
+            PluginType::LoudnessCompensation
+        ]
+    );
+    // Repeated restoration must regenerate the same geometry, without drift.
+    restored
+        .load_from_file(directory.path(), "separate-cards")
+        .unwrap();
+    let repeated: Vec<_> = restored
+        .linear_order()
+        .unwrap()
+        .into_iter()
+        .map(|id| restored.node_position(id).unwrap().x)
+        .collect();
+    assert_eq!(
+        repeated,
+        positions
+            .iter()
+            .map(|position| position.x)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn added_user_cards_keep_full_slots_and_preserve_upstream_positions() {
+    let mut graph = PluginGraph::with_default_rack();
+    let upstream: Vec<_> = graph
+        .linear_order()
+        .unwrap()
+        .into_iter()
+        .take(3)
+        .map(|id| (id, graph.node_position(id).unwrap()))
+        .collect();
+    let mut added = Vec::new();
+    for (index, plugin_type) in [PluginType::EQ, PluginType::DeEsser, PluginType::Gain]
+        .into_iter()
+        .enumerate()
+    {
+        let id = match index {
+            0 => graph.add_user_plugin(&plugin_type).unwrap(),
+            1 => graph.insert_plugin(2 + index, &plugin_type).unwrap(),
+            _ => {
+                let settings = graph
+                    .node_for_role(NodeRole::ReplayGain)
+                    .unwrap()
+                    .plugin
+                    .settings
+                    .clone();
+                graph.insert_plugin_settings(2 + index, settings).unwrap()
+            }
+        };
+        added.push(id);
+        let positions: Vec<_> = graph
+            .linear_order()
+            .unwrap()
+            .into_iter()
+            .map(|id| graph.node_position(id).unwrap())
+            .collect();
+        for pair in positions.windows(2) {
+            assert_eq!(pair[1].x - pair[0].x, 180.0);
+            assert_eq!(pair[1].y, pair[0].y);
+        }
+        for (id, expected) in &upstream {
+            let actual = graph.node_position(*id).unwrap();
+            assert_eq!(actual.x, expected.x);
+            assert_eq!(actual.y, expected.y);
+        }
+    }
+    // Removing a middle card can leave a spare slot; the next addition must
+    // still fit without moving or overlapping the surviving user cards.
+    graph.remove_user_plugin(added[1]).unwrap();
+    let survivors: Vec<_> = [added[0], added[2]]
+        .into_iter()
+        .map(|id| (id, graph.node_position(id).unwrap().x))
+        .collect();
+    graph.add_user_plugin(&PluginType::Compressor).unwrap();
+    for (id, expected_x) in survivors {
+        assert_eq!(graph.node_position(id).unwrap().x, expected_x);
+    }
+    let positions: Vec<_> = graph
+        .linear_order()
+        .unwrap()
+        .into_iter()
+        .map(|id| graph.node_position(id).unwrap().x)
+        .collect();
+    assert!(positions.windows(2).all(|pair| pair[1] - pair[0] >= 180.0));
+}
+
+#[test]
+fn adding_a_card_preserves_manually_positioned_upstream_nodes() {
+    let mut graph = PluginGraph::with_default_rack();
+    let upstream_id = graph.node_id_for_role(NodeRole::ReplayGain).unwrap();
+    // Canvas location does not determine signal order. An upstream node may
+    // have been dragged beyond Matrix and must not be shifted by insertion.
+    graph.nodes.get_mut(&upstream_id).unwrap().position = NodePosition::new(5000.0, 800.0);
+    graph.insert_plugin(2, &PluginType::Gain).unwrap();
+    let position = graph.node_position(upstream_id).unwrap();
+    assert_eq!(position.x, 5000.0);
+    assert_eq!(position.y, 800.0);
+}
+
+fn external_key_graph(
+    plugin_type: &PluginType,
+) -> (PluginGraph, super::GraphNodeId, super::GraphNodeId) {
+    let mut graph = PluginGraph::with_default_rack();
+    let source = graph.add_user_plugin(&PluginType::Gain).unwrap();
+    let keyed = graph.add_user_plugin(plugin_type).unwrap();
+    match &mut graph.nodes.get_mut(&keyed).unwrap().plugin.settings {
+        PluginSettings::Gate {
+            sidechain_external, ..
+        }
+        | PluginSettings::DeEsser {
+            sidechain_external, ..
+        } => *sidechain_external = true,
+        _ => unreachable!("fixture requires an external-key processor"),
+    }
+    graph.update_channel_dependent_plugins();
+    for channel in 0..2 {
+        graph
+            .add_connection(source, channel, keyed, channel + 2)
+            .unwrap();
+    }
+    (graph, source, keyed)
+}
+
+#[test]
+fn external_key_routes_keep_program_width_and_distinct_engine_edges() {
+    use sotf_audio::engine::PluginGraphEdgeKind;
+    for plugin_type in [PluginType::Gate, PluginType::DeEsser] {
+        let (mut graph, source, keyed) = external_key_graph(&plugin_type);
+        assert!(!graph.is_linear(), "key bus requires the graph host");
+        assert!(
+            graph.linear_order().is_some(),
+            "node order remains available"
+        );
+        graph.update_channel_dependent_plugins();
+        graph.update_channel_dependent_plugins();
+        graph.validate_routing().unwrap();
+        assert_eq!(graph.nodes[&keyed].input_channels, 4);
+        assert_eq!(graph.nodes[&keyed].output_channels, 2);
+        assert_eq!(
+            graph
+                .connections
+                .iter()
+                .filter(|edge| edge.from_node == source && edge.to_node == keyed)
+                .count(),
+            4
+        );
+        let config = graph.to_plugin_graph_config(48000.0);
+        let source_index = config
+            .nodes
+            .iter()
+            .find(|node| node.plugin_type == "gain" && !node.bypassed)
+            .unwrap()
+            .id;
+        let target = config
+            .nodes
+            .iter()
+            .find(|node| {
+                node.plugin_type
+                    == if plugin_type == PluginType::Gate {
+                        "gate"
+                    } else {
+                        "de_esser"
+                    }
+            })
+            .unwrap();
+        assert_eq!(target.input_channels, 2, "factory appends the key bus");
+        let edges: Vec<_> = config
+            .edges
+            .iter()
+            .filter(|edge| edge.from_node == source_index && edge.to_node == target.id)
+            .collect();
+        assert_eq!(edges.len(), 2);
+        assert!(
+            edges
+                .iter()
+                .any(|edge| edge.kind == PluginGraphEdgeKind::Audio)
+        );
+        assert!(
+            edges
+                .iter()
+                .any(|edge| edge.kind == PluginGraphEdgeKind::Sidechain)
+        );
+        let reloaded: PluginGraph =
+            serde_json::from_str(&serde_json::to_string(&graph).unwrap()).unwrap();
+        reloaded.validate_routing().unwrap();
+        assert_eq!(
+            serde_json::to_value(reloaded.to_plugin_graph_config(48000.0)).unwrap(),
+            serde_json::to_value(config).unwrap()
+        );
+    }
+}
+
+#[test]
+fn external_key_routes_reject_partial_crossed_and_disabled_sources() {
+    for plugin_type in [PluginType::Gate, PluginType::DeEsser] {
+        let (graph, source, keyed) = external_key_graph(&plugin_type);
+        let mut partial = graph.clone();
+        partial
+            .connections
+            .retain(|edge| !(edge.to_node == keyed && edge.to_port == 3));
+        assert!(
+            partial
+                .validate_routing()
+                .unwrap_err()
+                .contains("Connect input 4")
+        );
+        let mut crossed = graph.clone();
+        for edge in crossed
+            .connections
+            .iter_mut()
+            .filter(|edge| edge.to_node == keyed && edge.to_port >= 2)
+        {
+            edge.from_port = 1 - edge.from_port;
+        }
+        assert!(
+            crossed
+                .validate_routing()
+                .unwrap_err()
+                .contains("Use a Matrix plugin")
+        );
+        let mut disabled = graph.clone();
+        disabled.nodes.get_mut(&source).unwrap().plugin.enabled = false;
+        assert!(
+            disabled
+                .validate_routing()
+                .unwrap_err()
+                .contains("External sidechain")
+        );
+        let mut suspended = graph;
+        suspended.nodes.get_mut(&source).unwrap().plugin.suspended = true;
+        assert!(
+            suspended
+                .validate_routing()
+                .unwrap_err()
+                .contains("External sidechain")
+        );
+    }
+}
+
+#[test]
+fn disabling_external_key_removes_key_ports_and_restores_rack_eligibility() {
+    for plugin_type in [PluginType::Gate, PluginType::DeEsser] {
+        let (mut graph, _, keyed) = external_key_graph(&plugin_type);
+        match &mut graph.nodes.get_mut(&keyed).unwrap().plugin.settings {
+            PluginSettings::Gate {
+                sidechain_external, ..
+            }
+            | PluginSettings::DeEsser {
+                sidechain_external, ..
+            } => *sidechain_external = false,
+            _ => unreachable!(),
+        }
+        graph.update_channel_dependent_plugins();
+        assert_eq!(graph.nodes[&keyed].input_channels, 2);
+        assert!(
+            graph
+                .connections
+                .iter()
+                .filter(|edge| edge.to_node == keyed)
+                .all(|edge| edge.to_port < 2)
+        );
+        graph.validate_routing().unwrap();
+        assert!(graph.is_linear());
+    }
+}
+
+#[test]
+fn inactive_resource_nodes_use_transparent_stages_without_resource_configuration() {
+    let mut graph = PluginGraph::with_default_rack();
+    let resource = graph.add_user_plugin(&PluginType::Convolution).unwrap();
+    graph.nodes.get_mut(&resource).unwrap().plugin.suspended = true;
+    let node_count = graph.nodes.len();
+    let config = graph.to_plugin_graph_config(48000.0);
+    assert_eq!(config.nodes.len(), node_count);
+    let inactive: Vec<_> = config.nodes.iter().filter(|node| node.bypassed).collect();
+    assert_eq!(
+        inactive.len(),
+        2,
+        "disabled ReplayGain and suspended Convolution"
+    );
+    for node in inactive {
+        assert_eq!(node.plugin_type, "gain");
+        assert_eq!(
+            node.parameters,
+            serde_json::json!({"channels": 2, "gain_db": 0.0})
+        );
+        assert!(config.edges.iter().any(|edge| edge.from_node == node.id));
+        assert!(config.edges.iter().any(|edge| edge.to_node == node.id));
+    }
+}
+
+#[test]
+fn inactive_channel_changing_nodes_are_refused_before_routing_apply() {
+    let (mut graph, _, keyed) = external_key_graph(&PluginType::DeEsser);
+    graph.nodes.get_mut(&keyed).unwrap().plugin.enabled = false;
+    assert!(
+        graph
+            .validate_routing()
+            .unwrap_err()
+            .contains("Cannot bypass")
+    );
+    // The config keeps the unsupported node so direct submission also receives
+    // the engine's width error rather than a silently severed audio route.
+    let config = graph.to_plugin_graph_config(48000.0);
+    assert!(
+        config
+            .nodes
+            .iter()
+            .any(|node| node.plugin_type == "de_esser" && node.bypassed)
+    );
+}
+
+#[test]
+fn keyed_graph_control_indices_include_inactive_placeholders() {
+    for plugin_type in [PluginType::Gate, PluginType::DeEsser] {
+        let (graph, source, keyed) = external_key_graph(&plugin_type);
+        let config = graph.to_plugin_graph_config(48000.0);
+        let source_index = graph.get_engine_index(source).unwrap();
+        let target_index = graph.get_engine_index(keyed).unwrap();
+        assert_eq!(config.nodes[source_index].plugin_type, "gain");
+        assert!(!config.nodes[source_index].bypassed);
+        assert_eq!(
+            config.nodes[target_index].plugin_type,
+            plugin_type.wire_name()
+        );
+        assert_eq!(target_index, source_index + 1);
+        assert!(
+            config.nodes[..source_index]
+                .iter()
+                .any(|node| node.bypassed),
+            "disabled ReplayGain retains its control slot"
+        );
+    }
+}
+
+#[test]
+fn keyed_presets_restore_complete_routing_and_reject_invalid_graph_transactionally() {
+    let directory = tempfile::tempdir().unwrap();
+    for plugin_type in [PluginType::Gate, PluginType::DeEsser] {
+        let (mut graph, _, keyed) = external_key_graph(&plugin_type);
+        // Removed instances must not have their IDs reused after restoration.
+        graph.next_plugin_id = 1000;
+        graph.validate_routing().unwrap();
+        graph.save_to_file(directory.path(), "keyed").unwrap();
+        let path = directory.path().join("keyed.json");
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["version"], 3);
+        let mut restored = PluginGraph::with_default_rack();
+        assert!(
+            restored
+                .load_from_file(directory.path(), "keyed")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            serde_json::to_value(&restored).unwrap(),
+            serde_json::to_value(&graph).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(restored.to_plugin_graph_config(48000.0)).unwrap(),
+            serde_json::to_value(graph.to_plugin_graph_config(48000.0)).unwrap()
+        );
+        restored.update_channel_dependent_plugins();
+        assert_eq!(
+            serde_json::to_value(&restored).unwrap(),
+            serde_json::to_value(&graph).unwrap()
+        );
+        let before = serde_json::to_value(&restored).unwrap();
+        let mut broken = graph.clone();
+        broken
+            .connections
+            .retain(|edge| !(edge.to_node == keyed && edge.to_port == 3));
+        std::fs::write(
+            &path,
+            serde_json::to_string(&serde_json::json!({
+                "version": 3, "graph": broken,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(restored.load_from_file(directory.path(), "keyed").is_err());
+        assert_eq!(serde_json::to_value(&restored).unwrap(), before);
+    }
+}
+
+#[test]
+fn ordinary_rack_presets_keep_version_two() {
+    let directory = tempfile::tempdir().unwrap();
+    let graph = PluginGraph::with_default_rack();
+    graph.save_to_file(directory.path(), "rack").unwrap();
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(directory.path().join("rack.json")).unwrap())
+            .unwrap();
+    assert_eq!(value["version"], 2);
+    assert!(value.get("graph").is_none());
+    assert!(value["plugins"].as_array().is_some());
+}
+
+#[test]
+fn branched_graph_control_indices_survive_serialized_reload() {
+    let mut graph = PluginGraph::new();
+    let input = graph.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
+    let output = graph.add_special_node(SpecialNodeType::Output, NodePosition::new(500.0, 0.0), 2);
+    let left = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0))
+        .unwrap();
+    let right = graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0))
+        .unwrap();
+    for channel in 0..2 {
+        for branch in [left, right] {
+            graph
+                .add_connection(input, channel, branch, channel)
+                .unwrap();
+            graph
+                .add_connection(branch, channel, output, channel)
+                .unwrap();
+        }
+    }
+    assert!(!graph.is_linear());
+    let expected = serde_json::to_value(graph.to_plugin_graph_config(48000.0)).unwrap();
+    let serialized = serde_json::to_string(&graph).unwrap();
+    for _ in 0..16 {
+        let reloaded: PluginGraph = serde_json::from_str(&serialized).unwrap();
+        let config = reloaded.to_plugin_graph_config(48000.0);
+        assert_eq!(serde_json::to_value(&config).unwrap(), expected);
+        for id in [left, right] {
+            let index = reloaded.get_engine_index(id).unwrap();
+            assert_eq!(
+                config.nodes[index].plugin_type,
+                reloaded.nodes[&id].plugin.plugin_type().wire_name()
+            );
+        }
+    }
 }

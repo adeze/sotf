@@ -1,6 +1,60 @@
 use sotf_audio_player::{TrialAnswer, TrialMode};
 
 #[test]
+fn level_meter_matrix_sync_only_queues_changed_channel_state() {
+    use sotf_audio_player::PluginSettings;
+    use sotf_audio_player_gpui::{
+        App,
+        app::types::PluginUpdateType,
+        components::plugins::level_meters::LevelMeterManager,
+    };
+
+    let mut app = App::new();
+    app.update_level_meter_groups();
+    assert!(!app.level_meters.groups.is_empty());
+    app.plugin_state.update_state.pending_plugin_update = None;
+    app.update_matrix_plugin();
+    assert!(app.plugin_state.update_state.pending_plugin_update.is_none());
+    app.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Parameter {
+        plugin_index: 0,
+        param_index: 0,
+    });
+    app.update_matrix_plugin();
+    assert!(matches!(
+        app.plugin_state.update_state.pending_plugin_update,
+        Some(PluginUpdateType::Parameter {
+            plugin_index: 0,
+            param_index: 0
+        })
+    ));
+    app.plugin_state.update_state.pending_plugin_update = None;
+
+    app.set_level_meter_mute(0, true);
+    assert!(matches!(
+        app.plugin_state.update_state.pending_plugin_update,
+        Some(PluginUpdateType::Structural)
+    ));
+    let matrix = (0..app.plugin_state.graph.len())
+        .rev()
+        .filter_map(|index| app.plugin_state.graph.get_plugin(index))
+        .find_map(|plugin| match &plugin.settings {
+            PluginSettings::Matrix { channel_states, .. } => Some(channel_states),
+            _ => None,
+        })
+        .expect("default chain has a matrix");
+    assert!(matrix.iter().any(|channel| channel.muted));
+
+    app.plugin_state.update_state.pending_plugin_update = None;
+    app.set_level_meter_mute(0, true);
+    assert!(app.plugin_state.update_state.pending_plugin_update.is_none());
+    app.set_level_meter_dim(0, true);
+    assert!(matches!(
+        app.plugin_state.update_state.pending_plugin_update,
+        Some(PluginUpdateType::Structural)
+    ));
+}
+
+#[test]
 fn headphone_target_labels_are_localized_in_both_workflow_steps() {
     use sotf_audio_player_gpui::app::i18n::{HeadphoneIdentityTranslations, Language};
     for (language, flat, custom) in [
@@ -1651,4 +1705,73 @@ fn imported_retake_routes_are_explicit_and_select_one_source() {
     state.signal_level_db -= 3.0;
     assert!(state.take_review.is_accepted(&state.channel_recordings[0]));
     assert!(state.capture_inputs_are_current());
+}
+
+#[test]
+fn real_sparse_spectrum_frame_is_visible_and_display_gaps_are_filled() {
+    use sotf_audio_player_gpui::app::state::ui::SpectrumViewState;
+    use sotf_plugins::{Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig};
+    let mut analyzer = SpectrumAnalyzerPlugin::with_config(
+        1,
+        SpectrumConfig {
+            num_bins: 100,
+            smoothing: 0.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    analyzer.initialize(48_000.0).unwrap();
+    let input: Vec<_> = (0..4096)
+        .map(|index| (2.0 * std::f32::consts::PI * 100.0 * index as f32 / 48_000.0).sin() * 0.1)
+        .collect();
+    let mut output = vec![0.0; input.len()];
+    analyzer
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(48_000, input.len()),
+        )
+        .unwrap();
+    let data = analyzer.get_data().unwrap();
+    let data = data
+        .downcast_ref::<sotf_audio_player::SpectrumData>()
+        .unwrap();
+    assert!(
+        data.magnitudes
+            .iter()
+            .any(|value| *value == f32::NEG_INFINITY)
+    );
+    assert!(SpectrumViewState::frequency_range(data).is_some());
+    for smoothed in [false, true] {
+        let display = SpectrumViewState::magnitudes(data, smoothed);
+        assert_eq!(display.len(), 100);
+        assert!(display.iter().all(|value| value.is_finite()));
+    }
+    // Filling the display must not fabricate additional measured band power.
+    assert!(
+        data.magnitudes
+            .iter()
+            .any(|value| *value == f32::NEG_INFINITY)
+    );
+    assert_eq!(input, output);
+}
+
+#[test]
+fn spectrum_display_interpolates_missing_log_bands_and_preserves_measured_values() {
+    use sotf_audio_player_gpui::app::state::ui::SpectrumViewState;
+    use std::sync::Arc;
+    let raw: Arc<[f32]> = vec![
+        f32::NEG_INFINITY,
+        -60.0,
+        f32::NEG_INFINITY,
+        f32::NEG_INFINITY,
+        -30.0,
+        f32::NEG_INFINITY,
+    ]
+    .into();
+    assert_eq!(
+        &*SpectrumViewState::display_magnitudes(&raw),
+        &[-60.0, -60.0, -50.0, -40.0, -30.0, -30.0]
+    );
+    assert_eq!(raw[0], f32::NEG_INFINITY);
 }

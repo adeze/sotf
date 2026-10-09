@@ -1,0 +1,72 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add BandSplit
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "400"
+key enter
+assert plugins.plugin.2.param.0.value == 400 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.1.1
+click plugin.choice.2.1.1
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 1
+scroll_into_view rack.params plugin.choice.2.1.0
+click plugin.choice.2.1.0
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 0
+scroll_into_view rack.params plugin.choice.2.1.1
+click plugin.choice.2.1.1
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 1
+assert_absent plugin.param.2.4.exact
+assert_absent plugin.param.2.5.exact
+scroll_into_view rack.params plugin.choice.2.3.1
+click plugin.choice.2.3.1
+wait_idle 500ms
+assert plugins.plugin.2.param.3.value == 1
+scroll_into_view rack.params plugin.param.2.4.exact
+click plugin.param.2.4.exact
+key cmd-a
+type "1800"
+key enter
+assert plugins.plugin.2.param.4.value == 1800 tolerance=0.001
+assert_absent plugin.param.2.5.exact
+scroll_into_view rack.params plugin.choice.2.3.2
+click plugin.choice.2.3.2
+wait_idle 500ms
+assert plugins.plugin.2.param.3.value == 2
+scroll_into_view rack.params plugin.param.2.5.exact
+click plugin.param.2.5.exact
+key cmd-a
+type "6000"
+key enter
+assert plugins.plugin.2.param.5.value == 6000 tolerance=0.001
+scroll_into_view rack.params plugin.select.2.2
+click plugin.select.2.2
+key up
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.2.value == 0
+click plugin.select.2.2
+key down
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.2.value == 1
+screenshot band-split-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.setup.2.header
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.4.exact rack.params
+assert_within plugin.param.2.5.exact rack.params
+screenshot band-split-narrow
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

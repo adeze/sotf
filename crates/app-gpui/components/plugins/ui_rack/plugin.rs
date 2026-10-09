@@ -29,11 +29,9 @@ use gpui_audio_kit::db_to_position;
 use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, CollapseDirection, IconButton, IconButtonSize,
-    IconButtonVariant, PaneDivider, PaneDividerTheme, Select, SelectOption, SelectSize, Toggle,
-    ToggleSize, ToggleStyle,
+    IconButtonVariant, PaneDivider, PaneDividerTheme, Select, SelectOption, SelectSize,
 };
-use sotf_audio_player::{PluginType, UpmixerOutputSettings};
-use sotf_plugins::param_specs::{find_by_key as pk, index_of, upmixer::PARAMS as UP};
+use sotf_audio_player::PluginType;
 
 macro_rules! dev_track {
     ($element:expr, $selector:expr) => {{
@@ -624,64 +622,63 @@ impl PlayerView {
             .unwrap_or(modules_info.len());
         let (main_modules, tail_modules) = modules_info.split_at(trailing_start);
 
-        div()
-            .relative()
-            .flex()
-            .flex_col()
-            .bg(theme.background_secondary)
-            .border_color(theme.border)
-            // Plugin modules strip — Ozone-style rack
-            .child(
-                div()
-                    .relative()
-                    .flex()
-                    .items_center()
-                    .w_full()
-                    .min_h(rems(7.0))
-                    .bg(theme.background_secondary)
-                    .child(dev_track!(
-                        div()
-                            .id("plugin-rack")
-                            .relative()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .items_center()
-                            .gap(d.section)
-                            .px(d.card)
-                            .py(d.pad_x)
-                            .overflow_x_scroll()
-                            .track_scroll(&self.scroll.rack_modules)
-                    // Plugin modules - Ozone-style cards with left button column
-                    .children(main_modules.iter().map(
-                        |(idx, color, icon, _name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
-                            let idx = *idx;
-                            let color = *color;
-                            let icon = *icon;
-                            let enabled = *enabled;
-                            let is_selected = *is_selected;
-                            let is_permanent = *is_permanent;
-                            let is_input_mon = *is_input_mon;
-                            let is_output_mon = *is_output_mon;
-                            let theme_c = theme.clone();
-                            let drag_info = PluginDragInfo {
-                                source_index: idx,
-                                name: short_name_with_permanent(plugin_type, is_input_mon, is_output_mon, is_permanent).to_string(),
-                                color,
-                                icon,
-                                surface: theme_c.surface,
-                                text_on_accent: theme_c.text_on_accent,
-                            };
-                            let drop_highlight = theme_c.feedback.drag_over_highlight;
-                            let drop_border = theme_c.feedback.drag_over_border;
-                            let accent_color = theme_c.accent;
+        let render_module = |(
+            idx,
+            color,
+            icon,
+            _name,
+            enabled,
+            is_selected,
+            plugin_type,
+            is_permanent,
+            is_input_mon,
+            is_output_mon,
+        ): &(
+            usize,
+            Rgba,
+            IconName,
+            String,
+            bool,
+            bool,
+            PluginType,
+            bool,
+            bool,
+            bool,
+        )| {
+            let idx = *idx;
+            let color = *color;
+            let icon = *icon;
+            let enabled = *enabled;
+            let is_selected = *is_selected;
+            let is_permanent = *is_permanent;
+            let is_input_mon = *is_input_mon;
+            let is_output_mon = *is_output_mon;
+            let theme_c = theme.clone();
+            let drag_info = PluginDragInfo {
+                source_index: idx,
+                name: short_name_with_permanent(
+                    plugin_type,
+                    is_input_mon,
+                    is_output_mon,
+                    is_permanent,
+                )
+                .to_string(),
+                color,
+                icon,
+                surface: theme_c.surface,
+                text_on_accent: theme_c.text_on_accent,
+            };
+            let drop_highlight = theme_c.feedback.drag_over_highlight;
+            let drop_border = theme_c.feedback.drag_over_border;
+            let accent_color = theme_c.accent;
 
-                            // Module card with drop target
-                            div()
+            // Module card with drop target
+            dev_track!(div()
                                 .id(("plugin-module", idx))
                                 .group("plugin-module")
-                                .w(rems(12.0))
-                                .h(rems(8.0))
+                                .w(rems(8.0))
+                                .h(rems(6.5))
+                                .flex_shrink_0()
                                 .flex()
                                 .flex_row()
                                 .rounded(d.r_md)
@@ -715,7 +712,11 @@ impl PlayerView {
                                 .on_drop(cx.listener(
                                     move |view, info: &PluginDragInfo, _window, cx| {
                                         let source = info.source_index;
-                                        let target = idx;
+                                        let target = if is_permanent && idx >= trailing_start {
+                                            view.state.read(cx).app.plugin_state.graph.user_plugin_insert_index().saturating_sub(1)
+                                        } else {
+                                            idx
+                                        };
                                         if source != target {
                                             view.state.update(cx, |state, _cx| {
                                                 let chain_len =
@@ -771,38 +772,30 @@ impl PlayerView {
                                         },
                                     ),
                                 )
-                                // Left button column: A (active), S (solo), P (presets), X (remove/lock)
+                                // Compact control strip: enable, lock/move, presets, remove.
                                 .child({
-                                    let is_soloed = {
-                                        let state = self.state.read(cx);
-                                        state.app.plugin_state.chain_state.soloed_plugin_index == Some(idx)
-                                    };
                                     let state_for_active = self.state.clone();
-                                    let state_for_solo = self.state.clone();
                                     let state_for_presets = self.state.clone();
                                     let state_for_remove = self.state.clone();
                                     let active_theme = theme_c.clone();
-                                    let solo_theme = theme_c.clone();
                                     let preset_theme = theme_c.clone();
                                     let active_tooltip_theme = theme_c.clone();
-                                    let solo_tooltip_theme = theme_c.clone();
                                     let preset_tooltip_theme = theme_c.clone();
                                     // Phase 2 (ui.md): compact rack affordance
                                     // shares the shell's bypass copy so state
                                     // meaning, tooltip, and accessible name
                                     // agree across both toggles.
                                     let active_tooltip = shared_bypass_tooltip(enabled, PluginCommonTranslations::for_language(self.state.read(cx).app.ui_state.language));
-                                    let solo_tooltip = PluginCommonTranslations::for_language(self.state.read(cx).app.ui_state.language).solo_action(is_soloed);
                                     let preset_tooltip = text.plugin_presets;
 
                                     div()
                                         .flex()
-                                        .flex_row().flex_wrap().w(rems(6.0)).flex_shrink_0()
+                                        .flex_col().w(rems(2.0)).flex_shrink_0()
                                         .items_center()
-                                        .justify_between()
-                                        .py(d.pad_y_half)
-                                        .px(d.grid)
-                                        .gap(d.grid)
+                                        .justify_start()
+                                        .py(d.half_grid)
+                                        .px(d.half_grid)
+                                        .gap_0()
                                         .h_full()
                                         .border_r_1()
                                         .border_color(theme_c.border)
@@ -820,14 +813,14 @@ impl PlayerView {
                         .child(dev_track!(
                             IconButton::with_child(
                                                         ("plugin-active", idx),
-                                                        Icon::new(if enabled { IconName::Check } else { IconName::Minus }).small().color(active_theme.text_primary),
+                                                        div().text_size(d.text_xs).child(if enabled { "ON" } else { "OFF" }),
                                                     )
                                                     .variant(if enabled {
                                                         IconButtonVariant::Filled
                                                     } else {
                                                         IconButtonVariant::Outline
                                                     })
-                                                    .size(IconButtonSize::Sm)
+                                                    .size(IconButtonSize::Custom(24))
                                                     .theme(active_theme.to_icon_button_theme())
                                                     .aria_label(active_tooltip)
                                 .on_click_event(move |_event, _window, cx| {
@@ -839,37 +832,16 @@ impl PlayerView {
                             format!("rack.plugin.{idx}.toggle")
                         )),
                                         )
-                                        // S (Solo) button — functional
                                         .child(
                                             div()
-                                                .id(("plugin-solo-tooltip", idx))
-                                                .tooltip(move |_window, cx| {
-                                                    make_tooltip(
-                                                        solo_tooltip,
-                                                        &solo_tooltip_theme,
-                                                        cx,
-                                                    )
-                                                })
-                                                .child(
-                                                    IconButton::with_child(
-                                                        ("plugin-solo", idx),
-                                                        Icon::new(IconName::Headphones).small().color(solo_theme.text_primary),
-                                                    )
-                                                    .variant(if is_soloed {
-                                                        IconButtonVariant::Filled
-                                                    } else {
-                                                        IconButtonVariant::Outline
-                                                    })
-                                                    .size(IconButtonSize::Sm)
-                                                    .theme(solo_theme.to_icon_button_theme())
-                                                    .aria_label(solo_tooltip)
-                                                    .on_click_event(move |_event, _window, cx| {
-                                                        state_for_solo.update(cx, |state, _| {
-                                                            state.app.toggle_plugin_solo(idx);
-                                                            state.app.update_level_meter_groups();
-                                                        });
-                                                    }),
-                                                ),
+                                                .w(rems(1.5))
+                                                .h(rems(1.5))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .when(!is_permanent, |el| el.cursor_grab())
+                                                .child(Icon::new(if is_permanent { IconName::Lock } else { IconName::GripVertical })
+                                                    .small().color(theme_c.text_muted))
                                         )
                                         // P (Presets) button
                                         .child(
@@ -892,7 +864,7 @@ impl PlayerView {
                                                     } else {
                                                         IconButtonVariant::Outline
                                                     })
-                                                    .size(IconButtonSize::Sm)
+                                                    .size(IconButtonSize::Custom(24))
                                                     .theme(preset_theme.to_icon_button_theme())
                                                     .aria_label(preset_tooltip)
                                                     .on_click_event(move |_event, _window, cx| {
@@ -957,7 +929,7 @@ impl PlayerView {
                                                         } else {
                                                             IconButtonVariant::Outline
                                                         })
-                                                        .size(IconButtonSize::Sm)
+                                                        .size(IconButtonSize::Custom(24))
                                                         .theme(remove_theme.to_icon_button_theme())
                                                         .aria_label(remove_tooltip)
                                                         .on_click_event(move |_event, _window, cx| {
@@ -976,23 +948,7 @@ impl PlayerView {
                                                     ),
                                             )
                                         })
-                                        // Lock icon for permanent plugins
-                                        .when(is_permanent, |d| {
-                                            d.child(
-                                                div()
-                                                    .w(rems(1.125))
-                                                    .h(rems(1.125))
-                                                    .flex()
-                                                    .items_center()
-                                                    .justify_center()
-                                                    .text_color(theme_c.text_muted)
-                                                    .child(
-                                                        Icon::new(IconName::Lock)
-                                                            .small()
-                                                            .color(theme_c.text_muted),
-                                                    ),
-                                            )
-                                        })
+
                                 })
                                 // Right content area: name on top, icon preview center, drag handle bottom
                                 // OR preset panel when P is active
@@ -1228,24 +1184,42 @@ impl PlayerView {
                                                             .color(color),
                                                     ),
                                             )
-                                            .when(!is_permanent, |el| {
-                                                el.child(
-                                                    div()
-                                                        .flex()
-                                                        .justify_end()
-                                                        .px(d.grid)
-                                                        .pb(d.half_grid)
-                                                        .text_color(theme_c.text_muted)
-                                                        .child(
-                                                            Icon::new(IconName::GripVertical)
-                                                                .small()
-                                                                .color(theme_c.text_muted),
-                                                        ),
-                                                )
-                                            })
+
                                     }
-                                })
-                        },
+                                }), format!("rack.plugin.{idx}"))
+        };
+
+        div()
+            .relative()
+            .flex()
+            .flex_col()
+            .bg(theme.background_secondary)
+            .border_color(theme.border)
+            // Plugin modules strip — Ozone-style rack
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .items_center()
+                    .w_full()
+                    .min_h(rems(7.0))
+                    .bg(theme.background_secondary)
+                    .child(dev_track!(
+                        div()
+                            .id("plugin-rack")
+                            .relative()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap(d.section)
+                            .px(d.card)
+                            .py(d.pad_x)
+                            .overflow_x_scroll()
+                            .track_scroll(&self.scroll.rack_modules)
+                    // Plugin modules - Ozone-style cards with left button column
+                    .children(main_modules.iter().map(
+&render_module
                     ))
                     // "+" Add plugin slot (visually distinct from solid plugin boxes)
                     .child({
@@ -1341,220 +1315,7 @@ impl PlayerView {
             })
                     // Trailing permanent plugins (output matrix/monitor) after "+"
                     .children(tail_modules.iter().map(
-                        |(idx, color, icon, _name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
-                            let idx = *idx;
-                            let color = *color;
-                            let icon = *icon;
-                            let enabled = *enabled;
-                            let is_selected = *is_selected;
-                            let is_permanent = *is_permanent;
-                            let is_input_mon = *is_input_mon;
-                            let is_output_mon = *is_output_mon;
-                            let theme_c = theme.clone();
-                            div()
-                                .id(("plugin-module", idx))
-                                .group("plugin-module")
-                                .w(rems(8.0))
-                                .h(rems(6.5))
-                                .flex()
-                                .flex_row()
-                                .rounded(d.r_md)
-                                .border_1()
-                                .border_color(if is_selected { color } else { theme_c.border })
-                                .bg(if is_selected {
-                                    Theme::opacity_20pct(color)
-                                } else {
-                                    theme_c.background_secondary
-                                })
-                                .when(!enabled, |d| d.opacity(0.5))
-                                .shadow_sm()
-                                .hover(|s| s.border_color(color))
-                                // Drop target for reordering
-                                .drag_over::<PluginDragInfo>({
-                                    let drop_highlight = theme_c.feedback.drag_over_highlight;
-                                    let drop_border = theme_c.feedback.drag_over_border;
-                                    move |style, _, _, _| {
-                                        style
-                                            .bg(drop_highlight)
-                                            .border_color(drop_border)
-                                            .border_l_4()
-                                    }
-                                })
-                                .on_drop(cx.listener(
-                                    move |view, info: &PluginDragInfo, _window, cx| {
-                                        let source = info.source_index;
-                                        view.state.update(cx, |state, _cx| {
-                                            // Clamp to the last valid user-plugin position
-                                            // (don't drop onto permanent tail plugins)
-                                            let target = if is_permanent {
-                                                state.app.plugin_state.graph.user_plugin_insert_index().saturating_sub(1)
-                                            } else {
-                                                idx
-                                            };
-                                            if source != target {
-                                                match state.app.plugin_state.graph.move_plugin(source, target) {
-                                                    Ok(()) => {
-                                                        state.app.plugin_state.selected_plugin_index = target;
-                                                        state.app.plugin_state.clear_confirmations();
-                                                        state.app.plugin_state.update_state.pending_plugin_update =
-                                                            Some(PluginUpdateType::Structural);
-                                                        state.app.update_level_meter_groups();
-                                                    }
-                                                    Err(error) => {
-                                                        state.app.ui_state.toast_message =
-                                                            Some(crate::app::ToastMessage::error(error));
-                                                    }
-                                                }
-                                            }
-                                        });
-                                        cx.notify();
-                                    },
-                                ))
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(
-                                        move |view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.plugin_state.selected_plugin_index = idx;
-                                                state.app.plugin_state.clear_confirmations();
-                                            });
-                                            cx.notify();
-                                        },
-                                    ),
-                                )
-                                // Left button column (just enable toggle + lock)
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .items_center()
-                                        .gap(d.half_grid)
-                                        // intentional: 3px asymmetric inset to fit permanent tail module — do not scale
-                                        .p(px(3.0))
-                                        .border_r_1()
-                                        .border_color(theme_c.border)
-                                        .h_full()
-                                        .child({
-                                            let is_on = enabled;
-                                            div()
-                                                .id(("plugin-enable-tail", idx))
-                                                .w(rems(1.125))
-                                                .h(rems(1.125))
-                                                .rounded_full()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .cursor_pointer()
-                                                .bg(if is_on { color } else { theme_c.surface })
-                                                .text_size(d.text_xs)
-                                                .text_color(if is_on { theme_c.text_on_accent } else { theme_c.text_muted })
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(
-                                                        move |view, _e: &MouseUpEvent, _, cx| {
-                                                            cx.stop_propagation();
-                                                            view.state.update(cx, |state, _cx| {
-                                                                state.app.toggle_plugin(idx);
-                                                            });
-                                                            cx.notify();
-                                                        },
-                                                    ),
-                                                )
-                                                .child(if is_on { "ON" } else { "OFF" })
-                                        })
-                                        // X (Remove) or lock icon
-                                        .when(!is_permanent, |el| {
-                                            let theme_tt = theme_c.clone();
-                                            let confirming = self.state.read(cx).app.plugin_state.preset_state.confirm_remove_plugin == Some(idx);
-                                            el.child(
-                                                div()
-                                                    .id(("plugin-close-tail", idx))
-                                                    .w(rems(1.125))
-                                                    .h(rems(1.125))
-                                                    .rounded_full()
-                                                    .flex()
-                                                    .items_center()
-                                                    .justify_center()
-                                                    .cursor_pointer()
-                                                    .when(confirming, |d| d.bg(theme_c.error).text_color(theme_c.text_on_accent))
-                                                    .when(!confirming, |d| d.hover(|s| s.bg(theme_c.error).text_color(theme_c.text_on_accent)))
-                                                    .text_size(d.text_xs)
-                                                    .when(!confirming, |d| d.text_color(theme_c.text_muted))
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener(
-                                                            move |view, _e: &MouseUpEvent, _, cx| {
-                                                                cx.stop_propagation();
-                                                                view.state.update(cx, |state, _cx| {
-                                                                    if state.app.plugin_state.preset_state.confirm_remove_plugin == Some(idx) {
-                                                                        state.app.plugin_state.preset_state.confirm_remove_plugin = None;
-                                                                        state.app.remove_plugin(idx);
-                                                                        state.app.update_level_meter_groups();
-                                                                    } else {
-                                                                        state.app.plugin_state.preset_state.confirm_remove_plugin = Some(idx);
-                                                                    }
-                                                                });
-                                                                cx.notify();
-                                                            },
-                                                        ),
-                                                    )
-                                                    .child(if confirming { "?" } else { "X" })
-                                                    .tooltip({
-                                                        let label = if confirming { "Click again to confirm removal" } else { "Remove" };
-                                                        move |_window, cx| make_tooltip(label, &theme_tt, cx)
-                                                    }),
-                                            )
-                                        })
-                                        .when(is_permanent, |d| {
-                                            d.child(
-                                                div()
-                                                    .w(rems(1.125))
-                                                    .h(rems(1.125))
-                                                    .flex()
-                                                    .items_center()
-                                                    .justify_center()
-                                                    .text_color(theme_c.text_muted)
-                                                    .child(
-                                                        Icon::new(IconName::Lock)
-                                                            .small()
-                                                            .color(theme_c.text_muted),
-                                                    ),
-                                            )
-                                        }),
-                                )
-                                // Right content area
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .flex()
-                                        .flex_col()
-                                        .h_full()
-                                        .child(
-                                            div()
-                                                .px(d.pad_y)
-                                                .pt(d.pad_y_half)
-                                                .text_size(d.text_xs)
-                                                .text_color(if is_selected { color } else { theme_c.text_primary })
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .overflow_hidden()
-                                                .text_ellipsis()
-                                                .child(short_name_with_permanent(plugin_type, is_input_mon, is_output_mon, is_permanent)),
-                                        )
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .child(
-                                                    Icon::new(icon)
-                                                        .size(IconSize::Xxl)
-                                                        .color(color),
-                                                ),
-                                        ),
-                                )
-                        },
+&render_module
                     ))
                     // Empty state
                     .when(is_empty, |d| {
@@ -2087,6 +1848,35 @@ impl PlayerView {
             )
         };
 
+        // The effective editor, rather than the retained preference, owns scrolling.
+        // Graph node IDs also distinguish replacement plugins at the same rack slot.
+        let plugin_ui_view = plugin_data
+            .as_ref()
+            .filter(|plugin| super::super::ui_simple::supports_parameter_views(&plugin.settings))
+            .map(|_| {
+                self.state
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .plugin_ui_view
+                    .clone()
+            })
+            .unwrap_or(PluginUiView::UI);
+        let scroll_owner = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .graph
+            .plugins_linear()
+            .and_then(|nodes| {
+                nodes
+                    .get(selected_idx)
+                    .map(|node| (node.id, plugin_ui_view.clone()))
+            });
+        self.scroll.retain_rack_detail(scroll_owner);
+
         let has_plugin = plugin_data.is_some();
         let d = Ds::from_cx(cx);
 
@@ -2156,6 +1946,7 @@ impl PlayerView {
                             .map(|width| (width - shell_padding - 2.0).max(1.0))
                             .unwrap_or(320.0 * layout_scale);
                         let measured_editor = self.state.downgrade();
+                        let measured_editor_height = self.state.downgrade();
 
                     div()
                         .relative()
@@ -2176,11 +1967,18 @@ impl PlayerView {
             .child(dev_track!(
                 div()
                     .id("params-scroll")
+                    .relative()
                     .track_scroll(&self.scroll.rack_detail)
                     .flex_1()
                     .min_w_0()
                     .min_h_0()
                     .overflow_y_scroll()
+                    .map(|mut content| {
+                        // Band strips own horizontal wheel input. Do not translate
+                        // that same event into a vertical rack-detail scroll.
+                        content.style().restrict_scroll_to_axis = Some(true);
+                        content
+                    })
                     .flex()
                     .flex_col()
                                                 .bg(plugin_bg)
@@ -2197,6 +1995,18 @@ impl PlayerView {
                                                         cx.notify();
                                                     }));
                                                 }, |_, _, _, _| {}).w_full().h(rems(0.0)))
+                    .child(canvas(move |bounds, _window, cx| {
+                        let height = f32::from(bounds.size.height);
+                        let Some(state) = measured_editor_height.upgrade() else { return; };
+                        if !height.is_finite() || height <= 0.0 || state.read(cx).app.plugin_state
+                            .plugin_ui_state.rack_editor_height.is_some_and(|old| (old - height).abs() < 0.5) {
+                            return;
+                        }
+                        cx.defer(move |cx| state.update(cx, |state, cx| {
+                            state.app.plugin_state.plugin_ui_state.rack_editor_height = Some(height);
+                            cx.notify();
+                        }));
+                    }, |_, _, _, _| {}).absolute().top(px(0.0)).left(px(0.0)).w_full().h_full())
                     .child(dev_track!(
                         div().w_full().h(px(1.0)),
                         "rack.params.scroll-target"
@@ -2264,7 +2074,6 @@ impl PlayerView {
                                     let spectrum_ref_open = app_st.app.plugin_ui.spectrum_reference_select_open;
                                     let plugin_graph = app_st.app.plugin_state.graph.clone();
                                     let midi_overlay = app_st.app.plugin_state.midi_mapping.build_overlay(&[]);
-                                    let plugin_ui_view = app_st.app.plugin_state.plugin_ui_state.plugin_ui_view.clone();
 
                                     let midi_ref = if midi_overlay.has_controller() {
                                         Some(midi_overlay)
@@ -2293,6 +2102,7 @@ impl PlayerView {
                                                 PluginUiView::Simple => {
                                                     super::super::render_app_plugin_shell(
                                                         &d,
+                                                        cx,
                                                         self.state.clone(),
                                                         selected_idx,
                                                         &plugin.plugin_type(),
@@ -2308,9 +2118,18 @@ impl PlayerView {
                                                             &plugin.settings,
                                                             is_editing,
                                                             param_selection,
+                                                            editor_width,
+                                                            crate::ui::compute_combined_scale(
+                                                                app_st.app.ui_state.window_width,
+                                                                app_st.app.ui_state.window_height,
+                                                                app_st.app.ui_state.font_scale,
+                                                                app_st.app.ui_state.min_font_size_px,
+                                                                app_st.app.ui_state.max_font_size_px,
+                                                            ),
                                                             &chassis,
                                                             midi_ref.as_ref(),
                                                             common_text,
+                                                            cx,
                                                         ),
                                                     )
                                                 }
@@ -2327,6 +2146,7 @@ impl PlayerView {
                                                     // raw window width where the shell provides it.
                                                     super::super::render_app_plugin_shell(
                                                         &d,
+                                                        cx,
                                                         self.state.clone(),
                                                         selected_idx,
                                                         &plugin.plugin_type(),
@@ -2346,7 +2166,9 @@ impl PlayerView {
                                                             param_selection,
                                                             editor_width,
                                                             layout_scale,
+                                                            &self.scroll.controller_grid,
                                                             &chassis,
+                                                            cx,
                                                         ),
                                                     )
                                                 }
@@ -2370,6 +2192,9 @@ impl PlayerView {
                                                         self.plugin_exact_entry_focus_handle.clone(),
                                                         cx,
                                                         Some(editor_width),
+                                                        app_st.app.plugin_state.plugin_ui_state.rack_editor_height,
+                                                        Some(self.scroll.rack_detail.clone()),
+                                                        self.scroll.matrix_grid.clone(),
                                                     )
                                                 }
                                             }
@@ -2477,7 +2302,6 @@ impl PlayerView {
             plugin_ui_view,
             controller_picker_open,
             skin_picker_open,
-            upmixer_config_open,
             theme,
             plugin_theme_id,
             plugin_theme,
@@ -2507,7 +2331,6 @@ impl PlayerView {
                     .plugin_ui_state
                     .controller_picker_open,
                 state.app.plugin_state.plugin_ui_state.rack_skin_picker_open,
-                state.app.plugin_ui.upmixer_config_open,
                 state.app.ui_state.theme.clone(),
                 state
                     .app
@@ -2538,13 +2361,23 @@ impl PlayerView {
             "ui".to_string(),
             text.native_ui.to_string(),
         )];
-        for (id, label) in available_controllers() {
-            view_options.push(SelectOption::new(format!("ctrl:{id}"), label.to_string()));
+        let supports_parameter_views =
+            super::super::ui_simple::supports_parameter_views(&plugin.settings);
+        if supports_parameter_views {
+            for (id, label) in available_controllers() {
+                view_options.push(SelectOption::new(format!("ctrl:{id}"), label.to_string()));
+            }
+            view_options.push(SelectOption::new(
+                "simple".to_string(),
+                text.simple.to_string(),
+            ));
         }
-        view_options.push(SelectOption::new(
-            "simple".to_string(),
-            text.simple.to_string(),
-        ));
+
+        let plugin_ui_view = if supports_parameter_views {
+            plugin_ui_view
+        } else {
+            PluginUiView::UI
+        };
 
         let selected_value = match &plugin_ui_view {
             PluginUiView::UI => "ui".to_string(),
@@ -2562,6 +2395,16 @@ impl PlayerView {
             .collect();
         let selected_skin_value = plugin_theme_select_value(plugin_theme_id).to_string();
 
+        let view_initial = view_options
+            .iter()
+            .position(|option| option.value.as_ref() == selected_value);
+        let skin_initial = skin_options
+            .iter()
+            .position(|option| option.value.as_ref() == selected_skin_value);
+        let ui = &self.state.read(cx).app.plugin_state.plugin_ui_state;
+        let view_highlight = ui.rack_view_highlight;
+        let skin_highlight = ui.rack_skin_highlight;
+
         let live_plugin_data = self.state.read(cx).app.playback.rack_plugin_data.clone();
         let (layout_scale, window_width) = {
             let state = self.state.read(cx);
@@ -2576,17 +2419,23 @@ impl PlayerView {
                 state.app.ui_state.window_width,
             )
         };
-        let config_content_width =
+        let config_content_width = if matches!(plugin_type, PluginType::Upmixer) {
+            320.0 * layout_scale
+        } else {
             super::super::ui_layout_renderer::config_controls_preferred_width(
                 &plugin.settings,
                 layout_scale,
-            );
+            )
+        };
         let overlay_width = (config_content_width + 32.0 * layout_scale)
             .min((window_width - 32.0 * layout_scale).max(1.0));
         let generated_config = super::super::ui_layout_renderer::render_config_controls_from_layout(
             &d,
             self.state.clone(),
             selected_idx,
+            Some(plugin.id),
+            self.state.read(cx).app.plugin_ui.layout_choice_menu,
+            self.state.read(cx).app.plugin_ui.layout_choice_highlight,
             &plugin.settings,
             editing_idx.is_some(),
             param_selection,
@@ -2601,6 +2450,7 @@ impl PlayerView {
         dev_track!(
             div()
                 .id("rack-config-overlay")
+                .key_context("PluginLayoutChoiceSelect")
                 .track_scroll(&self.scroll.rack_config)
                 .absolute()
                 .top(rems(2.5))
@@ -2650,11 +2500,12 @@ impl PlayerView {
                                 .text_color(theme.text_secondary)
                                 .child(text.view),
                         )
-                        .child(
+                        .child(dev_track!(
                             Select::new("rack-config-view-mode")
                                 .options(view_options)
                                 .selected(selected_value)
                                 .is_open(controller_picker_open)
+                                .highlighted_index(view_highlight)
                                 .size(SelectSize::Xs)
                                 .theme(theme.to_select_theme())
                                 .on_toggle({
@@ -2666,7 +2517,26 @@ impl PlayerView {
                                                 .app
                                                 .plugin_state
                                                 .plugin_ui_state
+                                                .rack_view_highlight =
+                                                is_open.then_some(view_initial).flatten();
+                                            state
+                                                .app
+                                                .plugin_state
+                                                .plugin_ui_state
                                                 .controller_picker_open = is_open;
+                                            cx.notify();
+                                        });
+                                    }
+                                })
+                                .on_highlight({
+                                    let entity = self.state.downgrade();
+                                    move |index, _, cx| {
+                                        let _ = entity.update(cx, |state, cx| {
+                                            state
+                                                .app
+                                                .plugin_state
+                                                .plugin_ui_state
+                                                .rack_view_highlight = index;
                                             cx.notify();
                                         });
                                     }
@@ -2681,18 +2551,27 @@ impl PlayerView {
                                             }
                                             _ => PluginUiView::UI,
                                         };
-                                        state_for_view.update(cx, |state, _cx| {
-                                            state.app.plugin_state.plugin_ui_state.plugin_ui_view =
-                                                view;
+                                        state_for_view.update(cx, |state, cx| {
+                                            // Native-only panels show their effective view
+                                            // without overwriting the shared preference.
+                                            if supports_parameter_views {
+                                                state
+                                                    .app
+                                                    .plugin_state
+                                                    .plugin_ui_state
+                                                    .plugin_ui_view = view;
+                                            }
                                             state
                                                 .app
                                                 .plugin_state
                                                 .plugin_ui_state
                                                 .controller_picker_open = false;
+                                            cx.notify();
                                         });
                                     }
                                 }),
-                        ),
+                            "rack.config.view"
+                        )),
                 )
                 .child(
                     div()
@@ -2706,11 +2585,12 @@ impl PlayerView {
                                 .text_color(theme.text_secondary)
                                 .child(text.skin),
                         )
-                        .child(
+                        .child(dev_track!(
                             Select::new("rack-config-skin")
                                 .options(skin_options)
                                 .selected(selected_skin_value)
                                 .is_open(skin_picker_open)
+                                .highlighted_index(skin_highlight)
                                 .size(SelectSize::Xs)
                                 .theme(theme.to_select_theme())
                                 .on_toggle({
@@ -2721,7 +2601,26 @@ impl PlayerView {
                                                 .app
                                                 .plugin_state
                                                 .plugin_ui_state
+                                                .rack_skin_highlight =
+                                                is_open.then_some(skin_initial).flatten();
+                                            state
+                                                .app
+                                                .plugin_state
+                                                .plugin_ui_state
                                                 .rack_skin_picker_open = is_open;
+                                            cx.notify();
+                                        });
+                                    }
+                                })
+                                .on_highlight({
+                                    let entity = self.state.downgrade();
+                                    move |index, _, cx| {
+                                        let _ = entity.update(cx, |state, cx| {
+                                            state
+                                                .app
+                                                .plugin_state
+                                                .plugin_ui_state
+                                                .rack_skin_highlight = index;
                                             cx.notify();
                                         });
                                     }
@@ -2756,99 +2655,13 @@ impl PlayerView {
                                         }
                                     });
                                 }),
-                        ),
+                            "rack.config.skin"
+                        )),
                 )
-                .when(
-                    matches!(plugin_type, PluginType::Upmixer),
-                    |el: Stateful<Div>| {
-                        let state_for_output = self.state.clone();
-                        let state_for_binaural = self.state.clone();
-                        let labels = pk(UP, "speaker_config").choice_labels();
-                        let output_options: Vec<SelectOption> = labels
-                            .iter()
-                            .map(|label| SelectOption::new(label.to_string(), label.to_string()))
-                            .collect();
-                        let (speaker_config, binaural_preview) = match &plugin.settings {
-                            sotf_audio_player::PluginSettings::Upmixer {
-                                speaker_config,
-                                output:
-                                    UpmixerOutputSettings {
-                                        binaural_preview, ..
-                                    },
-                                ..
-                            } => (speaker_config.clone(), *binaural_preview),
-                            _ => ("5.1".to_string(), false),
-                        };
-                        let binaural_idx = index_of(UP, "binaural_preview");
-                        el.child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(d.gap)
-                                .child(
-                                    div()
-                                        .text_size(d.text_xs)
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(theme.text_secondary)
-                                        .child(text.output),
-                                )
-                                .child(
-                                    Select::new("rack-config-upmixer-output")
-                                        .options(output_options)
-                                        .selected(speaker_config)
-                                        .is_open(upmixer_config_open)
-                                        .size(SelectSize::Xs)
-                                        .theme(theme.to_select_theme())
-                                        .on_toggle({
-                                            let state_for_output = state_for_output.downgrade();
-                                            move |is_open, _window, cx| {
-                                                let _ = state_for_output.update(cx, |state, cx| {
-                                                    state.app.plugin_ui.upmixer_config_open =
-                                                        is_open;
-                                                    cx.notify();
-                                                });
-                                            }
-                                        })
-                                        .on_change(move |value, _window, cx| {
-                                            let idx = labels
-                                                .iter()
-                                                .position(|label| *label == value.as_ref())
-                                                .unwrap_or(0);
-                                            state_for_output.update(cx, |state, _cx| {
-                                                state.app.set_plugin_param(
-                                                    selected_idx,
-                                                    0,
-                                                    idx as f64,
-                                                );
-                                                state.app.plugin_ui.upmixer_config_open = false;
-                                                state.app.update_level_meter_groups();
-                                            });
-                                        }),
-                                )
-                                .child(
-                                    Toggle::new("rack-config-binaural-preview")
-                                        .size(ToggleSize::Sm)
-                                        .checked(binaural_preview)
-                                        .label(text.binaural_preview)
-                                        .style(ToggleStyle::Segmented)
-                                        .theme(theme.to_toggle_theme())
-                                        .on_change(move |enabled, _window, cx| {
-                                            state_for_binaural.update(cx, |state, _cx| {
-                                                state.app.set_plugin_param(
-                                                    selected_idx,
-                                                    binaural_idx,
-                                                    if enabled { 1.0 } else { 0.0 },
-                                                );
-                                                state.app.update_level_meter_groups();
-                                            });
-                                        }),
-                                ),
-                        )
-                    },
-                )
-                .when_some(generated_config, |el: Stateful<Div>, config| {
-                    el.child(config)
-                }),
+                .when_some(
+                    generated_config.filter(|_| !matches!(plugin_type, PluginType::Upmixer)),
+                    |el: Stateful<Div>, config| { el.child(config) }
+                ),
             "rack.config.scroll"
         )
         .into_any_element()

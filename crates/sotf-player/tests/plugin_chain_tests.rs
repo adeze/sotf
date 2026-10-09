@@ -687,3 +687,64 @@ fn preset_source_layout_does_not_override_incompatible_active_source() {
     assert!(error.to_string().contains("upstream provides 2"), "{error}");
     assert_eq!(serde_json::to_value(&current).unwrap(), before);
 }
+
+#[test]
+fn binaural_database_directory_updates_both_controller_addresses() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().to_string_lossy().into_owned();
+    let file = directory.path().join("not-a-directory.sofa");
+    std::fs::write(&file, b"fixture").unwrap();
+    for by_node in [false, true] {
+        let mut controller = PluginController::new();
+        controller.add_plugin(&PluginType::BinauralDecoder);
+        let index = controller.selected_plugin_index;
+        let node_id = *controller
+            .graph
+            .nodes
+            .iter()
+            .find(|(_, node)| node.plugin.plugin_type() == PluginType::BinauralDecoder)
+            .unwrap()
+            .0;
+        let set = |controller: &mut PluginController, value: String| {
+            if by_node {
+                controller.set_plugin_param_string_by_node_id(node_id, 13, value)
+            } else {
+                controller.set_plugin_param_string(index, 13, value)
+            }
+        };
+        assert!(matches!(
+            set(&mut controller, path.clone()).unwrap(),
+            PluginUpdateEffect::Structural
+        ));
+        let settings =
+            serde_json::to_value(&controller.graph.get_plugin(index).unwrap().settings).unwrap();
+        assert_eq!(settings["BinauralDecoder"]["hrtf_database_dir"], path);
+        for invalid in [
+            file.to_string_lossy().into_owned(),
+            directory
+                .path()
+                .join("missing")
+                .to_string_lossy()
+                .into_owned(),
+            format!("{path}/../traversal"),
+        ] {
+            assert!(set(&mut controller, invalid).is_err());
+            assert_eq!(
+                serde_json::to_value(&controller.graph.get_plugin(index).unwrap().settings)
+                    .unwrap(),
+                settings
+            );
+        }
+        assert!(matches!(
+            set(&mut controller, String::new()).unwrap(),
+            PluginUpdateEffect::Structural
+        ));
+        let cleared =
+            serde_json::to_value(&controller.graph.get_plugin(index).unwrap().settings).unwrap();
+        assert_eq!(cleared["BinauralDecoder"]["hrtf_database_dir"], "");
+        assert_eq!(
+            cleared["BinauralDecoder"]["sofa_file"],
+            settings["BinauralDecoder"]["sofa_file"]
+        );
+    }
+}

@@ -9,7 +9,7 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
 
 #[cfg(feature = "dev-api")]
 use crate::app::dev_api::{DevElementState, DevTrackExt};
@@ -47,7 +47,7 @@ pub fn render_loudness_monitor_plugin(
         control_available,
         text,
     );
-    let status_view = div().child(status.clone());
+    let status_view = div().child(Text::caption(status.clone()));
     #[cfg(feature = "dev-api")]
     let status_view = status_view.dev_track_with_state(
         format!(
@@ -161,18 +161,20 @@ pub fn render_loudness_monitor_plugin(
     controls = controls.child(retry_button);
 
     let panel = div()
+        .w_full()
+        .min_w_0()
         .flex()
         .flex_col()
         .gap(d.grid)
+        .child(controls)
+        .child(status_view)
         .child(render_lufs_with_true_peak(
             d,
             loudness.as_deref(),
             layout_scale,
             text,
             theme,
-        ))
-        .child(status_view)
-        .child(controls);
+        ));
     #[cfg(feature = "dev-api")]
     let panel = panel.dev_track("plugin.loudness-monitor.panel");
     panel

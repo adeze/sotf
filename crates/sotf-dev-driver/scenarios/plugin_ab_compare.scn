@@ -3,7 +3,7 @@
 action PluginClear
 resize 1400 1100
 wait_idle
-click sidebar.nav-studiohub
+click sidebar.nav-studio-rack
 assert screen.focused == "Studio"
 wait_idle
 
@@ -24,7 +24,7 @@ wait_idle
 assert_visible ab.warning.level-latency
 assert_accessible button Use A
 assert_accessible button Use B
-assert_accessible button Bypass
+assert_visible plugin.choice.2.3.1
 
 # Configure different visible chains so level and latency can genuinely differ.
 assert_in_viewport ab.path.0.add
@@ -56,8 +56,8 @@ assert_accessible button Path A active
 screenshot ab-path-a-keyboard
 
 # Bypass is an explicit rendered action and produces an unmistakable dry state.
-click ab.bypass.toggle
+click plugin.choice.2.3.1
 assert plugins.plugin.2.param.3.value == 1 tolerance=0.01
 assert_visible ab.bypass.active
-assert_accessible button Resume
+assert_visible plugin.choice.2.3.0
 screenshot ab-bypassed

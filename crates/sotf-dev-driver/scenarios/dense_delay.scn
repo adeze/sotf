@@ -1,0 +1,103 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Delay
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params plugin.choice.2.7.1
+click plugin.choice.2.7.1
+assert plugins.plugin.2.param.7.value == 1
+scroll_into_view rack.params plugin.layout.header.2.MODULATION
+click plugin.layout.header.2.MODULATION
+wait_idle 500ms
+assert_enabled plugin.param.2.3.exact == false
+assert_enabled plugin.param.2.4.exact == false
+scroll_into_view rack.params plugin.choice.2.7.0
+click plugin.choice.2.7.0
+assert plugins.plugin.2.param.7.value == 0
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "250"
+key enter
+assert plugins.plugin.2.param.0.value == 250 tolerance=0.001
+click plugin.param.2.0.exact
+key up
+assert plugins.plugin.2.param.0.value == 251 tolerance=0.001
+key down
+key escape
+assert plugins.plugin.2.param.0.value == 250 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "-0.4"
+key enter
+assert plugins.plugin.2.param.1.value == -0.4 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "65"
+key enter
+assert plugins.plugin.2.param.2.value == 0.65 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "1.2"
+key enter
+assert plugins.plugin.2.param.3.value == 1.2 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.4.exact
+click plugin.param.2.4.exact
+key cmd-a
+type "3.5"
+key enter
+assert plugins.plugin.2.param.4.value == 3.5 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.7.1
+click plugin.choice.2.7.1
+assert plugins.plugin.2.param.7.value == 0
+assert toast.type == "Error"
+assert toast.message == "Pitch Preserving requires zero LFO Rate and LFO Depth. Set both to zero first."
+assert plugins.plugin.2.param.3.value == 1.2 tolerance=0.001
+assert plugins.plugin.2.param.4.value == 3.5 tolerance=0.001
+scroll_into_view rack.params plugin.layout.header.2.DIFFUSION
+click plugin.layout.header.2.DIFFUSION
+wait_idle 500ms
+assert_enabled plugin.param.2.5.exact == false
+scroll_into_view rack.params plugin.choice.2.6.1
+click plugin.choice.2.6.1
+assert plugins.plugin.2.param.6.value == 1
+scroll_into_view rack.params plugin.param.2.5.exact
+click plugin.param.2.5.exact
+key cmd-a
+type "0.7"
+key enter
+assert plugins.plugin.2.param.5.value == 0.7 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "0"
+key enter
+assert plugins.plugin.2.param.3.value == 0 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.4.exact
+click plugin.param.2.4.exact
+key cmd-a
+type "0"
+key enter
+assert plugins.plugin.2.param.4.value == 0 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.7.1
+click plugin.choice.2.7.1
+assert plugins.plugin.2.param.7.value == 1
+plugin_chain_save $SOTF_QA_DIR/edited.json
+screenshot delay-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.setup.2.header
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+assert_within plugin.choice.2.7.0 plugin.setup.2.header
+screenshot delay-narrow
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

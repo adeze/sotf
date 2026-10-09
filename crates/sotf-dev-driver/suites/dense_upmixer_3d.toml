@@ -1,0 +1,17 @@
+# Requires desktop features dev-api,gpu-3d; standard dev-api builds omit 3D.
+[runner]
+app_bin="/Volumes/home_tmp/src/all_of_sotf/sotf-daw/target/debug/sotf-desktop"
+artifacts_dir="/Volumes/home_tmp/cache/mbx/ui-all-plugins-20261008/upmixer-3d-retained-runs"
+readiness_timeout="20s"
+
+[[scenario]]
+name="upmixer-visual-3d"
+path="crates/sotf-dev-driver/scenarios/dense_upmixer_visual_3d.scn"
+timeout="120s"
+theme="Light"
+
+[[scenario]]
+name="upmixer-live-visual"
+path="crates/sotf-dev-driver/scenarios/dense_upmixer_live_visual.scn"
+timeout="120s"
+theme="Light"

@@ -1,0 +1,209 @@
+# All presets/modes and every numeric/boolean binding use painted widgets.
+resize 1440 1100
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add Crossfeed
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/crossfeed-before.json
+assert_within plugin.select.2.0 rack.params
+assert_within plugin.select.2.1 rack.params
+assert_within plugin.choice.2.13.0 rack.params
+# Cycle every preset through the actual header dropdown.
+click plugin.select.2.1
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 1
+assert plugins.plugin.2.param.0.value == 1
+assert plugins.plugin.2.param.5.value == 6
+click plugin.select.2.1
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 2
+assert plugins.plugin.2.param.0.value == 2
+assert plugins.plugin.2.param.6.value == 30
+click plugin.select.2.1
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 3
+assert plugins.plugin.2.param.0.value == 3
+assert plugins.plugin.2.param.7.value == 150
+assert plugins.plugin.2.param.8.value == 5700
+click plugin.select.2.1
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 4
+assert plugins.plugin.2.param.0.value == 0
+click plugin.select.2.1
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 5
+assert plugins.plugin.2.param.0.value == 4
+click plugin.select.2.1
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.1.value == 0
+assert plugins.plugin.2.param.0.value == 1
+# Bauer controls; Mode has one owner in the header.
+assert_visible plugin.param.2.4.exact
+assert_visible plugin.param.2.5.exact
+assert_absent plugin.param.2.6.exact
+click plugin.param.2.4.exact
+key cmd-a
+type "800"
+key enter
+click plugin.param.2.5.exact
+key cmd-a
+type "5.5"
+key enter
+assert plugins.plugin.2.param.4.value == 800
+assert plugins.plugin.2.param.5.value == 5.5
+click plugin.select.2.0
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.0.value == 2
+assert_absent plugin.param.2.4.exact
+assert_visible plugin.param.2.6.exact
+click plugin.param.2.6.exact
+key cmd-a
+type "42"
+key enter
+assert plugins.plugin.2.param.6.value == 42
+click plugin.select.2.0
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.0.value == 3
+assert_absent plugin.param.2.6.exact
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "200"
+key enter
+scroll_into_view rack.params plugin.param.2.8.exact
+click plugin.param.2.8.exact
+key cmd-a
+type "6000"
+key enter
+scroll_into_view rack.params plugin.param.2.9.exact
+click plugin.param.2.9.exact
+key cmd-a
+type "-2"
+key enter
+scroll_into_view rack.params plugin.param.2.10.exact
+click plugin.param.2.10.exact
+key cmd-a
+type "-3"
+key enter
+scroll_into_view rack.params plugin.param.2.11.exact
+click plugin.param.2.11.exact
+key cmd-a
+type "-4"
+key enter
+assert plugins.plugin.2.param.7.value == 200
+assert plugins.plugin.2.param.8.value == 6000
+assert plugins.plugin.2.param.9.value == -2
+assert plugins.plugin.2.param.10.value == -3
+assert plugins.plugin.2.param.11.value == -4
+# Shared primary controls, including scaled Mix and metadata increments.
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "37"
+key enter
+assert plugins.plugin.2.param.3.value == 0.37 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.12.exact
+click plugin.param.2.12.exact
+key cmd-a
+type "0.4"
+key enter
+click plugin.param.2.12.exact
+key up
+key escape
+assert plugins.plugin.2.param.12.value == 0.41 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.17.exact
+click plugin.param.2.17.exact
+key cmd-a
+type "-20"
+key enter
+click plugin.param.2.17.exact
+key up
+key escape
+assert plugins.plugin.2.param.17.value == -19
+# Auto Gain is in the header; its dependent numeric fields honor the flag.
+scroll_into_view rack.params plugin.param.2.14.exact
+assert_enabled plugin.param.2.14.exact == false
+assert_enabled plugin.param.2.15.exact == false
+assert_enabled plugin.param.2.16.exact == false
+scroll_into_view rack.params plugin.choice.2.13.1
+click plugin.choice.2.13.1
+wait_idle 300ms
+scroll_into_view rack.params plugin.param.2.14.exact
+assert_enabled plugin.param.2.14.exact == true
+click plugin.param.2.14.exact
+key cmd-a
+type "-22"
+key enter
+scroll_into_view rack.params plugin.param.2.15.exact
+click plugin.param.2.15.exact
+key cmd-a
+type "9"
+key enter
+scroll_into_view rack.params plugin.param.2.16.exact
+click plugin.param.2.16.exact
+key cmd-a
+type "300"
+key enter
+assert plugins.plugin.2.param.14.value == -22
+assert plugins.plugin.2.param.15.value == 9
+assert plugins.plugin.2.param.16.value == 300
+scroll_into_view rack.params plugin.choice.2.13.0
+click plugin.choice.2.13.0
+wait_idle 300ms
+scroll_into_view rack.params plugin.param.2.14.exact
+assert_enabled plugin.param.2.14.exact == false
+scroll_into_view rack.params plugin.choice.2.13.1
+click plugin.choice.2.13.1
+scroll_into_view rack.params plugin.choice.2.2.0
+click plugin.choice.2.2.0
+assert plugins.plugin.2.param.2.value == 0
+click plugin.choice.2.2.1
+assert plugins.plugin.2.param.2.value == 1
+# HRTF and Disabled modes hide the unrelated algorithm controls.
+click plugin.select.2.0
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.0.value == 4
+assert_absent plugin.param.2.7.exact
+click plugin.select.2.0
+key down
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.0.value == 0
+click plugin.select.2.0
+key up
+key up
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.0.value == 3
+plugin_chain_save $SOTF_QA_DIR/crossfeed-edited.json
+plugin_chain_load $SOTF_QA_DIR/crossfeed-edited.json
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/crossfeed-reloaded.json
+scroll_into_view rack.params plugin.select.2.0
+screenshot crossfeed-wide
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.select.2.0 rack.params
+assert_within plugin.param.2.3.exact rack.params
+assert_within plugin.param.2.12.exact rack.params
+assert_within plugin.param.2.17.exact rack.params
+screenshot crossfeed-narrow

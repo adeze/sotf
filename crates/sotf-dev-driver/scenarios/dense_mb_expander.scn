@@ -1,0 +1,142 @@
+# Dense Multiband Expander selected-band bindings and schema increments.
+resize 1440 1100
+focus Studio
+plugin_clear
+plugin_add MultibandExpander
+action PluginSelectFirstUser
+wait_idle 1s
+assert_absent plugin.setup.advanced.header.2
+click plugin.param.2.0.exact
+key up
+wait_idle 300ms
+assert plugins.plugin.2.param.0.value == 4
+key down
+wait_idle 300ms
+key escape
+assert plugins.plugin.2.param.0.value == 3
+plugin_chain_save $SOTF_QA_DIR/before.json
+click plugin.choice.2.15.0
+click plugin.mb.band.2.2
+wait_idle 300ms
+click plugin.param.2.206.exact
+key cmd-a
+type "-31"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.206.value == -31
+click plugin.param.2.207.exact
+key cmd-a
+type "2.3"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.207.value == 2.3 tolerance=0.001
+click plugin.param.2.208.exact
+key cmd-a
+type "2.5"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.208.value == 2.5 tolerance=0.001
+click plugin.param.2.209.exact
+key cmd-a
+type "120"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.209.value == 120
+click plugin.param.2.210.exact
+key cmd-a
+type "24"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.210.value == 24
+click plugin.param.2.207.exact
+key up
+wait_idle 300ms
+key escape
+assert plugins.plugin.2.param.207.value == 2.4 tolerance=0.001
+double_click plugin.slider.2.207
+wait_idle 300ms
+assert plugins.plugin.2.param.207.value == 2
+click plugin.param.2.207.exact
+key cmd-a
+type "2.3"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.207.value == 2.3 tolerance=0.001
+click plugin.param.2.14.exact
+key cmd-a
+type "65"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.14.value == 0.65 tolerance=0.001
+click plugin.choice.2.215.1
+click plugin.choice.2.214.1
+click plugin.choice.2.217.0
+click plugin.choice.2.216.1
+wait_idle 300ms
+screenshot mb-expander-wide
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.param.2.206.exact rack.params
+assert_within plugin.param.2.207.exact rack.params
+assert_within plugin.param.2.208.exact rack.params
+assert_within plugin.param.2.209.exact rack.params
+assert_within plugin.param.2.210.exact rack.params
+assert_within plugin.param.2.14.exact rack.params
+screenshot mb-expander-narrow
+resize 1440 1100
+wait_idle 300ms
+scroll_into_view rack.params mbexp.advanced
+click mbexp.advanced
+wait_idle 300ms
+scroll_into_view rack.params plugin.param.2.211.exact
+assert_within plugin.param.2.211.exact rack.params
+click plugin.param.2.211.exact
+key cmd-a
+type "3.5"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.211.value == 3.5 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.212.exact
+assert_within plugin.param.2.212.exact rack.params
+click plugin.param.2.212.exact
+key cmd-a
+type "2.6"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.212.value == 2.6 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.213.exact
+assert_within plugin.param.2.213.exact rack.params
+click plugin.param.2.213.exact
+key cmd-a
+type "8"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.213.value == 8
+scroll_into_view rack.params plugin.param.2.2.exact
+assert_within plugin.param.2.2.exact rack.params
+click plugin.param.2.2.exact
+key cmd-a
+type "350"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.2.value == 350
+scroll_into_view rack.params plugin.param.2.17.exact
+assert_within plugin.param.2.17.exact rack.params
+click plugin.param.2.17.exact
+key cmd-a
+type "2.5"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.17.value == 2.5 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.16.1
+click plugin.choice.2.16.1
+wait_idle 300ms
+assert plugins.plugin.2.param.16.value == 1
+screenshot mb-expander-advanced
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 300ms
+assert plugins.plugin.2.param.206.value == -31
+assert plugins.plugin.2.param.207.value == 2.3 tolerance=0.001
+assert plugins.plugin.2.param.212.value == 2.6 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

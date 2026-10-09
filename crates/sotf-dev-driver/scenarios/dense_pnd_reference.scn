@@ -1,0 +1,49 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Pnd
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+assert plugins.plugin.2.param.5.value == 0 tolerance=0.001
+scroll_into_view rack.params plugin.layout.pnd.reference_status.2
+assert_text plugin.layout.pnd.reference_status.2 == "Change-only tracking: no fixed reference pitch."
+scroll_into_view rack.params plugin.param.2.5.exact
+click plugin.param.2.5.exact
+key cmd-a
+type "440"
+key enter
+assert plugins.plugin.2.param.5.value == 440 tolerance=0.001
+scroll_into_view rack.params plugin.layout.pnd.reference_status.2
+wait_text plugin.layout.pnd.reference_status.2 == "Fixed-reference pitch correction." timeout=5s
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.5.value == 440 tolerance=0.001
+scroll_into_view rack.params plugin.layout.pnd.reference_status.2
+wait_text plugin.layout.pnd.reference_status.2 == "Fixed-reference pitch correction." timeout=5s
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+screenshot pnd-reference-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.layout.pnd.reference_status.2
+assert_within plugin.layout.pnd.reference_status.2 rack.params
+assert_text plugin.layout.pnd.reference_status.2 == "Fixed-reference pitch correction."
+scroll_into_view rack.params plugin.param.2.5.exact
+click plugin.param.2.5.exact
+key cmd-a
+type "0"
+key enter
+assert plugins.plugin.2.param.5.value == 0 tolerance=0.001
+scroll_into_view rack.params plugin.layout.pnd.reference_status.2
+wait_text plugin.layout.pnd.reference_status.2 == "Change-only tracking: no fixed reference pitch." timeout=5s
+assert_within plugin.layout.pnd.reference_status.2 rack.params
+plugin_chain_save $SOTF_QA_DIR/returned-zero.json
+screenshot pnd-reference-zero-narrow
+plugin_chain_load $SOTF_QA_DIR/returned-zero.json
+action PluginSelectFirstUser
+wait_idle 500ms
+scroll_into_view rack.params plugin.layout.pnd.reference_status.2
+wait_text plugin.layout.pnd.reference_status.2 == "Change-only tracking: no fixed reference pitch." timeout=5s
+plugin_chain_save $SOTF_QA_DIR/zero-reloaded.json

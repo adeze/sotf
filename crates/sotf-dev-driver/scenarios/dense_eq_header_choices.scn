@@ -1,0 +1,20 @@
+# Header dropdown keys must not navigate or toggle the rack plugin.
+resize 1440 900
+focus Studio
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+click eq.header.topology
+key down
+key enter
+wait_visible eq.header.oversampling timeout=3s
+click eq.header.oversampling
+key down
+key enter
+wait_visible eq.header.topology timeout=3s
+assert_visible eq.band.0.select
+plugin_chain_save $SOTF_QA_DIR/after.json
+snapshot $SOTF_QA_DIR/header-choices.json
+screenshot eq-header-choices

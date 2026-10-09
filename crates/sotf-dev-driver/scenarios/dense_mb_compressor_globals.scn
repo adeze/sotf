@@ -1,0 +1,138 @@
+# 2026-10-08: verify global defaults, preset application and fifth-band routing.
+# Fix: crates/app-gpui/components/plugins/ui_mb_compressor/header.rs and types.rs.
+# App: cargo build -p sotf-gpui --features dev-api --bin sotf-desktop
+# Driver: sotf-dev-driver run-suite crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+resize 1440 1100
+action CycleLanguage
+assert settings.language == "French"
+focus Studio
+plugin_clear
+plugin_add MultibandCompressor
+action PluginSelectFirstUser
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/before.json
+click plugin.param.2.0.exact
+key cmd-a
+type "5"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.0.value == 5
+click plugin.select.2.1
+wait_idle 1s
+key down
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 2
+assert plugins.plugin.2.param.2.value == 100
+assert plugins.plugin.2.param.3.value == 3000
+click plugin.select.2.1
+wait_idle 1s
+key down
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 3
+assert plugins.plugin.2.param.2.value == 250
+assert plugins.plugin.2.param.3.value == 4000
+assert plugins.plugin.2.param.4.value == 10000
+assert plugins.plugin.2.param.5.value == 14000
+click plugin.mb.band.2.5
+wait_idle 1s
+click plugin.choice.2.517.1
+wait_idle 1s
+assert plugins.plugin.2.param.517.value == 1
+click plugin.param.2.506.exact
+key cmd-a
+type "-35"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.506.value == -35
+click plugin.mb.band.2.0
+wait_idle 1s
+click plugin.param.2.6.exact
+key cmd-a
+type "-25"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.6.value == -25 tolerance=0.001
+click plugin.param.2.7.exact
+key cmd-a
+type "3.2"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.7.value == 3.2 tolerance=0.001
+click plugin.param.2.8.exact
+key cmd-a
+type "7.5"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.8.value == 7.5 tolerance=0.001
+click plugin.param.2.9.exact
+key cmd-a
+type "85"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.9.value == 85 tolerance=0.001
+assert plugins.plugin.2.param.506.value == -35
+screenshot mb-compressor-global-primary
+scroll_into_view rack.params mbcomp.advanced
+click mbcomp.advanced
+wait_idle 1s
+scroll_into_view rack.params plugin.param.2.10.exact
+assert_within plugin.param.2.10.exact rack.params
+click plugin.param.2.10.exact
+key cmd-a
+type "4.5"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.10.value == 4.5 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.3.exact
+assert_within plugin.param.2.3.exact rack.params
+click plugin.param.2.3.exact
+key cmd-a
+type "3500"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.3.value == 3500 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.4.exact
+assert_within plugin.param.2.4.exact rack.params
+click plugin.param.2.4.exact
+key cmd-a
+type "9000"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.4.value == 9000 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.5.exact
+assert_within plugin.param.2.5.exact rack.params
+click plugin.param.2.5.exact
+key cmd-a
+type "13000"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.5.value == 13000 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.17.exact
+assert_within plugin.param.2.17.exact rack.params
+click plugin.param.2.17.exact
+key cmd-a
+type "40.5"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.17.value == 40.5 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.18.exact
+assert_within plugin.param.2.18.exact rack.params
+click plugin.param.2.18.exact
+key cmd-a
+type "6"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.18.value == 6 tolerance=0.001
+assert_absent plugin.param.2.19.exact
+scroll_into_view rack.params plugin.select.2.1
+screenshot mb-compressor-custom-preset
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 1s
+assert plugins.plugin.2.param.506.value == -35
+assert plugins.plugin.2.param.6.value == -25
+assert plugins.plugin.2.param.17.value == 40.5
+assert plugins.plugin.2.param.18.value == 6
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

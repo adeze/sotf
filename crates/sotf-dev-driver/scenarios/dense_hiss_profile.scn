@@ -1,0 +1,100 @@
+resize 1440 1000
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add HissReducer
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/hiss-before.json
+click plugin.choice.2.0.0
+assert plugins.plugin.2.param.0.value == 0
+click plugin.choice.2.0.1
+assert plugins.plugin.2.param.0.value == 1
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "-42"
+key enter
+assert plugins.plugin.2.param.1.value == -42 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "6500"
+key enter
+assert plugins.plugin.2.param.2.value == 6500 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "37"
+key enter
+assert plugins.plugin.2.param.3.value == 0.37 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.8.exact
+assert_enabled plugin.param.2.8.exact == false
+assert_enabled plugin.param.2.9.exact == false
+assert_enabled plugin.param.2.10.exact == false
+scroll_into_view rack.params plugin.layout.header.2.GUARD
+click plugin.layout.header.2.GUARD
+scroll_into_view rack.params plugin.choice.2.12.1
+assert_enabled plugin.choice.2.12.1 == false
+scroll_into_view rack.params plugin.choice.2.4.1
+click plugin.choice.2.4.1
+scroll_into_view rack.params plugin.param.2.8.exact
+assert_enabled plugin.param.2.8.exact == true
+click plugin.param.2.8.exact
+key cmd-a
+type "75"
+key enter
+assert plugins.plugin.2.param.8.value == 0.75 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.9.exact
+assert_enabled plugin.param.2.9.exact == true
+click plugin.param.2.9.exact
+key cmd-a
+type "65"
+key enter
+assert plugins.plugin.2.param.9.value == 0.65 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.10.exact
+assert_enabled plugin.param.2.10.exact == true
+click plugin.param.2.10.exact
+key cmd-a
+type "85"
+key enter
+assert plugins.plugin.2.param.10.value == 0.85 tolerance=0.000001
+scroll_into_view rack.params plugin.choice.2.6.1
+click plugin.choice.2.6.1
+assert plugins.plugin.2.param.6.value == 1
+scroll_into_view rack.params plugin.choice.2.11.1
+click plugin.choice.2.11.1
+assert plugins.plugin.2.param.11.value == 1
+scroll_into_view rack.params plugin.choice.2.12.1
+click plugin.choice.2.12.1
+assert plugins.plugin.2.param.12.value == 1
+scroll_into_view rack.params plugin.action.2.5
+assert_text plugin.action.2.5 == "Learn Noise"
+click plugin.action.2.5
+wait_idle 500ms
+assert toast.type == "Error"
+assert toast.message == "Audio command failed (set_plugin_action): No engine running"
+assert plugins.plugin.2.param.5.value == 0
+scroll_into_view rack.params plugin.action.2.7
+assert_text plugin.action.2.7 == "Clear Profile"
+click plugin.action.2.7
+wait_idle 500ms
+assert toast.type == "Error"
+assert plugins.plugin.2.param.7.value == 0
+plugin_chain_save $SOTF_QA_DIR/hiss-edited.json
+plugin_chain_load $SOTF_QA_DIR/hiss-edited.json
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/hiss-reloaded.json
+scroll_into_view rack.params plugin.choice.2.0.0
+screenshot hiss-wide
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.action.2.5 rack.params
+assert_within plugin.action.2.7 rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+assert_within plugin.param.2.3.exact rack.params
+assert_within plugin.choice.2.0.1 plugin.setup.2.header
+assert_within plugin.choice.2.4.1 plugin.setup.2.header
+assert_within plugin.choice.2.11.1 plugin.setup.2.header
+assert_within plugin.choice.2.11.1 rack.params
+screenshot hiss-narrow

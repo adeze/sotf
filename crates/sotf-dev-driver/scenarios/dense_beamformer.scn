@@ -1,0 +1,60 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Beamformer
+action PluginSelectFirstUser
+wait_idle 500ms
+assert_text plugin.layout.beamformer.channel_status.2 == "2 microphones · 2 input channels · Spacing 5.0 cm · Steer 0.0°"
+plugin_chain_save $SOTF_QA_DIR/before.json
+action PluginSetInputChannels {"channels":4}
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "4"
+key enter
+assert plugins.plugin.2.param.0.value == 4 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "12.5"
+key enter
+assert plugins.plugin.2.param.1.value == 12.5 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "-45"
+key enter
+assert plugins.plugin.2.param.2.value == -45 tolerance=0.001
+click plugin.select.2.3
+key down
+key enter
+assert plugins.plugin.2.param.3.value == 1
+click plugin.select.2.3
+key down
+key enter
+assert plugins.plugin.2.param.3.value == 2
+click plugin.select.2.3
+key down
+key enter
+assert plugins.plugin.2.param.3.value == 0
+click plugin.select.2.3
+key down
+key down
+key enter
+assert plugins.plugin.2.param.3.value == 2
+wait_idle 500ms
+assert_text plugin.layout.beamformer.channel_status.2 == "4 microphones · 4 input channels · Spacing 12.5 cm · Steer -45.0°"
+screenshot beamformer-wide
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+assert_within plugin.layout.beamformer.channel_status.2 rack.params
+screenshot beamformer-narrow
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert_text plugin.layout.beamformer.channel_status.2 == "4 microphones · 4 input channels · Spacing 12.5 cm · Steer -45.0°"
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

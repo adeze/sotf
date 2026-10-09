@@ -1,141 +1,153 @@
-use crate::app::AppState;
-use crate::app::types::PluginUpdateType;
+//! Shared compact multiband header and band-range labels.
+
+// Rust guideline compliant 2026-02-21
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
+use crate::app::{AppState, i18n::PluginCommonTranslations};
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
-use crate::multiband_presets::{
-    crossover_preset_from_key, crossover_preset_key, matching_crossover_preset, preset_frequencies,
-};
+use crate::components::plugins::ui_layout_renderer::render_compact_choice_param;
+use crate::multiband_presets::{matching_crossover_preset, preset_frequencies};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize};
+use gpui_ui_kit::{NumberInput, NumberInputSize, Select, SelectOption, SelectSize, Text};
+use sotf_audio_player::PluginSettings;
 
-pub(crate) fn render_crossover_preset_editor(
+pub(crate) fn render_dense_multiband_header(
     d: &Ds,
-    id: &'static str,
-    compact_detail_id: &'static str,
-    preset_label: &'static str,
-    preset_option_labels: [&'static str; 4],
-    compact: bool,
     entity: Entity<AppState>,
     plugin_idx: usize,
-    crossovers: [f64; 4],
+    settings: &PluginSettings,
+    text: PluginCommonTranslations,
     theme: &Theme,
-) -> impl IntoElement {
-    // Custom is derived from the crossover values rather than an action: a
-    // named button applies a profile, while any manual edit updates this status.
-    let inferred = matching_crossover_preset(crossovers);
-    let selected = crossover_preset_key(inferred).unwrap_or("");
-    let status = usize::try_from(inferred)
-        .ok()
-        .and_then(|index| preset_option_labels.get(index))
-        .copied()
-        .unwrap_or(preset_option_labels[0]);
-    let make_button_set = |set_id: &'static str, presets: &[i32]| {
-        let options = presets
-            .iter()
-            .filter_map(|&preset| {
-                let key = crossover_preset_key(preset)?;
-                let label = preset_option_labels.get(usize::try_from(preset).ok()?)?;
-                Some(ButtonSetOption::new(key, *label))
-            })
-            .collect();
-        let entity = entity.clone();
-
-        ButtonSet::new(set_id)
-            .options(options)
-            .selected(selected)
-            .size(ButtonSetSize::Sm)
-            .theme(theme.to_button_set_theme())
-            .on_change(move |value, _window, cx| {
-                let Some(preset) = crossover_preset_from_key(value.as_ref()) else {
-                    return;
-                };
-                entity.update(cx, |state, cx| {
-                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                    state.app.set_plugin_param(plugin_idx, 1, preset as f64);
-                    if let Some(frequencies) = preset_frequencies(preset) {
-                        for (offset, frequency) in frequencies.into_iter().enumerate() {
-                            state
-                                .app
-                                .set_plugin_param(plugin_idx, 2 + offset, frequency);
-                        }
-                    }
-                    cx.notify();
-                });
-            })
-    };
-
-    div()
+    cx: &App,
+    choice_indices: &[usize],
+) -> AnyElement {
+    let params = settings.param_specs();
+    let change_entity = entity.clone();
+    let count = NumberInput::new(("multiband-count", plugin_idx))
+        .value(settings.param_value(0).unwrap_or(params[0].default_f64()))
+        .min(params[0].min_f64())
+        .max(params[0].max_f64())
+        .step(1.0)
+        .decimals(0)
+        .size(NumberInputSize::Xs)
+        .aria_label(text.bands)
+        .theme(theme.to_number_input_theme())
+        .on_change(move |value, _, cx| {
+            change_entity.update(cx, |state, cx| {
+                state.app.set_plugin_param(plugin_idx, 0, value);
+                cx.notify();
+            });
+        });
+    #[cfg(feature = "dev-api")]
+    let count = count.dev_track(format!("plugin.param.{plugin_idx}.0.exact"));
+    let frequencies = [2, 3, 4, 5].map(|index| {
+        settings
+            .param_value(index)
+            .unwrap_or(params[index].default_f64())
+    });
+    let inferred = matching_crossover_preset(frequencies);
+    let labels = text.multiband_presets.labels();
+    let app = &entity.read(cx).app;
+    let instance = app
+        .plugin_state
+        .graph_state
+        .editing_graph_node_uuid
+        .and_then(|id| app.plugin_state.routing_controller().graph.nodes.get(&id))
+        .map(|node| node.plugin.id)
+        .or_else(|| {
+            app.plugin_state
+                .graph
+                .get_plugin(plugin_idx)
+                .map(|plugin| plugin.id)
+        })
+        .unwrap_or(plugin_idx);
+    let menu_key = (instance, 1);
+    let open = app.plugin_ui.layout_choice_menu == Some(menu_key);
+    let highlight = app.plugin_ui.layout_choice_highlight;
+    let toggle_entity = entity.clone();
+    let highlight_entity = entity.clone();
+    let change_entity = entity.clone();
+    let preset = Select::new(("multiband-preset", plugin_idx))
+        .options(
+            labels
+                .iter()
+                .enumerate()
+                .map(|(i, label)| SelectOption::new(i.to_string(), *label).disabled(i == 0))
+                .collect(),
+        )
+        .selected(inferred.to_string())
+        .is_open(open)
+        .highlighted_index(open.then_some(highlight).flatten())
+        .on_toggle(move |open, _, cx| {
+            toggle_entity.update(cx, |state, cx| {
+                state.app.plugin_ui.layout_choice_menu = open.then_some(menu_key);
+                state.app.plugin_ui.layout_choice_highlight = open.then_some(inferred as usize);
+                cx.notify();
+            });
+        })
+        .on_highlight(move |index, _, cx| {
+            highlight_entity.update(cx, |state, cx| {
+                state.app.plugin_ui.layout_choice_highlight = index;
+                cx.notify();
+            });
+        })
+        .size(SelectSize::Xs)
+        .theme(theme.to_select_theme())
+        .on_change(move |value, _, cx| {
+            let Some(preset) = value.parse::<i32>().ok() else {
+                return;
+            };
+            // Custom is derived from actual crossovers, not a frequency profile.
+            let Some(frequencies) = preset_frequencies(preset) else {
+                return;
+            };
+            change_entity.update(cx, |state, cx| {
+                state.app.set_plugin_param(plugin_idx, 1, f64::from(preset));
+                for (offset, frequency) in frequencies.into_iter().enumerate() {
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, offset + 2, frequency);
+                }
+                state.app.plugin_ui.layout_choice_menu = None;
+                state.app.plugin_ui.layout_choice_highlight = None;
+                cx.notify();
+            });
+        });
+    #[cfg(feature = "dev-api")]
+    let preset = preset.dev_track(format!("plugin.select.{plugin_idx}.1"));
+    let mut row = div()
+        .flex_1()
+        .min_w_0()
         .flex()
-        .flex_col()
+        .flex_wrap()
+        .items_center()
         .gap(d.grid)
+        .child(Text::label(text.bands))
+        .child(count)
+        .child(Text::label(text.label("Preset")))
         .child(
             div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(d.gap)
-                .text_size(d.text_xs)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_muted)
-                .child(preset_label)
-                .child(status),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.grid)
-                .when(compact, |this| {
-                    this.child(make_button_set(id, &[1, 2]))
-                        .child(make_button_set(compact_detail_id, &[3]))
-                })
-                .when(!compact, |this| this.child(make_button_set(id, &[1, 2, 3]))),
-        )
-}
-
-pub(crate) fn render_band_count_editor(
-    d: &Ds,
-    id: &'static str,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    current: usize,
-    min: f64,
-    max: f64,
-    label: &'static str,
-    theme: &Theme,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(d.grid)
-        .child(
-            div()
-                .text_size(d.text_xs)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_secondary)
-                .child(label),
-        )
-        .child(
-            div().w(rems(5.0)).child(
-                NumberInput::new(id)
-                    .value(current as f64)
-                    .min(min)
-                    .max(max)
-                    .step(1.0)
-                    .decimals(0)
-                    .size(NumberInputSize::Xs)
-                    .aria_label(label)
-                    .on_change(move |value, _window, cx| {
-                        entity.update(cx, |state, _| {
-                            state.app.set_plugin_param(plugin_idx, 0, value);
-                            state.app.plugin_state.update_state.pending_plugin_update =
-                                Some(PluginUpdateType::Structural);
-                        });
-                    }),
-            ),
-        )
+                .key_context("PluginLayoutChoiceSelect")
+                .w(rems(10.0))
+                .child(preset),
+        );
+    for &index in choice_indices {
+        let mut spec = params[index];
+        spec.name = text.label(spec.name);
+        row = row.child(render_compact_choice_param(
+            d,
+            entity.clone(),
+            plugin_idx,
+            index,
+            &spec,
+            settings.param_value(index).unwrap_or(spec.default_f64()),
+            theme,
+        ));
+    }
+    row.into_any_element()
 }
 
 pub(crate) fn band_tab_label(band: usize, num_bands: usize, crossovers: [f64; 4]) -> String {

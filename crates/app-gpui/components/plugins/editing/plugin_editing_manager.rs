@@ -5,7 +5,7 @@ use sotf_audio::plugins::EqFilterTopology;
 use sotf_audio_player::{EqEditTarget, PluginSettings};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
-fn active_eq_edit_target(app: &App, plugin_idx: usize) -> Option<EqEditTarget> {
+pub(crate) fn active_eq_edit_target(app: &App, plugin_idx: usize) -> Option<EqEditTarget> {
     let settings = if let Some(node_id) = app.plugin_state.graph_state.editing_graph_node_uuid {
         &app.plugin_state
             .routing_controller()
@@ -221,6 +221,18 @@ impl PluginEditingManager for App {
     }
 
     fn remove_plugin(&mut self, index: usize) {
+        #[cfg(feature = "dev-api")]
+        if std::env::var_os("SOTF_QA_DIR").is_some() {
+            // Preserve the initiating UI caller when diagnosing unexpected removals.
+            log::info!(
+                "[QA] Plugin removal requested: index={index}, plugin_id={:?}, caller={} ",
+                self.plugin_state
+                    .graph
+                    .get_plugin(index)
+                    .map(|plugin| plugin.id),
+                std::backtrace::Backtrace::force_capture(),
+            );
+        }
         if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid
             && self.plugin_state.graph_state.draft.is_some()
         {
@@ -304,9 +316,143 @@ impl PluginEditingManager for App {
 
     fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64) {
         let eq_target = active_eq_edit_target(self, plugin_idx);
+        let gate_external_sidechain_idx = sotf_plugins::param_specs::index_of(
+            sotf_plugins::param_specs::gate::PARAMS,
+            "sidechain_external",
+        );
+        if self
+            .plugin_state
+            .graph_state
+            .editing_graph_node_uuid
+            .is_none()
+            && param_idx == gate_external_sidechain_idx
+            && value > 0.5
+            && self
+                .plugin_state
+                .graph
+                .get_plugin(plugin_idx)
+                .is_some_and(|plugin| matches!(&plugin.settings, PluginSettings::Gate { .. }))
+        {
+            self.ui_state.toast_message = Some(ToastMessage::error(
+                "External sidechain needs separate audio and sidechain inputs. Configure these in Studio Graph."
+                    .to_string(),
+            ));
+            self.plugin_state
+                .record_editor_effect(sotf_audio_player::PluginUpdateEffect::None);
+            #[cfg(feature = "dev-api")]
+            self.plugin_state.record_qa_target(plugin_idx, param_idx);
+            return;
+        }
+        {
+            let settings = if let Some(id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+                self.plugin_state
+                    .routing_controller()
+                    .graph
+                    .nodes
+                    .get(&id)
+                    .map(|node| &node.plugin.settings)
+            } else {
+                self.plugin_state
+                    .graph
+                    .get_plugin(plugin_idx)
+                    .map(|plugin| &plugin.settings)
+            };
+            let rejected = settings.and_then(|settings| match settings {
+                PluginSettings::AmbisonicsDecoder { .. } =>
+                    sotf_audio_player::controllers::plugin::ambisonics_layout_transition_error(
+                        settings, param_idx, value,
+                    ),
+                PluginSettings::DeEsser { .. }
+                    if self.plugin_state.graph_state.editing_graph_node_uuid.is_none()
+                        && param_idx == sotf_plugins::param_specs::index_of(
+                            sotf_plugins::param_specs::de_esser::PARAMS,
+                            "sidechain_external",
+                        ) && value > 0.5 => Some(
+                        "External sidechain needs separate audio and sidechain inputs. Configure these in Studio Graph."
+                    ),
+                PluginSettings::Delay { lfo_rate_hz, lfo_depth_ms, .. }
+                    if param_idx == sotf_plugins::param_specs::index_of(
+                        sotf_plugins::param_specs::delay::PARAMS, "pitch_preserving",
+                    ) && value > 0.5 && (*lfo_rate_hz != 0.0 || *lfo_depth_ms != 0.0) => Some(
+                        "Pitch Preserving requires zero LFO Rate and LFO Depth. Set both to zero first."
+                    ),
+                PluginSettings::Delay { pitch_preserving: true, .. }
+                    if (param_idx == sotf_plugins::param_specs::index_of(
+                        sotf_plugins::param_specs::delay::PARAMS, "lfo_rate_hz",
+                    ) || param_idx == sotf_plugins::param_specs::index_of(
+                        sotf_plugins::param_specs::delay::PARAMS, "lfo_depth_ms",
+                    )) && value != 0.0 => Some(
+                        "LFO modulation is unavailable with Pitch Preserving. Turn Pitch Preserving off first."
+                    ),
+                PluginSettings::Downmix { phase_coherence: true, .. }
+                    if param_idx == sotf_plugins::param_specs::index_of(
+                        sotf_plugins::param_specs::downmix::PARAMS,
+                        "matrix_ltrt",
+                    ) && value > 0.5 => Some(
+                        "Lt/Rt matrix cannot run with phase coherence. Turn Phase Coherence off first."
+                    ),
+                PluginSettings::Downmix { matrix_ltrt: true, .. }
+                    if param_idx == sotf_plugins::param_specs::index_of(
+                        sotf_plugins::param_specs::downmix::PARAMS,
+                        "phase_coherence",
+                    ) && value > 0.5 => Some(
+                        "Phase Coherence cannot run with Lt/Rt matrix. Turn Lt/Rt off first."
+                    ),
+                PluginSettings::LoudnessCompensation { mode: 2, .. }
+                    if param_idx == sotf_plugins::param_specs::index_of(
+                        sotf_plugins::param_specs::loudness_compensation::PARAMS,
+                        "auto_calibrated",
+                    ) && value <= 0.5 => Some(
+                        "Auto mode needs an SPL calibration. Choose Manual or ISO 226 before removing it."
+                    ),
+                PluginSettings::LoudnessCompensation { auto_calibrated: false, .. }
+                    if param_idx == sotf_plugins::param_specs::index_of(
+                        sotf_plugins::param_specs::loudness_compensation::PARAMS,
+                        "mode",
+                    ) && value.round() as usize == 2 => Some(
+                        "Auto mode needs an SPL calibration. Set the measured reference in plugin settings before selecting Auto."
+                    ),
+                _ => None,
+            });
+            if let Some(message) = rejected {
+                self.ui_state.toast_message = Some(ToastMessage::error(message.to_string()));
+                self.plugin_state
+                    .record_editor_effect(sotf_audio_player::PluginUpdateEffect::None);
+                #[cfg(feature = "dev-api")]
+                self.plugin_state.record_qa_target(plugin_idx, param_idx);
+                return;
+            }
+        }
         // When editing a graph node (non-linear graph), redirect to the
         // node-ID-based path so the update reaches the correct engine plugin.
         if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+            let profile_action = self
+                .plugin_state
+                .routing_controller()
+                .graph
+                .nodes
+                .get(&node_id)
+                .and_then(|node| {
+                    sotf_audio_player::momentary_action_param(&node.plugin.settings, param_idx)
+                })
+                .is_some();
+            if profile_action {
+                let effect = self
+                    .plugin_state
+                    .dispatch_applied_graph_profile_action(node_id, param_idx, value);
+                if let Some(effect) = effect {
+                    self.plugin_state.record_editor_effect(effect);
+                } else {
+                    self.ui_state.toast_message = Some(ToastMessage::error(
+                        "Apply the routing graph before using noise-profile actions.".to_string(),
+                    ));
+                    self.plugin_state
+                        .record_editor_effect(sotf_audio_player::PluginUpdateEffect::None);
+                }
+                #[cfg(feature = "dev-api")]
+                self.plugin_state.record_qa_target(plugin_idx, param_idx);
+                return;
+            }
             let effect = if let Some(target) = eq_target {
                 self.plugin_state
                     .routing_controller_mut()
@@ -317,6 +463,8 @@ impl PluginEditingManager for App {
                     .set_plugin_param_by_node_id(node_id, param_idx, value)
             };
             self.plugin_state.record_editor_effect(effect);
+            #[cfg(feature = "dev-api")]
+            self.plugin_state.record_qa_target(plugin_idx, param_idx);
             return;
         }
         let effect = if let Some(target) = eq_target {
@@ -327,6 +475,8 @@ impl PluginEditingManager for App {
                 .set_plugin_param(plugin_idx, param_idx, value)
         };
         self.plugin_state.record_editor_effect(effect);
+        #[cfg(feature = "dev-api")]
+        self.plugin_state.record_qa_target(plugin_idx, param_idx);
     }
 
     fn set_plugin_param_string(
@@ -341,12 +491,20 @@ impl PluginEditingManager for App {
                 .routing_controller_mut()
                 .set_plugin_param_string_by_node_id(node_id, param_idx, value)?;
             self.plugin_state.record_editor_effect(effect);
+            #[cfg(feature = "dev-api")]
+            self.plugin_state.record_qa_target(plugin_idx, param_idx);
             return Ok(());
         }
+        let previous = self
+            .plugin_state
+            .resource_path_before_edit(plugin_idx, param_idx);
         let effect = self
             .plugin_state
             .set_plugin_param_string(plugin_idx, param_idx, value)?;
+        self.plugin_state.remember_resource_edit(previous);
         self.plugin_state.record_editor_effect(effect);
+        #[cfg(feature = "dev-api")]
+        self.plugin_state.record_qa_target(plugin_idx, param_idx);
         Ok(())
     }
 
@@ -402,6 +560,40 @@ impl PluginEditingManager for App {
     }
 
     fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize) {
+        let settings = if let Some(id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+            self.plugin_state
+                .routing_controller()
+                .graph
+                .nodes
+                .get(&id)
+                .map(|node| &node.plugin.settings)
+        } else {
+            self.plugin_state
+                .graph
+                .get_plugin(plugin_idx)
+                .map(|plugin| &plugin.settings)
+        };
+        let rejected = settings.and_then(|settings| match settings {
+            PluginSettings::Downmix { matrix_ltrt: true, .. }
+                if param_idx == sotf_plugins::param_specs::index_of(
+                    sotf_plugins::param_specs::downmix::PARAMS,
+                    "phase_coherence",
+                ) => Some("Resetting Phase Coherence requires Lt/Rt matrix to be off first."),
+            PluginSettings::LoudnessCompensation { mode: 2, .. }
+                if param_idx == sotf_plugins::param_specs::index_of(
+                    sotf_plugins::param_specs::loudness_compensation::PARAMS,
+                    "auto_calibrated",
+                ) => Some("Auto mode needs an SPL calibration. Choose Manual or ISO 226 before resetting it."),
+            _ => None,
+        });
+        if let Some(message) = rejected {
+            self.ui_state.toast_message = Some(ToastMessage::error(message.to_string()));
+            self.plugin_state
+                .record_editor_effect(sotf_audio_player::PluginUpdateEffect::None);
+            #[cfg(feature = "dev-api")]
+            self.plugin_state.record_qa_target(plugin_idx, param_idx);
+            return;
+        }
         let eq_target = active_eq_edit_target(self, plugin_idx);
         if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             let effect = if let Some(target) = eq_target {
@@ -414,6 +606,8 @@ impl PluginEditingManager for App {
                     .reset_plugin_param_by_node_id(node_id, param_idx)
             };
             self.plugin_state.record_editor_effect(effect);
+            #[cfg(feature = "dev-api")]
+            self.plugin_state.record_qa_target(plugin_idx, param_idx);
             return;
         }
         let effect = if let Some(target) = eq_target {
@@ -423,6 +617,8 @@ impl PluginEditingManager for App {
             self.plugin_state.reset_plugin_param(plugin_idx, param_idx)
         };
         self.plugin_state.record_editor_effect(effect);
+        #[cfg(feature = "dev-api")]
+        self.plugin_state.record_qa_target(plugin_idx, param_idx);
     }
 
     fn load_apo_file(&mut self) -> Result<(), String> {

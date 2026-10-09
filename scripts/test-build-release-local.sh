@@ -48,8 +48,12 @@ exit 0
 MOCK
 cat > "$TEST_ROOT/bin/cargo" <<'MOCK'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "$PROJECT_ROOT/cargo-commands.log"
 if [ "${MOCK_CARGO_FAIL:-false}" = true ]; then
     exit 23
+fi
+if [[ "$*" == *"-p sotf-host"* && "${MOCK_HELPER_FAIL:-false}" = true ]]; then
+    exit 24
 fi
 target=""
 while [ "$#" -gt 0 ]; do
@@ -63,6 +67,8 @@ done
 mkdir -p "$PROJECT_ROOT/target/$target/dist"
 printf 'fresh tui %s\n' "$target" > "$PROJECT_ROOT/target/$target/dist/sotf-tui"
 printf 'fresh desktop %s\n' "$target" > "$PROJECT_ROOT/target/$target/dist/sotf-desktop"
+printf 'fresh worker %s\n' "$target" > "$PROJECT_ROOT/target/$target/dist/sotf-external-plugin-worker"
+printf 'fresh helper %s\n' "$target" > "$PROJECT_ROOT/target/$target/dist/sotf-macos-sandbox-helper"
 MOCK
 cat > "$TEST_ROOT/bin/lipo" <<'MOCK'
 #!/usr/bin/env bash
@@ -97,6 +103,14 @@ if ! build_macos_target arm64 aarch64-apple-darwin hal; then
     echo "expected mocked macOS target build to pass" >&2
     exit 1
 fi
+grep -q -- '-p sotf-gpui --features shipping,hal' "$PROJECT_ROOT/cargo-commands.log" || {
+    echo "macOS desktop build omitted shipping features" >&2
+    exit 1
+}
+grep -q -- '-p sotf-host --features external-plugin-au --bin sotf-external-plugin-worker --bin sotf-macos-sandbox-helper' "$PROJECT_ROOT/cargo-commands.log" || {
+    echo "macOS build omitted the AU process helpers" >&2
+    exit 1
+}
 for artifact in \
     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64" \
     "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64" \
@@ -122,6 +136,19 @@ fi
     exit 1
 }
 [ "$BUILD_FAILED" = true ] || { echo "cargo failure was not aggregated" >&2; exit 1; }
+
+BUILD_RESULTS=()
+RELEASE_ARTIFACTS=()
+BUILD_FAILED=false
+if MOCK_HELPER_FAIL=true build_macos_target arm64 aarch64-apple-darwin hal; then
+    echo "expected missing AU helper build to fail the macOS target" >&2
+    exit 1
+fi
+[ "$BUILD_FAILED" = true ] || { echo "helper failure was not aggregated" >&2; exit 1; }
+[ ! -e "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64.dmg" ] || {
+    echo "helper build failure produced an apparent desktop release" >&2
+    exit 1
+}
 
 # A copy failure and a signing failure must also prevent an apparent success.
 BUILD_RESULTS=()

@@ -1,0 +1,75 @@
+{
+  "version": 2,
+  "plugins": [
+    {
+      "id": 1,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    },
+    {
+      "id": 2,
+      "enabled": false,
+      "settings": {
+        "Gain": {
+          "channels": 2,
+          "gain_db": 0.0,
+          "smoothing_ms": 10.0
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 5,
+      "enabled": true,
+      "settings": {
+        "SpectrumAnalyzer": {
+          "num_bins": 30,
+          "min_freq": 20.0,
+          "max_freq": 20000.0,
+          "smoothing": 0.7,
+          "tilt_correction": {
+            "Custom": 4.25
+          },
+          "tilt_reference": "Standard"
+        }
+      },
+      "permanent": false
+    },
+    {
+      "id": 3,
+      "enabled": true,
+      "settings": {
+        "Matrix": {
+          "input_channels": 2,
+          "output_channels": 2,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "channel_states": [
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            }
+          ]
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 4,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    }
+  ]
+}

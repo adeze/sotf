@@ -7,7 +7,7 @@ use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, StackSpacing, Text, VStack};
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, VStack};
 use sotf_audio_player::{
     PluginSettings, UpmixerAmbientAnalysisSettings, UpmixerBypassSettings,
     UpmixerDecorrelationSettings, UpmixerDialogueSettings, UpmixerGainSettings,
@@ -61,6 +61,7 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
                     ctx.entity.read(cx).app.ui_state.language,
                 ),
                 available_width: ctx.available_width,
+                available_height: ctx.available_height,
                 layout_scale: ctx.layout_scale,
                 exact_entry_focus_handle: ctx.plugin_exact_entry_focus_handle.clone(),
             },
@@ -74,6 +75,172 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
     }
 }
 
+pub(super) fn render_compressor(
+    ctx: &CustomViewRenderContext,
+    cx: &mut Context<PlayerView>,
+) -> AnyElement {
+    let PluginSettings::Compressor {
+        threshold_db,
+        ratio,
+        knee_db,
+        ..
+    } = ctx.settings
+    else {
+        return Empty.into_any_element();
+    };
+    let d = Ds::from_cx(cx);
+    let theme = ctx.plugin_theme.apply_to(ctx.theme);
+    let params = ctx.settings.param_specs();
+    let values: Vec<f64> = (0..params.len())
+        .map(|index| ctx.settings.param_value(index).unwrap_or(0.0))
+        .collect();
+    let language = ctx.entity.read(cx).app.ui_state.language;
+    let text = PluginCommonTranslations::for_language(language);
+    let advanced_open = ctx
+        .entity
+        .read(cx)
+        .app
+        .plugin_state
+        .plugin_ui_state
+        .compressor_advanced_open;
+    let mut core = div().flex().flex_wrap().gap(d.grid).items_start();
+    for index in [0, 1, 4, 2, 3, 5, 6] {
+        let mut param = params[index];
+        param.name = text.label(param.name);
+        core = core.child(super::super::ui_layout_renderer::render_horizontal_param(
+            &d,
+            ctx.entity.clone(),
+            ctx.plugin_idx,
+            index,
+            &param,
+            values[index],
+            ctx.is_editing,
+            ctx.selected_param,
+            true,
+            &theme,
+        ));
+    }
+    let data = ctx
+        .plugin_data
+        .as_ref()
+        .and_then(|data| data.downcast_ref::<sotf_plugins::CompressorData>());
+    let input_level = data.and_then(|data| {
+        data.band_levels_db
+            .iter()
+            .copied()
+            .reduce(f32::max)
+            .map(f64::from)
+    });
+    let reduction = data
+        .and_then(|data| data.gain_reduction_db.iter().copied().reduce(f32::max))
+        .map(f64::from)
+        .unwrap_or(0.0);
+    let feedback = div()
+        .flex()
+        .flex_col()
+        .gap(d.grid)
+        .child(super::super::common::render_transfer_curve_with_level(
+            &d,
+            *threshold_db,
+            *ratio,
+            *knee_db,
+            false,
+            if ctx.available_width > 700.0 {
+                250.0
+            } else {
+                210.0
+            },
+            input_level,
+            &theme,
+        ))
+        .child(super::super::level_meters::render_gr_meter(
+            &d, reduction, -30.0, &theme,
+        ));
+    let mut advanced = div().flex().flex_wrap().gap(d.grid);
+    for index in [12, 16, 17, 9] {
+        let mut param = params[index];
+        param.name = text.label(param.name);
+        advanced = advanced.child(super::super::ui_layout_renderer::render_horizontal_param(
+            &d,
+            ctx.entity.clone(),
+            ctx.plugin_idx,
+            index,
+            &param,
+            values[index],
+            ctx.is_editing,
+            ctx.selected_param,
+            true,
+            &theme,
+        ));
+    }
+    for index in [18, 10, 11] {
+        let mut param = params[index];
+        param.name = text.label(param.name);
+        advanced = advanced.child(
+            super::super::ui_layout_renderer::render_compact_choice_param(
+                &d,
+                ctx.entity.clone(),
+                ctx.plugin_idx,
+                index,
+                &param,
+                values[index],
+                &theme,
+            ),
+        );
+    }
+    let entity = ctx.entity.clone();
+    let detail_button = Button::new("compressor-advanced", text.label("Advanced"))
+        .size(ButtonSize::Sm)
+        .variant(if advanced_open {
+            ButtonVariant::Secondary
+        } else {
+            ButtonVariant::Ghost
+        })
+        .theme(theme.to_button_theme())
+        .on_click(move |_, cx| {
+            entity.update(cx, |state, cx| {
+                let open = &mut state
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .compressor_advanced_open;
+                *open = !*open;
+                cx.notify();
+            });
+        });
+    #[cfg(feature = "dev-api")]
+    let detail_button = {
+        use crate::app::dev_api::DevTrackExt;
+        detail_button.dev_track("compressor.advanced")
+    };
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .gap(d.section)
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_start()
+                .gap(d.section)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(rems(16.0))
+                        .flex()
+                        .flex_col()
+                        .gap(d.grid)
+                        .child(core)
+                        .child(detail_button),
+                )
+                .child(feedback),
+        )
+        .when(advanced_open, |panel| panel.child(advanced))
+        .into_any_element()
+}
+
 pub(super) fn render_external(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -82,17 +249,30 @@ pub(super) fn render_external(
         return Empty.into_any_element();
     };
     let d = Ds::from_cx(cx);
+    let theme = ctx.plugin_theme.apply_to(ctx.theme);
+    let editor = ctx
+        .plugin_data
+        .as_ref()
+        .and_then(|data| data.downcast_ref::<sotf_plugins::ExternalPluginEditorData>())
+        .filter(|data| {
+            data.plugin_instance_id.is_some()
+                && data.plugin_instance_id == ctx.plugin_instance_id
+                && data.descriptor.id == state.descriptor.id
+                && data.descriptor.path == state.descriptor.path
+                && data.descriptor.format == state.descriptor.format
+        });
+    let parameters = editor.map(|data| {
+        super::super::ui_external::render_parameters(ctx.entity.clone(), data, &theme, cx)
+    });
+
     let descriptor = &state.descriptor;
     let error_key = external_plugin_error_key(descriptor);
     let (language, build_error, load_error, worker_status) = {
         let app_state = ctx.entity.read(cx);
-        let plugin_instance_id = ctx
-            .plugin_graph
-            .get_plugin(ctx.plugin_idx)
-            .map(|plugin| plugin.id);
-        let engine_index = ctx
-            .plugin_graph
-            .get_engine_index_by_linear_position(ctx.plugin_idx);
+        let plugin_instance_id = ctx.plugin_instance_id;
+        let engine_index = plugin_instance_id.and_then(|instance_id| {
+            super::super::ui_external::external_engine_index(ctx.plugin_graph, instance_id)
+        });
         let plugin_state = &app_state.app.plugin_state;
         let ui = &plugin_state.external_plugin_ui;
         (
@@ -121,16 +301,16 @@ pub(super) fn render_external(
         sotf_plugins::PluginFormat::AudioUnit => "AU",
     };
     let (hosting, hosting_color) = match state.sandbox_mode {
-        sotf_plugins::ExternalPluginSandboxMode::Isolated => (text.isolated, ctx.theme.success),
+        sotf_plugins::ExternalPluginSandboxMode::Isolated => (text.isolated, theme.success),
         sotf_plugins::ExternalPluginSandboxMode::InProcess
-        | sotf_plugins::ExternalPluginSandboxMode::Disabled => (text.disabled, ctx.theme.warning),
+        | sotf_plugins::ExternalPluginSandboxMode::Disabled => (text.disabled, theme.warning),
     };
 
     let worker_status_view = worker_status.as_ref().map(|status| {
         let health_color = match external_plugin_worker_health(status) {
-            ExternalPluginWorkerHealth::Healthy => ctx.theme.success,
-            ExternalPluginWorkerHealth::Degraded => ctx.theme.warning,
-            ExternalPluginWorkerHealth::Failed => ctx.theme.error,
+            ExternalPluginWorkerHealth::Healthy => theme.success,
+            ExternalPluginWorkerHealth::Degraded => theme.warning,
+            ExternalPluginWorkerHealth::Failed => theme.error,
         };
         VStack::new()
             .spacing(StackSpacing::Xs)
@@ -142,24 +322,23 @@ pub(super) fn render_external(
                 ))
                 .color(health_color),
             )
-            .child(Text::caption(text.worker.counters(status)).color(ctx.theme.text_secondary))
-            .child(Text::caption(text.worker.sandbox_label(status)).color(ctx.theme.text_muted))
+            .child(Text::caption(text.worker.counters(status)).color(theme.text_secondary))
+            .child(Text::caption(text.worker.sandbox_label(status)).color(theme.text_muted))
             .when_some(status.sandbox_reason.as_ref(), |stack, reason| {
-                stack.child(Text::caption(reason.clone()).color(ctx.theme.warning))
+                stack.child(Text::caption(reason.clone()).color(theme.warning))
             })
             .build()
             .into_any_element()
     });
 
-    VStack::new()
-        .spacing(StackSpacing::Sm)
-        .child(Text::section_header(descriptor.name.clone()).color(ctx.theme.text_primary))
+    let details = VStack::new()
+        .spacing(StackSpacing::Xs)
         .child(
-            Text::body(format!(
+            Text::caption(format!(
                 "{} · {} · {}",
                 descriptor.vendor, descriptor.version, format
             ))
-            .color(ctx.theme.text_secondary),
+            .color(theme.text_secondary),
         )
         .child(
             HStack::new()
@@ -169,14 +348,14 @@ pub(super) fn render_external(
                         "{}: {} → {}",
                         text.channels, descriptor.audio_inputs, descriptor.audio_outputs
                     ))
-                    .color(ctx.theme.text_secondary),
+                    .color(theme.text_secondary),
                 )
                 .child(Text::label(hosting).color(hosting_color))
                 .build(),
         )
         .child(
             Text::caption(format!("{}: {}", text.path, descriptor.path.display()))
-                .color(ctx.theme.text_muted),
+                .color(theme.text_muted),
         )
         .child(
             Text::caption(format!(
@@ -184,32 +363,100 @@ pub(super) fn render_external(
                 text.saved_state,
                 state.opaque_state.len()
             ))
-            .color(ctx.theme.text_muted),
+            .color(theme.text_muted),
         )
         .when_some(worker_status_view, |stack, status| stack.child(status))
+        .build();
+    let instance_id = ctx.plugin_instance_id;
+    let advanced_open = instance_id.is_some()
+        && ctx
+            .entity
+            .read(cx)
+            .app
+            .plugin_state
+            .external_plugin_ui
+            .advanced_instance
+            == instance_id;
+    let entity = ctx.entity.clone();
+    let advanced = Button::new(("external-advanced", ctx.plugin_idx), "Advanced")
+        .size(ButtonSize::Xs)
+        .variant(if advanced_open {
+            ButtonVariant::Secondary
+        } else {
+            ButtonVariant::Ghost
+        })
+        .theme(theme.to_button_theme())
+        .disabled(instance_id.is_none())
+        .on_click(move |_, cx| {
+            entity.update(cx, |state, cx| {
+                let current = &mut state.app.plugin_state.external_plugin_ui.advanced_instance;
+                *current = if *current == instance_id {
+                    None
+                } else {
+                    instance_id
+                };
+                cx.notify();
+            });
+        });
+    #[cfg(feature = "dev-api")]
+    let advanced = {
+        use crate::app::dev_api::{DevElementState, DevTrackExt};
+        advanced.dev_track_with_state(
+            "external.advanced",
+            DevElementState::default().expanded(advanced_open),
+        )
+    };
+    let details = div().child(details);
+    #[cfg(feature = "dev-api")]
+    let details = {
+        use crate::app::dev_api::DevTrackExt;
+        details.dev_track("external.details")
+    };
+    let show_unavailable = editor.is_none() && load_error.is_none() && build_error.is_none();
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(Text::label(descriptor.name.clone()).color(theme.text_primary))
+        .when_some(parameters, |stack, controls| stack.child(controls))
         .when_some(load_error, |stack, error| {
             stack.child(
                 div()
                     .p(d.pad_y)
                     .rounded(d.r_sm)
-                    .bg(ctx.theme.error.opacity(0.12))
+                    .bg(theme.error.opacity(0.12))
                     .text_size(d.text_xs)
-                    .text_color(ctx.theme.error)
+                    .text_color(theme.error)
                     .child(format!("{}: {error}", text.runtime_error)),
             )
         })
         .when_some(build_error, |stack, error| {
-            stack.child(
-                div()
-                    .p(d.pad_y)
-                    .rounded(d.r_sm)
-                    .bg(ctx.theme.warning.opacity(0.12))
-                    .text_size(d.text_xs)
-                    .text_color(ctx.theme.warning)
-                    .child(format!("{}: {error}", text.host_diagnostic)),
-            )
+            let message = error.clone();
+            let diagnostic = div()
+                .p(d.pad_y)
+                .rounded(d.r_sm)
+                .bg(theme.warning.opacity(0.12))
+                .text_size(d.text_xs)
+                .text_color(theme.warning)
+                .child(format!("{}: {error}", text.host_diagnostic))
+                .into_any_element();
+            #[cfg(feature = "dev-api")]
+            let diagnostic = {
+                use crate::app::dev_api::{DevElementState, DevTrackExt};
+                diagnostic
+                    .dev_track_with_state(
+                        "external.host-error",
+                        DevElementState::default().text(message),
+                    )
+                    .into_any_element()
+            };
+            #[cfg(not(feature = "dev-api"))]
+            let _ = message;
+            stack.child(diagnostic)
         })
-        .child(Text::body(text.parameters_unavailable).color(ctx.theme.warning))
+        .when(show_unavailable, |stack| {
+            stack.child(Text::body(text.parameters_unavailable).color(theme.warning))
+        })
+        .child(advanced)
+        .when(advanced_open, |stack| stack.child(details))
         .build()
         .into_any_element()
 }
@@ -275,6 +522,16 @@ pub(super) fn render_denoiser(
             format!("{} · {}", text.denoiser_profile, text.denoiser_none)
         };
 
+        let status = div().child(profile_state.clone());
+        #[cfg(feature = "dev-api")]
+        let status = {
+            use crate::app::dev_api::{DevElementState, DevTrackExt};
+            status.dev_track_with_state(
+                format!("plugin.denoiser.profile_status.{}", ctx.plugin_idx),
+                DevElementState::default().text(profile_state),
+            )
+        };
+
         root = root.child(
             div()
                 .flex()
@@ -284,12 +541,13 @@ pub(super) fn render_denoiser(
                 .gap(d.gap)
                 .text_size(d.text_sm)
                 .text_color(ctx.theme.text_secondary)
-                .child(profile_state)
+                .child(status)
                 .child(format!(
                     "{}: {:.1} dB",
                     text.denoiser_reduction, data.avg_reduction_db
                 )),
         );
+        root = root.child(render_main_controls(ctx, &d, text));
         root = root.child(render_denoiser_band_row(
             &d,
             text.denoiser_noise_floor,
@@ -309,6 +567,7 @@ pub(super) fn render_denoiser(
             ctx.theme,
         ));
     } else {
+        root = root.child(render_main_controls(ctx, &d, text));
         root = root.child(
             div()
                 .w_full()
@@ -321,21 +580,23 @@ pub(super) fn render_denoiser(
         );
     }
 
-    root.child(
-        super::super::ui_layout_renderer::render_main_controls_from_layout(
-            &d,
-            ctx.entity.clone(),
-            ctx.plugin_idx,
-            ctx.settings,
-            ctx.is_editing,
-            ctx.selected_param,
-            ctx.plugin_data.as_ref(),
-            ctx.available_width,
-            ctx.layout_scale,
-            text,
-            ctx.theme,
-        ),
-    )
+    root.child(super::super::ui_layout_renderer::render_tabs_from_layout(
+        &d,
+        ctx.entity.clone(),
+        ctx.plugin_idx,
+        ctx.plugin_instance_id,
+        ctx.layout_choice_menu,
+        ctx.layout_choice_highlight,
+        ctx.settings,
+        ctx.is_editing,
+        ctx.selected_param,
+        ctx.plugin_data.as_ref(),
+        ctx.available_width,
+        ctx.layout_scale,
+        text,
+        ctx.theme,
+        cx,
+    ))
     .into_any_element()
 }
 
@@ -395,11 +656,15 @@ fn render_main_controls(
         d,
         ctx.entity.clone(),
         ctx.plugin_idx,
+        ctx.plugin_instance_id,
+        ctx.layout_choice_menu,
+        ctx.layout_choice_highlight,
         ctx.settings,
         ctx.is_editing,
         ctx.selected_param,
         ctx.plugin_data.as_ref(),
         ctx.available_width,
+        ctx.available_height,
         ctx.layout_scale,
         text,
         ctx.theme,
@@ -431,94 +696,44 @@ pub(super) fn render_convolution(
     let latency = if *zero_latency_head {
         format!("Zero-latency head · {head_taps} taps")
     } else {
-        format!("Partitioned FFT · {head_taps} head taps")
+        "Partitioned FFT".to_string()
+    };
+    let status_text = format!("{status} · {latency}");
+    let status = Text::caption(status_text.clone()).color(ctx.theme.text_muted);
+    #[cfg(feature = "dev-api")]
+    let status = {
+        use crate::app::dev_api::DevTrackExt;
+        status.dev_track_with_state(
+            format!("convolution.status.{}", ctx.plugin_idx),
+            crate::app::dev_api::DevElementState::default().text(status_text),
+        )
     };
 
     div()
         .flex()
         .flex_col()
-        .gap(d.section)
+        .gap(d.gap)
         .w_full()
         .min_w_0()
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .p(d.card)
-                .rounded(d.r_md)
-                .border_1()
-                .border_color(if has_ir {
-                    ctx.theme.success
-                } else {
-                    ctx.theme.border
-                })
-                .bg(ctx.theme.surface)
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap(d.gap)
-                        .text_size(d.text_sm)
-                        .text_color(ctx.theme.text_primary)
-                        .child(text.convolution_ir)
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .text_color(if has_ir {
-                                    ctx.theme.success
-                                } else {
-                                    ctx.theme.text_muted
-                                })
-                                .child(status),
-                        ),
-                )
-                .child(
-                    div()
-                        .id(SharedString::from(format!(
-                            "convolution-ir-path-{}",
-                            ctx.plugin_idx
-                        )))
-                        .w_full()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .whitespace_nowrap()
-                        .py(d.pad_y)
-                        .text_size(d.text_xs)
-                        .text_color(ctx.theme.text_secondary)
-                        // ui.md Phase 3 pilot: show the base name truncated
-                        // in the row so long IR paths cannot widen the
-                        // editor; the full path stays available on demand
-                        // through this tooltip.
-                        .child(if has_ir {
-                            crate::plugin_file_picker::convolution_ir_display_name(ir_file)
-                                .to_string()
-                        } else {
-                            text.label("Use the file picker below to load an IR")
-                                .to_string()
-                        })
-                        .when(has_ir, |el| {
-                            let full_path = ir_file.clone();
-                            let theme = ctx.theme.clone();
-                            el.tooltip(move |_window, cx| {
-                                crate::components::themed_tooltip(full_path.clone(), &theme, cx)
-                            })
-                        }),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(d.gap)
-                        .text_size(d.text_xs)
-                        .text_color(ctx.theme.text_muted)
-                        .child(latency)
-                        .child(format!("· {}", text.convolution_preview)),
-                ),
-        )
         .child(render_main_controls(ctx, &d, text))
+        .child(status)
+        .child(super::super::ui_layout_renderer::render_tabs_from_layout(
+            &d,
+            ctx.entity.clone(),
+            ctx.plugin_idx,
+            ctx.plugin_instance_id,
+            ctx.layout_choice_menu,
+            ctx.layout_choice_highlight,
+            ctx.settings,
+            ctx.is_editing,
+            ctx.selected_param,
+            ctx.plugin_data.as_ref(),
+            ctx.available_width,
+            ctx.layout_scale,
+            text,
+            ctx.theme,
+            cx,
+        ))
         .into_any_element()
 }
 
@@ -526,86 +741,7 @@ pub(super) fn render_xtc(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
-    let d = Ds::from_cx(cx);
-    let text = PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
-    let PluginSettings::XTC {
-        distance_m,
-        speaker_angle_deg,
-        head_offset_x,
-        head_offset_z,
-        head_yaw_deg,
-        ..
-    } = ctx.settings
-    else {
-        return Empty.into_any_element();
-    };
-
-    let node = |label: &'static str, color: gpui::Rgba| {
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(d.half_grid)
-            .text_size(d.text_xs)
-            .text_color(ctx.theme.text_secondary)
-            .child(div().size(rems(1.75)).rounded_full().bg(color))
-            .child(label)
-    };
-
-    div()
-        .flex()
-        .flex_col()
-        .gap(d.section)
-        .w_full()
-        .min_w_0()
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .p(d.card)
-                .rounded(d.r_md)
-                .border_1()
-                .border_color(ctx.theme.border)
-                .bg(ctx.theme.surface)
-                .child(
-                    div()
-                        .text_size(d.text_sm)
-                        .text_color(ctx.theme.text_primary)
-                        .child(text.xtc_geometry),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap(d.gap)
-                        .w_full()
-                        .py(d.card)
-                        .child(node("Left speaker", ctx.theme.accent))
-                        .child(div().flex_1().h(d.half_grid).bg(ctx.theme.border).min_w_0())
-                        .child(node("Listener", ctx.theme.info))
-                        .child(div().flex_1().h(d.half_grid).bg(ctx.theme.border).min_w_0())
-                        .child(node("Right speaker", ctx.theme.accent)),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap(d.gap)
-                        .text_size(d.text_xs)
-                        .text_color(ctx.theme.text_secondary)
-                        .child(format!("{}: {distance_m:.2} m", text.label("Distance")))
-                        .child(format!("{}: {speaker_angle_deg:.1}°", text.label("Angle")))
-                        .child(format!(
-                            "{}: {head_offset_x:.2} / {head_offset_z:.2} m",
-                            text.label("Head offset")
-                        ))
-                        .child(format!("{}: {head_yaw_deg:.1}°", text.label("Yaw"))),
-                ),
-        )
-        .child(render_main_controls(ctx, &d, text))
-        .into_any_element()
+    super::super::ui_xtc::render_xtc(ctx, cx)
 }
 
 pub(super) fn render_crossfeed(
@@ -614,91 +750,7 @@ pub(super) fn render_crossfeed(
 ) -> AnyElement {
     let d = Ds::from_cx(cx);
     let text = PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
-    let PluginSettings::Crossfeed {
-        enabled,
-        mode,
-        mix,
-        itd_delay_ms,
-        ..
-    } = ctx.settings
-    else {
-        return Empty.into_any_element();
-    };
-
-    let processing_enabled = *enabled && !matches!(mode, sotf_plugins::CrossfeedMode::Off);
-    let status = text.label(if processing_enabled {
-        "Enabled"
-    } else {
-        "Bypassed"
-    });
-    div()
-        .flex()
-        .flex_col()
-        .gap(d.section)
-        .w_full()
-        .min_w_0()
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .p(d.card)
-                .rounded(d.r_md)
-                .border_1()
-                .border_color(if processing_enabled {
-                    ctx.theme.accent
-                } else {
-                    ctx.theme.border
-                })
-                .bg(ctx.theme.surface)
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .text_size(d.text_sm)
-                        .text_color(ctx.theme.text_primary)
-                        .child(text.crossfeed_signal)
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .text_color(if processing_enabled {
-                                    ctx.theme.success
-                                } else {
-                                    ctx.theme.text_muted
-                                })
-                                .child(status),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(d.gap)
-                        .w_full()
-                        .py(d.card)
-                        .child(div().size(rems(1.5)).rounded_full().bg(ctx.theme.accent))
-                        .child(
-                            div()
-                                .flex_1()
-                                .h(d.half_grid)
-                                .bg(ctx.theme.accent.opacity(0.55))
-                                .min_w_0(),
-                        )
-                        .child(div().size(rems(1.5)).rounded_full().bg(ctx.theme.accent))
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .text_color(ctx.theme.text_secondary)
-                                .child(format!(
-                                    "{:.0}% mix · {itd_delay_ms:.1} ms ITD",
-                                    mix * 100.0
-                                )),
-                        ),
-                ),
-        )
-        .child(render_main_controls(ctx, &d, text))
-        .into_any_element()
+    render_main_controls(ctx, &d, text)
 }
 
 pub(super) fn render_binaural(
@@ -709,83 +761,68 @@ pub(super) fn render_binaural(
     let text = PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
     let PluginSettings::BinauralDecoder {
         sofa_file,
-        input_channels,
-        externalization,
-        near_field_strength,
+        hrtf_database_dir,
         ..
     } = ctx.settings
     else {
         return Empty.into_any_element();
     };
-
-    let has_sofa = !sofa_file.trim().is_empty();
+    let resource = ctx
+        .plugin_data
+        .as_ref()
+        .and_then(|data| data.downcast_ref::<sotf_plugins::BinauralDecoderData>());
+    let status_text = match resource.filter(|data| data.initialized) {
+        Some(data)
+            if data.loaded_sofa_path.as_ref().is_some_and(|path| {
+                path.to_string_lossy() == sofa_file.as_str()
+                    || (sofa_file.is_empty() && !hrtf_database_dir.is_empty())
+            }) =>
+        {
+            format!(
+                "SOFA loaded · {} taps · {:.0} Hz",
+                data.ir_length, data.sample_rate
+            )
+        }
+        Some(data) if sofa_file.is_empty() && data.loaded_sofa_path.is_none() => {
+            "Built-in HRTF".to_string()
+        }
+        _ if sofa_file.is_empty() => "Built-in HRTF · awaiting decoder".to_string(),
+        _ => "SOFA selected · awaiting decoder".to_string(),
+    };
+    let status = Text::caption(status_text.clone()).color(ctx.theme.text_muted);
+    #[cfg(feature = "dev-api")]
+    let status = {
+        use crate::app::dev_api::{DevElementState, DevTrackExt};
+        status.dev_track_with_state(
+            format!("binaural.status.{}", ctx.plugin_idx),
+            DevElementState::default().text(status_text),
+        )
+    };
     div()
         .flex()
         .flex_col()
-        .gap(d.section)
+        .gap(d.gap)
         .w_full()
         .min_w_0()
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .p(d.card)
-                .rounded(d.r_md)
-                .border_1()
-                .border_color(if has_sofa {
-                    ctx.theme.success
-                } else {
-                    ctx.theme.border
-                })
-                .bg(ctx.theme.surface)
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap(d.gap)
-                        .text_size(d.text_sm)
-                        .text_color(ctx.theme.text_primary)
-                        .child(text.binaural_hrtf)
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .text_color(if has_sofa {
-                                    ctx.theme.success
-                                } else {
-                                    ctx.theme.warning
-                                })
-                                .child(text.label(if has_sofa {
-                                    "SOFA loaded"
-                                } else {
-                                    "Select a SOFA file"
-                                })),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap(d.gap)
-                        .text_size(d.text_xs)
-                        .text_color(ctx.theme.text_secondary)
-                        .child(format!("{input_channels} input channels"))
-                        .child(format!("Externalization: {:.0}%", externalization * 100.0))
-                        .child(format!("Near-field: {:.0}%", near_field_strength * 100.0)),
-                )
-                .when(has_sofa, |panel| {
-                    panel.child(
-                        div()
-                            .w_full()
-                            .min_w_0()
-                            .text_size(d.text_xs)
-                            .text_color(ctx.theme.text_muted)
-                            .child(sofa_file.clone()),
-                    )
-                }),
-        )
         .child(render_main_controls(ctx, &d, text))
+        .child(status)
+        .child(super::super::ui_layout_renderer::render_tabs_from_layout(
+            &d,
+            ctx.entity.clone(),
+            ctx.plugin_idx,
+            ctx.plugin_instance_id,
+            ctx.layout_choice_menu,
+            ctx.layout_choice_highlight,
+            ctx.settings,
+            ctx.is_editing,
+            ctx.selected_param,
+            ctx.plugin_data.as_ref(),
+            ctx.available_width,
+            ctx.layout_scale,
+            text,
+            ctx.theme,
+            cx,
+        ))
         .into_any_element()
 }
 
@@ -815,11 +852,34 @@ pub(super) fn render_linear_phase_eq(
             1 => "Minimum",
             _ => "Linear",
         };
-        let latency_samples = if phase_mode_label == "Linear" {
-            fir_len_samples.saturating_sub(1) / 2
+        // Match the converter's mute/solo filtering before deciding whether
+        // the DSP constructs one FIR or an ordered stage per band slot.
+        let any_soloed = filters.iter().any(|filter| filter.solo);
+        let ordered = filters
+            .iter()
+            .filter(|filter| !filter.muted && (!any_soloed || filter.solo))
+            .take((*num_filters as usize).clamp(1, 10))
+            .any(|filter| {
+                matches!(
+                    filter.placement,
+                    Some(
+                        sotf_plugins::plugin_eq::EqBandPlacement::Left
+                            | sotf_plugins::plugin_eq::EqBandPlacement::Right
+                            | sotf_plugins::plugin_eq::EqBandPlacement::Mid
+                            | sotf_plugins::plugin_eq::EqBandPlacement::Side
+                    )
+                )
+            });
+        let stage_count = if ordered {
+            (*num_filters as usize).clamp(1, 10)
         } else {
-            0
+            1
         };
+        let latency_samples = sotf_plugins::plugin_linear_phase_eq::linear_phase_eq_latency_samples(
+            *fir_length as usize,
+            *phase_mode as usize,
+            stage_count,
+        );
         let sample_rate = ctx
             .entity
             .read(cx)
@@ -869,6 +929,7 @@ pub(super) fn render_linear_phase_eq(
                     ctx.entity.read(cx).app.ui_state.language,
                 ),
                 available_width: ctx.available_width,
+                available_height: ctx.available_height,
                 layout_scale: ctx.layout_scale,
                 exact_entry_focus_handle: ctx.plugin_exact_entry_focus_handle.clone(),
             },
@@ -911,8 +972,6 @@ pub(super) fn render_spectrum(
                 smoothing: *smoothing,
                 tilt_correction: *tilt_correction,
                 tilt_reference: *tilt_reference,
-                tilt_select_open: ctx.spectrum_tilt_select_open,
-                reference_select_open: ctx.spectrum_reference_select_open,
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
                 data: ctx.plugin_data.as_ref().and_then(|d| d.downcast_ref()),
@@ -927,6 +986,8 @@ pub(super) fn render_spectrum(
                             state.app.ui_state.max_font_size_px,
                         )
                 },
+                // Match window.set_rem_size in the desktop render shell.
+                rem_size_px: 16.0 * ctx.layout_scale,
                 available_width: ctx.available_width,
             },
             text,
@@ -1112,7 +1173,6 @@ pub(super) fn render_mute_solo(
     let d = Ds::from_cx(cx);
     use super::super::ui_mute_solo;
     if let PluginSettings::ChannelMuteSolo {
-        enabled,
         dim_gain_db,
         fade_ms,
         channel_states,
@@ -1124,10 +1184,19 @@ pub(super) fn render_mute_solo(
             ctx.entity.clone(),
             ctx.plugin_idx,
             ui_mute_solo::ChannelMuteSoloRenderState {
-                enabled: *enabled,
                 dim_gain_db: *dim_gain_db,
                 fade_ms: *fade_ms,
                 channel_states,
+                channel_count: ctx
+                    .plugin_graph
+                    .plugin_input_channels(ctx.plugin_idx)
+                    .or_else(|| {
+                        ctx.plugin_graph.nodes.values().find_map(|node| {
+                            (Some(node.plugin.id) == ctx.plugin_instance_id)
+                                .then_some(node.input_channels)
+                        })
+                    })
+                    .unwrap_or(channel_states.len()),
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
             },
@@ -1135,6 +1204,7 @@ pub(super) fn render_mute_solo(
                 ctx.entity.read(cx).app.ui_state.language,
             ),
             ctx.theme,
+            ctx.rack_scroll_handle.clone(),
         )
         .into_any_element()
     } else {
@@ -1162,6 +1232,13 @@ pub(super) fn render_matrix(
             ctx.entity.clone(),
             ctx.plugin_idx,
             ui_matrix::MatrixRenderState {
+                route_highlight: ctx
+                    .entity
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .matrix_choice_highlight,
                 route_menu: ctx
                     .entity
                     .read(cx)
@@ -1194,6 +1271,7 @@ pub(super) fn render_matrix(
             crate::app::i18n::DesktopTranslations::matrix_routes(
                 ctx.entity.read(cx).app.ui_state.language,
             ),
+            &ctx.matrix_scroll_handle,
         )
         .into_any_element()
     } else {
@@ -1202,10 +1280,9 @@ pub(super) fn render_matrix(
 }
 
 #[doc(hidden)]
-/// Resolve controls for the analyzer represented by the visible meter snapshot.
-/// The rack loudness panel is a presentation surface for the selected system
-/// input/output role monitor; it does not control the user-added graph node's
-/// independent DSP instance.
+/// Resolve a system monitor index from its snapshot identity.
+///
+/// User-added monitors use their own selected-node telemetry and engine index.
 pub fn loudness_control_engine_index(
     graph: &sotf_audio_player::PluginGraph,
     displayed_instance_id: Option<u64>,
@@ -1230,32 +1307,29 @@ pub(super) fn render_loudness(
     let text = crate::app::i18n::LevelMeterTranslations::for_language(
         ctx.entity.read(cx).app.ui_state.language,
     );
-    let displayed_instance_id = ctx
-        .loudness
+    let selected_engine_index = ctx.plugin_instance_id.and_then(|id| {
+        ctx.plugin_graph
+            .nodes
+            .values()
+            .find(|node| node.plugin.id == id)
+            .and_then(|node| ctx.plugin_graph.get_engine_index(node.id))
+    });
+    // Rack telemetry is keyed to the selected engine node. A middle monitor
+    // must never display or control the output monitor as an approximation.
+    let selected_loudness = ctx
+        .plugin_data
+        .clone()
+        .and_then(|data| std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(data).ok());
+    let is_system_monitor = selected_engine_index.is_some_and(|index| {
+        Some(index) == ctx.plugin_graph.input_monitor_engine_index()
+            || Some(index) == ctx.plugin_graph.output_monitor_engine_index()
+    });
+    let loudness =
+        selected_loudness.or_else(|| is_system_monitor.then(|| ctx.loudness.clone()).flatten());
+    let engine_index = loudness
         .as_ref()
-        .map(|snapshot| snapshot.integrated_control_instance_id)
-        .filter(|instance_id| *instance_id != 0);
-    let app_state = ctx.entity.read(cx);
-    let output_instance_id = app_state
-        .app
-        .playback
-        .loudness_info
-        .as_ref()
-        .map(|snapshot| snapshot.integrated_control_instance_id)
-        .filter(|instance_id| *instance_id != 0);
-    let input_instance_id = app_state
-        .app
-        .playback
-        .input_loudness_info
-        .as_ref()
-        .map(|snapshot| snapshot.integrated_control_instance_id)
-        .filter(|instance_id| *instance_id != 0);
-    let engine_index = loudness_control_engine_index(
-        ctx.plugin_graph,
-        displayed_instance_id,
-        input_instance_id,
-        output_instance_id,
-    );
+        .filter(|snapshot| snapshot.integrated_control_instance_id != 0)
+        .and(selected_engine_index);
     let control_available = engine_index.is_some();
     super::super::render_loudness_monitor_plugin(
         &d,
@@ -1263,7 +1337,7 @@ pub(super) fn render_loudness(
         ctx.plugin_instance_id,
         engine_index,
         control_available,
-        ctx.loudness.clone(),
+        loudness,
         ctx.layout_scale,
         text,
         ctx.theme,
@@ -1292,8 +1366,8 @@ pub(super) fn render_mb_compressor(
         ratio,
         attack_ms,
         release_ms,
-        range_db: _,
-        hold_ms: _,
+        range_db,
+        hold_ms,
         knee_db,
         mix,
         link_channels,
@@ -1306,6 +1380,18 @@ pub(super) fn render_mb_compressor(
     } = ctx.settings
     {
         let selected_band_idx = ctx.selected_band_idx.min(*num_bands);
+        let band_range_db = selected_band_idx
+            .checked_sub(1)
+            .and_then(|index| bands.get(index))
+            .and_then(|band| band.range_db)
+            .map(f64::from)
+            .unwrap_or(*range_db);
+        let band_hold_ms = selected_band_idx
+            .checked_sub(1)
+            .and_then(|index| bands.get(index))
+            .and_then(|band| band.hold_ms)
+            .map(f64::from)
+            .unwrap_or(*hold_ms);
         let (dt, dr, da, drl, dk, dm, dam, dact, ds, db) = if let Some(b) = selected_band_idx
             .checked_sub(1)
             .and_then(|index| bands.get(index))
@@ -1363,14 +1449,21 @@ pub(super) fn render_mb_compressor(
                 ms_mode: *ms_mode,
                 sidechain_tilt_db: *sidechain_tilt_db,
                 link_amount: *link_amount,
+                range_db: *range_db,
+                hold_ms: *hold_ms,
+                band_range_db,
+                band_hold_ms,
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
                 selected_band_idx,
             },
             ctx.available_width,
+            ctx.available_height,
             ctx.layout_scale,
             text,
             ctx.theme,
+            ctx.settings,
+            cx,
         )
         .into_any_element()
     } else {
@@ -1477,9 +1570,12 @@ pub(super) fn render_mb_expander(
                 selected_band_idx,
             },
             ctx.available_width,
+            ctx.available_height,
             ctx.layout_scale,
             text,
             ctx.theme,
+            ctx.settings,
+            cx,
         )
         .into_any_element()
     } else {

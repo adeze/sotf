@@ -24,6 +24,7 @@
 //!   click_at <x> <y>                     (click a measured viewport point)
 //!   double_click_at <x> <y>              (dispatch a native double-click)
 //!   scroll_at <x> <y> <delta_y>            (wheel at a measured viewport point)
+//!   scroll_horizontal <selector> <delta_x> (horizontal wheel at measured center)
 //!   scroll_into_view <container> <target>   (bring a rendered target into its scrollport)
 //!   assert_non_overlapping <a> <b>           (rendered selectors do not overlap)
 //!   export_room_eq_json [path]             Export completed RoomEQ DSP JSON

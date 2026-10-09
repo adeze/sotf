@@ -9,12 +9,16 @@
 use serde::{Deserialize, Serialize};
 use sotf_audio::PluginConfig;
 use sotf_audio::plugins::{
-    ChannelConflict, Plugin, PluginSettings, PluginType, UpmixerOutputSettings, resize_matrix,
-    upmixer_output_channels,
+    ChannelConflict, Plugin, PluginSettings, PluginType, UpmixerOutputSettings,
+    plugin_output_channels, resize_matrix,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use uuid::Uuid;
 
+// Canvas cards are 160px wide; the default rack leaves a 20px gap.
+const RACK_NODE_PITCH: f32 = 180.0;
+
+mod external_state;
 mod graph_connection;
 mod graph_selection;
 mod misc;
@@ -31,8 +35,6 @@ pub use node_position::*;
 pub use plugin_graph_node::*;
 pub use special_node::*;
 pub use types::*;
-
-use misc::upmixer_settings_output_channels;
 
 /// The complete plugin graph state
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +94,16 @@ impl PluginGraph {
         }
         self.topological_sort()?;
         for node in self.nodes.values() {
+            if (!node.plugin.enabled || node.plugin.suspended)
+                && node.input_channels != node.output_channels
+            {
+                return Err(format!(
+                    "Cannot bypass {}: {} input channels differ from {} output channels. Restore the plugin or adjust routing before applying.",
+                    node.plugin.display_name(),
+                    node.input_channels,
+                    node.output_channels
+                ));
+            }
             node.plugin.validate()?;
         }
         for id in self.nodes.keys().chain(self.special_nodes.keys()) {
@@ -112,6 +124,36 @@ impl PluginGraph {
                         channel + 1
                     ));
                 }
+            }
+        }
+        for node in self
+            .nodes
+            .values()
+            .filter(|node| misc::uses_external_key(&node.plugin.settings))
+        {
+            let program = node.output_channels;
+            let key: Vec<_> = self
+                .connections
+                .iter()
+                .filter(|edge| edge.to_node == node.id && edge.to_port >= program)
+                .collect();
+            let source = key.first().and_then(|edge| self.nodes.get(&edge.from_node));
+            let complete = program > 0
+                && node.input_channels == program.saturating_mul(2)
+                && source.is_some_and(|source| {
+                    source.plugin.enabled
+                        && !source.plugin.suspended
+                        && source.output_channels == program
+                        && key.len() == program
+                        && key.iter().all(|edge| {
+                            edge.from_node == source.id && edge.to_port == program + edge.from_port
+                        })
+                });
+            if !complete {
+                return Err(format!(
+                    "External sidechain for {} needs one {program}-channel plugin source connected in order to every key input. Use a Matrix plugin for channel remapping.",
+                    node.plugin.plugin_type().name()
+                ));
             }
         }
         Ok(())
@@ -261,11 +303,13 @@ impl PluginGraph {
         }
 
         // Kahn's algorithm
-        let mut queue: VecDeque<GraphNodeId> = in_degree
+        let mut roots: Vec<GraphNodeId> = in_degree
             .iter()
             .filter(|&(_, deg)| *deg == 0)
             .map(|(&id, _)| id)
             .collect();
+        roots.sort_unstable();
+        let mut queue: VecDeque<GraphNodeId> = roots.into();
 
         let mut sorted = Vec::new();
 
@@ -490,7 +534,7 @@ impl PluginGraph {
     /// Create the default rack: Input → InputMonitor → ReplayGain → [user zone] → Matrix → OutputMonitor → Output
     pub fn with_default_rack() -> Self {
         let mut g = Self::new();
-        let spacing = 180.0;
+        let spacing = RACK_NODE_PITCH;
         let y = 200.0;
 
         let input_id = g.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, y), 2);
@@ -592,9 +636,15 @@ impl PluginGraph {
     // Linearity Detection
     // =========================================================================
 
-    /// Returns true when the graph forms a single linear path from Input to Output.
+    /// Returns whether this topology can run in the linear rack host.
+    ///
+    /// External key buses require the graph host even with one logical node path.
     pub fn is_linear(&self) -> bool {
         self.try_linear_order().is_some()
+            && !self
+                .nodes
+                .values()
+                .any(|node| misc::uses_external_key(&node.plugin.settings))
     }
 
     /// Returns the ordered node IDs from Input to Output when the graph is linear.
@@ -708,10 +758,12 @@ impl PluginGraph {
         // The predecessor of Matrix is where we splice in
         let pred_id = order[matrix_pos - 1];
 
-        // Position the new node between predecessor and Matrix
-        let pred_pos = self.node_position(pred_id).unwrap_or_default();
-        let matrix_node_pos = self.node_position(matrix_id).unwrap_or_default();
-        let new_pos = NodePosition::new((pred_pos.x + matrix_node_pos.x) / 2.0, pred_pos.y);
+        // Give each new card a full slot instead of repeatedly halving the
+        // predecessor/Matrix gap and overlapping their hit-test targets.
+        let new_pos = self
+            .node_position(matrix_id)
+            .ok_or("Matrix has no canvas position")?;
+        self.make_space_for_rack_node(&order[matrix_pos..]);
 
         // Create the new plugin node
         let new_id = self.add_plugin_node_with_role(plugin_type, new_pos, NodeRole::User, false)?;
@@ -720,6 +772,16 @@ impl PluginGraph {
         self.rewire_insert(pred_id, matrix_id, new_id);
 
         Ok(new_id)
+    }
+
+    fn make_space_for_rack_node(&mut self, downstream: &[GraphNodeId]) {
+        for id in downstream {
+            if let Some(node) = self.nodes.get_mut(id) {
+                node.position.x += RACK_NODE_PITCH;
+            } else if let Some(node) = self.special_nodes.get_mut(id) {
+                node.position.x += RACK_NODE_PITCH;
+            }
+        }
     }
 
     /// Remove a user plugin and re-wire its predecessor to its successor.
@@ -975,6 +1037,12 @@ impl PluginGraph {
             .and_then(|p| p.get(index).map(|n| &n.plugin))
     }
 
+    /// Input channel count for a plugin at its linear rack position.
+    pub fn plugin_input_channels(&self, index: usize) -> Option<usize> {
+        self.plugins_linear()
+            .and_then(|plugins| plugins.get(index).map(|node| node.input_channels))
+    }
+
     /// Get mutable plugin by linear index (excluding special nodes).
     pub fn get_plugin_mut(&mut self, index: usize) -> Option<&mut Plugin> {
         let plugin_ids: Vec<GraphNodeId> = self
@@ -1137,9 +1205,11 @@ impl PluginGraph {
             plugin_ids[index]
         };
 
-        let pred_pos = self.node_position(pred_id).unwrap_or_default();
-        let succ_pos = self.node_position(succ_id).unwrap_or_default();
-        let new_pos = NodePosition::new((pred_pos.x + succ_pos.x) / 2.0, pred_pos.y);
+        let new_pos = self
+            .node_position(succ_id)
+            .ok_or("Successor has no canvas position")?;
+        let successor_index = order.iter().position(|id| *id == succ_id).unwrap();
+        self.make_space_for_rack_node(&order[successor_index..]);
 
         let new_id = self.add_plugin_node_with_role(plugin_type, new_pos, NodeRole::User, false)?;
         self.rewire_insert(pred_id, succ_id, new_id);
@@ -1181,9 +1251,11 @@ impl PluginGraph {
         } else {
             plugin_ids[index]
         };
-        let pred_pos = self.node_position(pred_id).unwrap_or_default();
-        let succ_pos = self.node_position(succ_id).unwrap_or_default();
-        let new_pos = NodePosition::new((pred_pos.x + succ_pos.x) / 2.0, pred_pos.y);
+        let new_pos = self
+            .node_position(succ_id)
+            .ok_or("Successor has no canvas position")?;
+        let successor_index = order.iter().position(|id| *id == succ_id).unwrap();
+        self.make_space_for_rack_node(&order[successor_index..]);
         let new_id = self.add_plugin_node_with_settings_role(settings, new_pos, NodeRole::User)?;
         self.rewire_insert(pred_id, succ_id, new_id);
         Ok(new_id)
@@ -1262,46 +1334,8 @@ impl PluginGraph {
                 }
             }
 
-            // Track output channel changes
-            match &node.plugin.settings {
-                PluginSettings::Upmixer {
-                    speaker_config,
-                    output:
-                        UpmixerOutputSettings {
-                            binaural_preview, ..
-                        },
-                    ..
-                } => {
-                    current_channels =
-                        upmixer_settings_output_channels(speaker_config, *binaural_preview);
-                }
-                PluginSettings::AAE { speaker_config, .. } => {
-                    current_channels = upmixer_output_channels(speaker_config);
-                }
-                PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
-                    current_channels = upmixer_output_channels(target_layout);
-                }
-                PluginSettings::BinauralDecoder { .. }
-                | PluginSettings::Downmix { .. }
-                | PluginSettings::MonoToStereo { .. } => {
-                    current_channels = 2;
-                }
-                PluginSettings::Matrix {
-                    output_channels, ..
-                } => {
-                    current_channels = *output_channels;
-                }
-                PluginSettings::External { state } => {
-                    current_channels = state.descriptor.audio_outputs;
-                }
-                PluginSettings::BandSplit { .. } => {
-                    current_channels *= 2;
-                }
-                PluginSettings::BandMerge { bands, .. } => {
-                    current_channels /= if *bands > 0 { *bands } else { 2 };
-                }
-                _ => {}
-            }
+            // Keep graph routing identical to the engine chain.
+            current_channels = plugin_output_channels(&node.plugin.settings, current_channels);
         }
         conflicts
     }
@@ -1381,40 +1415,14 @@ impl PluginGraph {
         let Some(plugins) = self.plugins_linear() else {
             return input_channels;
         };
-        for node in plugins.iter().rev() {
+        let mut current_channels = input_channels;
+        for node in plugins {
             if !node.plugin.enabled || node.plugin.suspended {
                 continue;
             }
-            match &node.plugin.settings {
-                PluginSettings::Upmixer {
-                    speaker_config,
-                    output:
-                        UpmixerOutputSettings {
-                            binaural_preview, ..
-                        },
-                    ..
-                } => {
-                    return upmixer_settings_output_channels(speaker_config, *binaural_preview);
-                }
-                PluginSettings::AAE { speaker_config, .. } => {
-                    return upmixer_output_channels(speaker_config);
-                }
-                PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
-                    return upmixer_output_channels(target_layout);
-                }
-                PluginSettings::BinauralDecoder { .. }
-                | PluginSettings::Downmix { .. }
-                | PluginSettings::MonoToStereo { .. } => return 2,
-                PluginSettings::Matrix {
-                    output_channels, ..
-                } => return *output_channels,
-                PluginSettings::External { state } => {
-                    return state.descriptor.audio_outputs;
-                }
-                _ => continue,
-            }
+            current_channels = plugin_output_channels(&node.plugin.settings, current_channels);
         }
-        input_channels
+        current_channels
     }
 
     /// Get the speaker config from the last enabled upmixer/binaural plugin.
@@ -1612,34 +1620,9 @@ impl PluginGraph {
             if !node.plugin.enabled || node.plugin.suspended {
                 continue;
             }
-            match &node.plugin.settings {
-                PluginSettings::Upmixer {
-                    speaker_config,
-                    output:
-                        UpmixerOutputSettings {
-                            binaural_preview, ..
-                        },
-                    ..
-                } => {
-                    running_channels =
-                        upmixer_settings_output_channels(speaker_config, *binaural_preview);
-                    continue;
-                }
-                PluginSettings::AAE { speaker_config, .. } => {
-                    running_channels = upmixer_output_channels(speaker_config);
-                    continue;
-                }
-                PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
-                    running_channels = upmixer_output_channels(target_layout);
-                    continue;
-                }
-                PluginSettings::BinauralDecoder { .. }
-                | PluginSettings::Downmix { .. }
-                | PluginSettings::MonoToStereo { .. } => {
-                    running_channels = 2;
-                    continue;
-                }
-                _ => {}
+            if !matches!(node.plugin.settings, PluginSettings::Matrix { .. }) {
+                running_channels = plugin_output_channels(&node.plugin.settings, running_channels);
+                continue;
             }
             if let PluginSettings::Matrix {
                 input_channels,
@@ -1670,6 +1653,7 @@ impl PluginGraph {
                     }
                     break;
                 }
+                running_channels = *output_channels;
             }
         }
 
@@ -1680,6 +1664,29 @@ impl PluginGraph {
     /// after any topology change.
     pub fn update_channel_dependent_plugins(&mut self) {
         let Some(order) = self.linear_order() else {
+            // Graph editing can temporarily produce a non-linear topology.
+            // Its nodes still have configured input counts, so keep channel
+            // controls available and preserve flags on retained channels.
+            for node in self.nodes.values_mut() {
+                if matches!(
+                    node.plugin.settings,
+                    PluginSettings::Gate { .. } | PluginSettings::DeEsser { .. }
+                ) {
+                    node.input_channels = node.output_channels
+                        * if misc::uses_external_key(&node.plugin.settings) {
+                            2
+                        } else {
+                            1
+                        };
+                }
+                misc::adapt_crossover_channels(&mut node.plugin.settings, node.input_channels);
+                if let PluginSettings::ChannelMuteSolo { channel_states, .. } =
+                    &mut node.plugin.settings
+                {
+                    channel_states
+                        .resize(node.input_channels, sotf_plugins::ChannelState::default());
+                }
+            }
             return;
         };
         let plugin_ids: Vec<GraphNodeId> = order
@@ -1790,20 +1797,27 @@ impl PluginGraph {
                     output_channels,
                     matrix,
                     channel_states,
-                } if *input_channels != current_channels => {
+                } if *input_channels != current_channels
+                    || channel_states.len() != *output_channels =>
+                {
                     let mut new_matrix = matrix.clone();
-                    resize_matrix(
-                        &mut new_matrix,
-                        *input_channels,
-                        *output_channels,
-                        current_channels,
-                        current_channels,
-                    );
+                    let new_output_channels = if *input_channels != current_channels {
+                        resize_matrix(
+                            &mut new_matrix,
+                            *input_channels,
+                            *output_channels,
+                            current_channels,
+                            current_channels,
+                        );
+                        current_channels
+                    } else {
+                        *output_channels
+                    };
                     let mut new_states = channel_states.clone();
-                    new_states.resize(current_channels, sotf_plugins::ChannelState::default());
+                    new_states.resize(new_output_channels, sotf_plugins::ChannelState::default());
                     updated_settings = Some(PluginSettings::Matrix {
                         input_channels: current_channels,
-                        output_channels: current_channels,
+                        output_channels: new_output_channels,
                         matrix: new_matrix,
                         channel_states: new_states,
                     });
@@ -1862,6 +1876,21 @@ impl PluginGraph {
                         bands: *bands,
                     });
                 }
+                PluginSettings::ChannelMuteSolo {
+                    enabled,
+                    dim_gain_db,
+                    fade_ms,
+                    channel_states,
+                } if channel_states.len() != current_channels => {
+                    let mut channel_states = channel_states.clone();
+                    channel_states.resize(current_channels, sotf_plugins::ChannelState::default());
+                    updated_settings = Some(PluginSettings::ChannelMuteSolo {
+                        enabled: *enabled,
+                        dim_gain_db: *dim_gain_db,
+                        fade_ms: *fade_ms,
+                        channel_states,
+                    });
+                }
                 _ => {}
             }
 
@@ -1873,47 +1902,23 @@ impl PluginGraph {
                     .settings = new_settings;
             }
 
+            if let Some(node) = self.nodes.get_mut(&node_id) {
+                misc::adapt_crossover_channels(&mut node.plugin.settings, node_input_channels);
+            }
+
             // Track output channels for the next plugin
             let node = &self.nodes[&node_id];
             if node.plugin.enabled && !node.plugin.suspended {
-                match &node.plugin.settings {
-                    PluginSettings::Upmixer {
-                        speaker_config,
-                        output:
-                            UpmixerOutputSettings {
-                                binaural_preview, ..
-                            },
-                        ..
-                    } => {
-                        current_channels =
-                            upmixer_settings_output_channels(speaker_config, *binaural_preview);
-                    }
-                    PluginSettings::AAE { speaker_config, .. } => {
-                        current_channels = upmixer_output_channels(speaker_config);
-                    }
-                    PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
-                        current_channels = upmixer_output_channels(target_layout);
-                    }
-                    PluginSettings::BinauralDecoder { .. } => current_channels = 2,
-                    PluginSettings::Matrix {
-                        output_channels, ..
-                    } => current_channels = *output_channels,
-                    PluginSettings::Downmix { .. } | PluginSettings::MonoToStereo { .. } => {
-                        current_channels = 2;
-                    }
-                    PluginSettings::BandSplit { .. } => current_channels *= 2,
-                    PluginSettings::BandMerge { bands, .. } => {
-                        current_channels /= if *bands > 0 { *bands } else { 2 };
-                    }
-                    PluginSettings::External { state } => {
-                        current_channels = state.descriptor.audio_outputs;
-                    }
-                    _ => {}
-                }
+                current_channels = plugin_output_channels(&node.plugin.settings, current_channels);
             }
 
             if let Some(node) = self.nodes.get_mut(&node_id) {
-                node.input_channels = node_input_channels;
+                node.input_channels = node_input_channels
+                    * if misc::uses_external_key(&node.plugin.settings) {
+                        2
+                    } else {
+                        1
+                    };
                 node.output_channels = current_channels;
             }
         }
@@ -1948,17 +1953,27 @@ impl PluginGraph {
         for pair in order.windows(2) {
             let from = pair[0];
             let to = pair[1];
-            let target_ports = self
-                .node_output_channels(from)
-                .min(self.node_input_channels(to));
+            let keyed_target = self
+                .nodes
+                .get(&to)
+                .is_some_and(|node| misc::uses_external_key(&node.plugin.settings));
+            let program_ports = if keyed_target {
+                self.node_output_channels(to)
+            } else {
+                self.node_input_channels(to)
+            };
+            let target_ports = self.node_output_channels(from).min(program_ports);
 
             // Drop any existing from→to connections whose port indices are
             // now out of range so a previously-wider link stops carrying
             // signal on phantom ports.
+            let input_ports = self.node_input_channels(to);
             self.connections.retain(|c| {
                 !(c.from_node == from
                     && c.to_node == to
-                    && (c.from_port >= target_ports || c.to_port >= target_ports))
+                    && (c.from_port >= target_ports
+                        || (c.to_port >= target_ports
+                            && !(keyed_target && c.to_port < input_ports))))
             });
 
             for port in 0..target_ports {
@@ -1979,8 +1994,14 @@ impl PluginGraph {
     // Preset Save / Load
     // =========================================================================
 
-    /// Save the user plugins to a JSON preset file.
-    /// Uses the same v2 format as PluginChain for backward compatibility.
+    /// Save plugin settings and routing to a JSON preset file.
+    ///
+    /// Ordinary racks use the backward-compatible v2 plugin list. Nonlinear
+    /// graphs use v3 with the complete graph, including explicit key routes.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid extension, invalid routed graph, or
+    /// serialization/filesystem failure.
     pub fn save_to_file(
         &self,
         presets_dir: &std::path::Path,
@@ -2011,6 +2032,21 @@ impl PluginGraph {
             .ok_or("Invalid preset filename")?;
         let full_path = presets_dir.join(safe_name);
 
+        if !self.is_linear() {
+            self.validate_routing()?;
+            #[derive(serde::Serialize)]
+            struct GraphPreset<'a> {
+                version: u32,
+                graph: &'a PluginGraph,
+            }
+            let json = serde_json::to_string_pretty(&GraphPreset {
+                version: 3,
+                graph: self,
+            })?;
+            std::fs::write(&full_path, json)?;
+            return Ok(());
+        }
+
         // Extract plugins in linear order for serialization
         let plugins: Vec<Plugin> = self
             .plugins_linear()
@@ -2037,10 +2073,15 @@ impl PluginGraph {
 
     /// Load a plugin preset from a JSON file into this graph.
     ///
-    /// Rebuilds the graph as a fresh default rack with the loaded user plugins
+    /// Routed v3 presets restore the complete validated graph transactionally.
+    /// Legacy presets rebuild a fresh default rack with the loaded user plugins
     /// inserted before the Matrix. Permanent plugins from the file are skipped
     /// (the default rack provides them). Individual plugin deserialization
     /// failures are skipped and returned as warnings.
+    ///
+    /// # Errors
+    /// Returns an error for filesystem/format failures or invalid graph routing.
+    /// The current graph is preserved if loading fails.
     pub fn load_from_file(
         &mut self,
         presets_dir: &std::path::Path,
@@ -2059,6 +2100,45 @@ impl PluginGraph {
             .ok_or("Invalid preset filename")?;
         let full_path = presets_dir.join(safe_name);
         let json = std::fs::read_to_string(&full_path)?;
+
+        let value: serde_json::Value = serde_json::from_str(&json)?;
+        if value.get("version").and_then(serde_json::Value::as_u64) == Some(3) {
+            let mut candidate: Self = serde_json::from_value(
+                value
+                    .get("graph")
+                    .ok_or("Graph preset is missing its graph")?
+                    .clone(),
+            )?;
+            let mut instance_ids = HashSet::new();
+            for (id, node) in &candidate.nodes {
+                if *id != node.id
+                    || candidate.special_nodes.contains_key(id)
+                    || !instance_ids.insert(node.plugin.id)
+                {
+                    return Err("Graph preset contains inconsistent node identities".into());
+                }
+            }
+            if candidate
+                .special_nodes
+                .iter()
+                .any(|(id, node)| *id != node.id)
+            {
+                return Err("Graph preset contains inconsistent I/O identities".into());
+            }
+            candidate.next_plugin_id = instance_ids
+                .into_iter()
+                .max()
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or("Graph preset exhausted plugin identities")?
+                .max(candidate.next_plugin_id);
+            candidate.validate_routing()?;
+            candidate.adapt_matrix_to_input(self.input_channel_count());
+            candidate.update_channel_dependent_plugins();
+            candidate.validate_routing()?;
+            *self = candidate;
+            return Ok(Vec::new());
+        }
 
         // Parse with lenient per-plugin deserialization
         #[derive(serde::Deserialize)]
@@ -2165,18 +2245,36 @@ impl PluginGraph {
             }
             let pred_id = order[matrix_pos - 1];
 
-            let pos_x = candidate
+            let position = candidate
                 .node_position(matrix_id)
-                .map(|p| p.x - 10.0)
-                .unwrap_or(400.0);
-            let node =
-                PluginGraphNode::with_role(plugin, NodePosition::new(pos_x, 200.0), NodeRole::User);
+                .ok_or("Matrix has no canvas position")?;
+            candidate.make_space_for_rack_node(&order[matrix_pos..]);
+            let node = PluginGraphNode::with_role(plugin, position, NodeRole::User);
             let node_id = node.id;
             candidate.nodes.insert(node_id, node);
 
             candidate.rewire_insert(pred_id, matrix_id, node_id);
         }
 
+        // A preset replaces user processing, not the live monitor, replay-gain
+        // or output routing controls. Copy the current scaffold after inserting
+        // processing so channel adaptation retains flags on surviving outputs.
+        for role in [
+            NodeRole::InputMonitor,
+            NodeRole::ReplayGain,
+            NodeRole::Matrix,
+            NodeRole::OutputMonitor,
+        ] {
+            if let Some(current) = self.node_id_for_role(role)
+                && let Some(restored) = candidate.node_id_for_role(role)
+            {
+                candidate
+                    .nodes
+                    .get_mut(&restored)
+                    .expect("role node exists")
+                    .plugin = self.nodes[&current].plugin.clone();
+            }
+        }
         candidate.update_channel_dependent_plugins();
         candidate.validate_linear_channel_contracts()?;
         *self = candidate;
@@ -2324,10 +2422,13 @@ impl PluginGraph {
             let Some(node) = self.nodes.get(&id) else {
                 continue; // skip special nodes
             };
-            let Some(config) = node.plugin.to_plugin_config(sample_rate) else {
+            let Some(mut config) = node.plugin.to_plugin_config(sample_rate) else {
                 continue; // skip disabled/suspended
             };
 
+            if node.role == NodeRole::OutputMonitor {
+                config.parameters["spatial_enabled"] = serde_json::json!(true);
+            }
             match node.role {
                 NodeRole::InputMonitor => input_monitor = Some(config),
                 NodeRole::OutputMonitor => analyzers.push(config),
@@ -2354,8 +2455,9 @@ impl PluginGraph {
     ///
     /// Special I/O nodes (Input/Output/Split/Merge from the UI canvas) are
     /// dropped — the engine handles I/O implicitly via the leaf nodes that
-    /// have no incoming or outgoing edges. Disabled or suspended plugin
-    /// nodes are also skipped, and edges to/from them are pruned.
+    /// have no incoming or outgoing edges. Inactive equal-width nodes become
+    /// bypassed unity stages, preserving their routes without loading resources.
+    /// Validate routing before submission to reject channel-changing bypasses.
     ///
     /// Per-port channel duplicates in `connections` (a stereo pair shows up
     /// as two `(port 0→0, port 1→1)` entries) collapse into a single
@@ -2383,9 +2485,29 @@ impl PluginGraph {
             let Some(node) = self.nodes.get(&graph_id) else {
                 continue;
             };
-            let Some(config) = node.plugin.to_plugin_config(sample_rate) else {
-                continue;
+            let inactive = !node.plugin.enabled || node.plugin.suspended;
+            let mut config = if inactive && node.input_channels == node.output_channels {
+                PluginConfig::new(
+                    "gain",
+                    serde_json::json!({
+                        "channels": node.input_channels,
+                        "gain_db": 0.0,
+                    }),
+                )
+            } else {
+                // Retain unsupported bypass candidates for the engine's explicit
+                // channel-width rejection; never silently drop their routes.
+                let mut plugin = node.plugin.clone();
+                plugin.enabled = true;
+                plugin.suspended = false;
+                let Some(config) = plugin.to_plugin_config(sample_rate) else {
+                    continue;
+                };
+                config
             };
+            if node.role == NodeRole::OutputMonitor {
+                config.parameters["spatial_enabled"] = serde_json::json!(true);
+            }
             let id = next_id;
             next_id += 1;
             id_map.insert(graph_id, id);
@@ -2393,28 +2515,43 @@ impl PluginGraph {
                 id,
                 plugin_type: config.plugin_type,
                 parameters: config.parameters,
-                input_channels: node.input_channels,
-                bypassed: !node.plugin.enabled,
+                // Keyed constructors take program width and append their own key bus.
+                input_channels: if misc::uses_external_key(&node.plugin.settings) {
+                    node.output_channels
+                } else {
+                    node.input_channels
+                },
+                bypassed: inactive,
             });
         }
 
         // Deduplicate per-port edges into logical edges.
-        let mut seen_edges: HashSet<(usize, usize)> = HashSet::new();
+        let mut seen_edges: HashSet<(usize, usize, bool)> = HashSet::new();
         let mut edges = Vec::new();
         for conn in &self.connections {
             let (Some(&from), Some(&to)) = (id_map.get(&conn.from_node), id_map.get(&conn.to_node))
             else {
                 continue; // edge touches a special node or a skipped plugin
             };
-            if seen_edges.insert((from, to)) {
-                edges.push(PluginGraphEdgeConfig::new(from, to));
+            let sidechain = self.nodes.get(&conn.to_node).is_some_and(|node| {
+                misc::uses_external_key(&node.plugin.settings)
+                    && conn.to_port >= node.output_channels
+            });
+            if seen_edges.insert((from, to, sidechain)) {
+                edges.push(if sidechain {
+                    PluginGraphEdgeConfig::sidechain(from, to)
+                } else {
+                    PluginGraphEdgeConfig::new(from, to)
+                });
             }
         }
 
         PluginGraphConfig { nodes, edges }
     }
 
-    /// Map a graph node ID to its index in the `to_plugin_configs()` output.
+    /// Map a graph node to its active host control and telemetry index.
+    ///
+    /// Rack mode uses `to_plugin_configs`; graph mode uses serialized node order.
     ///
     /// Returns None if the node is disabled/suspended or not found.
     pub fn get_engine_index(&self, node_id: GraphNodeId) -> Option<usize> {
@@ -2427,6 +2564,17 @@ impl PluginGraph {
             .linear_order()
             .or_else(|| self.topological_sort().ok())
             .unwrap_or_default();
+
+        if !self.is_linear() {
+            // Graph hosts expose serialized node positions, including retained
+            // inactive placeholders. Active plugin identities keep their slot.
+            return self
+                .topological_sort()
+                .ok()?
+                .into_iter()
+                .filter(|id| self.nodes.contains_key(id))
+                .position(|id| id == node_id);
+        }
 
         // Build the same three-category ordering as to_plugin_configs
         let mut input_monitor_id: Option<GraphNodeId> = None;

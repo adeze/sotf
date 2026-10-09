@@ -1,0 +1,63 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Gain
+plugin_add Expander
+action PluginSelectFirstUser
+wait_idle 500ms
+click meters.group.0.mute
+wait_until meters.group.0.muted == true timeout=5s
+assert meters.group.0.muted == true
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "20"
+key enter
+assert plugins.plugin.2.param.0.value == 20 tolerance=0.001
+key escape
+click rack.plugin.3
+assert plugins.selected_index == 3
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.3.0.exact
+click plugin.param.3.0.exact
+key cmd-a
+type "0"
+key enter
+assert plugins.plugin.3.param.0.value == 0 tolerance=0.001
+scroll_into_view rack.params plugin.param.3.1.exact
+click plugin.param.3.1.exact
+key cmd-a
+type "4"
+key enter
+assert plugins.plugin.3.param.1.value == 4 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+key escape
+click rack.plugin.3
+assert plugins.selected_index == 3
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"analysis-muted"}
+wait_until playback.is_playing == true timeout=12s
+wait_until playback.position_secs > 1 timeout=15s
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+key escape
+click rack.plugin.3
+assert plugins.selected_index == 3
+wait_until plugins.gain_reduction.kind == "Expander" timeout=12s
+wait_until plugins.gain_reduction.maximum_db > 1 timeout=12s
+query plugins.gain_reduction
+screenshot dynamics-live-wide
+resize 1000 700
+wait_idle 500ms
+wait_until plugins.gain_reduction.maximum_db > 1 timeout=12s
+query plugins.gain_reduction
+screenshot dynamics-live-narrow
+assert meters.group.0.muted == true
+click transport.play
+wait_until playback.is_playing == false timeout=5s
+plugin_chain_save $SOTF_QA_DIR/after-live.json

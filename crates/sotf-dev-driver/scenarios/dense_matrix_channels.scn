@@ -1,0 +1,74 @@
+# 2026-10-08: Matrix presets and route selection consumed separate large rows.
+# ui_matrix/header.rs owns a compact preset dropdown; render.rs exposes a
+# selected-route slider, exact value, silent-route and polarity button sets.
+# Run from sotf: target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The runner starts the dev-api desktop with a fresh isolated QA directory.
+resize 1440 1000
+action CycleLanguage
+assert settings.language == "French"
+focus Studio
+plugin_clear
+plugin_add Matrix
+action PluginSetInputChannels {"channels":16}
+action PluginSelectFirstUser
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/before.json
+assert meters.group.0.muted == false
+assert_visible matrix.cell.2.15.1
+click matrix.cell.2.15.1
+wait_idle 1s
+assert meters.group.0.muted == false
+assert plugins.plugin.2.crosspoint.1.15.value == 0
+click matrix.route.enabled.on
+wait_idle 1s
+assert meters.group.0.muted == false
+assert plugins.plugin.2.crosspoint.1.15.value == 1
+click matrix.route.polarity.negative
+wait_idle 1s
+assert meters.group.0.muted == false
+assert plugins.plugin.2.crosspoint.1.15.value == -1
+click matrix.gain.exact
+key cmd-a
+type "-12.3"
+key enter
+key escape
+wait_idle 1s
+assert meters.group.0.muted == false
+assert plugins.plugin.2.crosspoint.1.15.value == -0.242661009 tolerance=0.000001
+snapshot $SOTF_QA_DIR/matrix-sixteen.json
+screenshot matrix-sixteen-wide
+resize 1000 900
+wait_idle 1s
+assert_within matrix.gain.exact rack.params
+scroll_horizontal matrix.grid -1000
+wait_idle 1s
+scroll_into_view rack.params matrix.cell.2.15.1
+assert_within matrix.cell.2.15.1 rack.params
+assert_within matrix.cell.2.15.1 matrix.grid
+screenshot matrix-sixteen-narrow
+# Capture must preserve the live scroll position and route interaction bounds.
+assert_within matrix.cell.2.15.1 matrix.grid
+click matrix.cell.2.15.1
+wait_idle 300ms
+assert plugins.plugin.2.crosspoint.1.15.value == -0.242661009 tolerance=0.000001
+click matrix.gain.exact
+key cmd-a
+type "-6.0"
+key enter
+key escape
+wait_idle 300ms
+assert plugins.plugin.2.crosspoint.1.15.value == -0.501187234 tolerance=0.000001
+click matrix.gain.exact
+key cmd-a
+type "-12.3"
+key enter
+key escape
+wait_idle 300ms
+assert plugins.plugin.2.crosspoint.1.15.value == -0.242661009 tolerance=0.000001
+assert meters.group.0.muted == false
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 1s
+assert plugins.plugin.2.crosspoint.1.15.value == -0.242661009 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

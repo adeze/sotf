@@ -33,8 +33,16 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn switch_to_library(&mut self, _: &SwitchToLibrary, _: &mut Window, cx: &mut Context<Self>) {
+    // Screen changes unmount focused controls, including plugin dropdowns.
+    // Give subsequent keyboard/menu actions a live root dispatch target.
+    fn switch_to_library(
+        &mut self,
+        _: &SwitchToLibrary,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.switch_screen_with_trigger(Screen::Library, "SwitchToLibrary", cx);
+        self.focus_handle.focus(window, cx);
     }
 
     fn switch_to_home(&mut self, _: &SwitchToHome, window: &mut Window, cx: &mut Context<Self>) {
@@ -52,60 +60,83 @@ impl PlayerView {
         self.focus_handle.focus(window, cx);
     }
 
-    fn switch_to_queue(&mut self, _: &SwitchToQueue, _: &mut Window, cx: &mut Context<Self>) {
+    fn switch_to_queue(&mut self, _: &SwitchToQueue, window: &mut Window, cx: &mut Context<Self>) {
         self.switch_screen_with_trigger(Screen::Queue, "SwitchToQueue", cx);
+        self.focus_handle.focus(window, cx);
     }
 
     fn switch_to_playlists(
         &mut self,
         _: &SwitchToPlaylists,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.switch_screen_with_trigger(Screen::Playlists, "SwitchToPlaylists", cx);
+        self.focus_handle.focus(window, cx);
     }
 
-    fn switch_to_plugins(&mut self, _: &SwitchToPlugins, _: &mut Window, cx: &mut Context<Self>) {
+    fn switch_to_plugins(
+        &mut self,
+        _: &SwitchToPlugins,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.switch_screen_with_trigger(Screen::Settings, "SwitchToPlugins", cx);
+        self.focus_handle.focus(window, cx);
         self.state.update(cx, |state, _cx| {
             state.app.ui_state.active_settings_tab = crate::app::SettingsTab::Misc;
         });
         cx.notify();
     }
 
-    fn switch_to_studio(&mut self, _: &SwitchToStudio, _: &mut Window, cx: &mut Context<Self>) {
+    fn switch_to_studio(
+        &mut self,
+        _: &SwitchToStudio,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.switch_screen_with_trigger(Screen::Studio, "SwitchToStudio", cx);
+        self.focus_handle.focus(window, cx);
     }
 
     fn switch_to_plugin_graph(
         &mut self,
         _: &SwitchToPluginGraph,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.switch_screen_with_trigger(Screen::PluginGraph, "SwitchToPluginGraph", cx);
+        self.focus_handle.focus(window, cx);
     }
 
     fn switch_to_listening_test(
         &mut self,
         _: &SwitchToListeningTest,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.switch_screen_with_trigger(Screen::ListeningTest, "SwitchToListeningTest", cx);
+        self.focus_handle.focus(window, cx);
     }
 
     fn switch_to_spinorama(
         &mut self,
         _: &SwitchToSpinorama,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.switch_screen_with_trigger(Screen::Spinorama, "SwitchToSpinorama", cx);
+        self.focus_handle.focus(window, cx);
     }
 
-    fn switch_to_devices(&mut self, _: &SwitchToDevices, _: &mut Window, cx: &mut Context<Self>) {
+    fn switch_to_devices(
+        &mut self,
+        _: &SwitchToDevices,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.switch_screen_with_trigger(Screen::Settings, "SwitchToDevices", cx);
+        self.focus_handle.focus(window, cx);
         self.state.update(cx, |state, _cx| {
             state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
         });
@@ -115,43 +146,64 @@ impl PlayerView {
     fn switch_to_directories(
         &mut self,
         _: &SwitchToDirectories,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.switch_screen_with_trigger(Screen::Settings, "SwitchToDirectories", cx);
+        self.focus_handle.focus(window, cx);
         self.state.update(cx, |state, _cx| {
             state.app.ui_state.active_settings_tab = crate::app::SettingsTab::Library;
         });
         cx.notify();
     }
 
-    fn switch_to_settings(&mut self, _: &SwitchToSettings, _: &mut Window, cx: &mut Context<Self>) {
+    fn switch_to_settings(
+        &mut self,
+        _: &SwitchToSettings,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.switch_screen_with_trigger(Screen::Settings, "SwitchToSettings", cx);
+        self.focus_handle.focus(window, cx);
     }
 
     fn switch_to_recording(
         &mut self,
         _: &SwitchToRecording,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.switch_screen_with_trigger(Screen::Recording, "SwitchToRecording", cx);
+        self.focus_handle.focus(window, cx);
     }
 
-    fn switch_to_room_eq(&mut self, _: &SwitchToRoomEQ, _: &mut Window, cx: &mut Context<Self>) {
+    fn switch_to_room_eq(
+        &mut self,
+        _: &SwitchToRoomEQ,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.switch_screen_with_trigger(Screen::RoomEq, "SwitchToRoomEQ", cx);
+        self.focus_handle.focus(window, cx);
     }
 
     fn switch_to_headphone_eq(
         &mut self,
         _: &SwitchToHeadphoneEQ,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.switch_screen_with_trigger(Screen::HeadphoneEq, "SwitchToHeadphoneEQ", cx);
+        self.focus_handle.focus(window, cx);
     }
 
-    fn switch_to_spectrum(&mut self, _: &SwitchToSpectrum, _: &mut Window, cx: &mut Context<Self>) {
+    fn switch_to_spectrum(
+        &mut self,
+        _: &SwitchToSpectrum,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.switch_screen_with_trigger(Screen::Spectrum, "SwitchToSpectrum", cx);
+        self.focus_handle.focus(window, cx);
     }
 }

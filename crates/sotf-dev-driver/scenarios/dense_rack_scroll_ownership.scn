@@ -1,0 +1,57 @@
+# Retained scroll belongs to a graph instance and effective editor.
+# Exact edits preserve position; editor changes and replacement reset it.
+resize 1000 900
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/scroll-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.params plugin.simple.row.2.104
+assert_within plugin.param.2.104.exact rack.params
+click plugin.param.2.104.exact
+key cmd-a
+type "37"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.104.value == 0.37 tolerance=0.000001
+assert_within plugin.param.2.104.exact rack.params
+plugin_chain_save $SOTF_QA_DIR/scroll-edited.json
+# Changing editor must reveal its title and primary controls without scrolling.
+click rack.config.toggle
+click rack.config.view
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+assert_within plugin.shell.2.bypass rack.params
+assert_within fir.eq.band.0.select rack.params
+plugin_chain_save $SOTF_QA_DIR/scroll-native.json
+# Return to Table, scroll down, then replace the same rack slot.
+click rack.config.toggle
+click rack.config.view
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.params plugin.simple.row.2.104
+assert_within plugin.param.2.104.exact rack.params
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+assert_within plugin.shell.2.bypass rack.params
+assert_within plugin.simple.row.2.1 rack.params
+plugin_chain_save $SOTF_QA_DIR/scroll-replaced.json
+screenshot rack-scroll-replaced

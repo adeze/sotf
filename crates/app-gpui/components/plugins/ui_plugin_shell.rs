@@ -234,8 +234,10 @@ pub fn render_plugin_shell(
     text: PluginCommonTranslations,
     theme: &Theme,
     content: impl IntoElement,
+    header_control: Option<AnyElement>,
     on_bypass: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
 ) -> impl IntoElement {
+    let has_header_controls = header_control.is_some();
     let accent = plugin_accent_color(plugin_type, theme);
     let icon = plugin_icon(plugin_type, is_input_monitor, is_output_monitor);
     let name = plugin_type.name();
@@ -261,7 +263,14 @@ pub fn render_plugin_shell(
         .bg(theme.background_secondary)
         .border_1()
         .border_color(theme.border)
-        .overflow_hidden()
+        .when(matches!(plugin_type, PluginType::EQ), |shell| {
+            shell.border_l_0().border_r_0().rounded_none()
+        })
+        // EQ has no rounded side frame; let its endpoint tick labels extend
+        // into the rack's padding while the rack scrollport still clips the editor.
+        .when(!matches!(plugin_type, PluginType::EQ), |shell| {
+            shell.overflow_hidden()
+        })
         // Accent color strip at top
         // intentional: 3px accent strip — visual element, not spacing
         .child(div().h(px(3.0)).w_full().bg(accent))
@@ -284,6 +293,7 @@ pub fn render_plugin_shell(
                         .flex()
                         .flex_1()
                         .min_w_0()
+                        .when(has_header_controls, |title| title.flex_none().mr(d.grid))
                         .items_center()
                         .gap(d.gap)
                         .child(Icon::new(icon).size(IconSize::Sm).color(accent))
@@ -308,6 +318,7 @@ pub fn render_plugin_shell(
                             ),
                         ),
                 )
+                .children(header_control)
                 // Right: bypass toggle (shared affordance copy with the
                 // rack toggle: same label, tooltip, and accessible name).
                 .children(on_bypass.map(|cb| {
@@ -357,6 +368,9 @@ pub fn render_plugin_shell(
                 .w_full()
                 .min_w_0()
                 .p(d.card)
+                .when(matches!(plugin_type, PluginType::EQ), |body| {
+                    body.px_0().py(d.grid)
+                })
                 .child(content),
         );
     #[cfg(feature = "dev-api")]

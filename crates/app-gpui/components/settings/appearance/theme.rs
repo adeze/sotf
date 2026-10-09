@@ -30,7 +30,8 @@ use gpui_ui_kit::accessibility::{
 };
 use gpui_ui_kit::{
     Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, Input, InputSize,
-    NumberInput, NumberInputSize, Toggle, ToggleSize, ToggleStyle,
+    NumberInput, NumberInputSize, Select, SelectOption, SelectSize, Toggle, ToggleSize,
+    ToggleStyle,
 };
 
 macro_rules! dev_track {
@@ -136,29 +137,45 @@ impl PlayerView {
                     .child(render_settings_heading(d, theme.clone(), "Interface"))
                     .child({
                         let state_entity = self.state.clone();
-                        ButtonSet::new("design-language-select")
-                            .size(ButtonSetSize::Sm)
-                            .options(vec![
-                                ButtonSetOption::new("system", text.system),
-                                ButtonSetOption::new(
-                                    DesignLanguage::AppleHig.as_str(),
-                                    DesignLanguage::AppleHig.label(),
-                                ),
-                                ButtonSetOption::new(
-                                    DesignLanguage::Material3.as_str(),
-                                    DesignLanguage::Material3.label(),
-                                ),
-                                ButtonSetOption::new(
-                                    DesignLanguage::Fluent.as_str(),
-                                    DesignLanguage::Fluent.label(),
-                                ),
-                                ButtonSetOption::new(
-                                    DesignLanguage::Neutral.as_str(),
-                                    DesignLanguage::Neutral.label(),
-                                ),
-                            ])
+                        let toggle_view = cx.entity().downgrade();
+                        let highlight_view = cx.entity().downgrade();
+                        let change_view = cx.entity().downgrade();
+                        let select = Select::new("design-language-select")
+                            .size(SelectSize::Md)
+                            .is_open(self.interface_model_menu().0)
+                            .highlighted_index(self.interface_model_menu().1)
+                            .aria_label("Interface model")
+                            .options(
+                                std::iter::once(SelectOption::new("system", text.system))
+                                    .chain(DesignLanguage::all().iter().map(|language| {
+                                        SelectOption::new(
+                                            language.as_str(),
+                                            if *language == DesignLanguage::AppleHig {
+                                                "iOS / iPadOS"
+                                            } else {
+                                                language.label()
+                                            },
+                                        )
+                                    }))
+                                    .collect(),
+                            )
                             .selected(design_language_value(design_language.as_deref()))
-                            .theme(theme.to_button_set_theme())
+                            .theme(theme.to_select_theme())
+                            .on_toggle(move |open, _, cx| {
+                                let _ = toggle_view.update(cx, |view, cx| {
+                                    view.set_interface_model_menu(open, None);
+                                    cx.notify();
+                                });
+                            })
+                            .on_highlight(move |highlight, _, cx| {
+                                let _ = highlight_view.update(cx, |view, cx| {
+                                    view.set_interface_model_menu(
+                                        view.interface_model_menu().0,
+                                        highlight,
+                                    );
+                                    cx.notify();
+                                });
+                            })
                             .on_change(move |value, _window, cx| {
                                 if let Some(selection) = design_language_from_value(value) {
                                     let system = selection
@@ -172,9 +189,17 @@ impl PlayerView {
                                         if let Err(error) = state.app.save_config(layout) {
                                             log::error!("Failed to save config: {error}");
                                         }
+                                        cx.notify();
+                                    });
+                                    let _ = change_view.update(cx, |view, cx| {
+                                        view.set_interface_model_menu(false, None);
+                                        cx.notify();
                                     });
                                 }
-                            })
+                            });
+                        div()
+                            .key_context("InterfaceModelSelect")
+                            .child(dev_track!(select, "settings.appearance.interface-model"))
                     }),
             )
             .child(

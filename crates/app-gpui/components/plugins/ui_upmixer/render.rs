@@ -1,4 +1,3 @@
-use super::super::common::{render_knob, render_knob_enabled};
 use super::misc::CONFIG_ITEMS;
 use super::misc::param_idx;
 use super::types::UpmixerRenderState;
@@ -11,10 +10,19 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Accordion, AccordionItem, AccordionMode, Button, ButtonSize, ButtonVariant, HStack,
-    NumberInput, NumberInputSize, Slider, SliderSize, StackSpacing, Toggle, ToggleStyle, VStack,
+    Accordion, AccordionItem, AccordionMode, Button, ButtonSize, ButtonVariant, NumberInput,
+    NumberInputSize, Slider, SliderSize, StackSpacing, VStack,
 };
-use sotf_plugins::param_specs::{ParamCategory, find_by_key as pk, upmixer::PARAMS as UP};
+use sotf_plugins::param_specs::{ParamType, find_by_key as pk, upmixer::PARAMS as UP};
+
+// Every lane uses the canonical numeric increment.
+fn numeric_step(param_idx: usize) -> f64 {
+    match UP[param_idx].param_type {
+        ParamType::Float { step, .. } => step,
+        ParamType::Int { step, .. } => step as f64,
+        _ => unreachable!("upmixer numeric lane requires a numeric parameter"),
+    }
+}
 
 struct UpmixerConfigSpec {
     label: &'static str,
@@ -116,12 +124,13 @@ pub fn render_upmixer_plugin(
     );
 
     // Configuration row: conditional on one of the visible configuration tabs.
-    let config_row = render_config_row(
+    let config_row = render_compact_config_content(
         d,
         entity.clone(),
         plugin_idx,
-        selected_config,
+        focused_config_index(selected_config),
         &state,
+        layout_scale,
         text,
         theme,
     );
@@ -132,7 +141,7 @@ pub fn render_upmixer_plugin(
         .bg(app_background)
         .rounded(d.r_lg)
         .flex()
-        .justify_center()
+        .justify_start()
         .p(d.pad_x)
         .id("upmixer-surface-scroll")
         // Keep the dense control surface usable when a zoomed or narrow
@@ -141,16 +150,18 @@ pub fn render_upmixer_plugin(
         // horizontal escape hatch instead of silently clipping controls.
         .overflow_x_scroll()
         .child(
-            VStack::new()
-                .spacing(StackSpacing::Xs)
-                .child(main_area)
-                .when(layout == UpmixerLayout::Wide, |el| el.child(tab_bar))
-                .when(
-                    layout == UpmixerLayout::Wide
-                        && (10..10 + upmixer_config_specs().len()).contains(&selected_config),
-                    |el| el.child(config_row),
-                )
-                .build(),
+            div().w_full().min_w_0().child(
+                VStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(main_area)
+                    .when(layout == UpmixerLayout::Wide, |el| el.child(tab_bar))
+                    .when(
+                        layout == UpmixerLayout::Wide
+                            && (10..10 + upmixer_config_specs().len()).contains(&selected_config),
+                        |el| el.child(config_row),
+                    )
+                    .build(),
+            ),
         )
 }
 
@@ -221,8 +232,8 @@ fn render_tab_bar(
             let config_idx = spec.config_idx;
             let is_active = selected_config == config_idx;
             let entity = entity.clone();
-            render_tab_button(d, spec.id, text.label(spec.label), is_active, theme).on_click(
-                move |_window, cx| {
+            let button = render_tab_button(d, spec.id, text.label(spec.label), is_active, theme)
+                .on_click(move |_window, cx| {
                     entity.update(cx, |state, cx| {
                         state.app.plugin_ui.upmixer_tab =
                             if allow_toggle_off && state.app.plugin_ui.upmixer_tab == config_idx {
@@ -232,8 +243,13 @@ fn render_tab_bar(
                             };
                         cx.notify();
                     });
-                },
-            )
+                });
+            #[cfg(feature = "dev-api")]
+            let button = {
+                use crate::app::dev_api::DevTrackExt;
+                button.dev_track(spec.id)
+            };
+            button
         }))
 }
 
@@ -251,27 +267,19 @@ fn render_main_area(
         .w_full()
         .min_w_0()
         .flex()
-        .flex_col()
+        .flex_wrap()
+        .items_start()
         .gap(d.gap_md)
-        .child(render_upmixer_header(
-            d,
-            entity.clone(),
-            plugin_idx,
-            state,
-            text,
-            theme,
-        ))
+        .pl(d.pad_x)
         .child(
             div()
-                .w_full()
-                .min_w_0()
+                .flex_1()
+                .min_w(rems(32.0))
                 .flex()
                 .flex_col()
-                .gap(d.gap)
-                .child(render_spider_graph_row(d, state, text, theme))
                 .child(render_primary_control_strip(
                     d,
-                    entity,
+                    entity.clone(),
                     plugin_idx,
                     state,
                     layout_scale,
@@ -280,6 +288,27 @@ fn render_main_area(
                 .p(d.pad_y)
                 .bg(theme.surface)
                 .rounded(d.r_lg),
+        )
+        .when(
+            state.spatial_spider.view_mode != super::super::spatial_spider::SpiderViewMode::Off,
+            |row| {
+                row.child(
+                    div()
+                        .flex_1()
+                        .min_w(rems(18.0))
+                        .p(d.pad_y)
+                        .bg(theme.surface)
+                        .rounded(d.r_lg)
+                        .child(render_spider_graph_row(
+                            d,
+                            entity.clone(),
+                            plugin_idx,
+                            state,
+                            text,
+                            theme,
+                        )),
+                )
+            },
         )
 }
 
@@ -302,12 +331,12 @@ fn render_medium_area(
         .flex()
         .flex_col()
         .gap(d.gap_md)
-        .child(render_upmixer_header(
+        .child(render_primary_control_strip(
             d,
             entity.clone(),
             plugin_idx,
             state,
-            text,
+            layout_scale,
             theme,
         ))
         .child(
@@ -324,7 +353,14 @@ fn render_medium_area(
                         .p(d.pad_y)
                         .bg(theme.surface)
                         .rounded(d.r_lg)
-                        .child(render_spider_graph_row(d, state, text, theme)),
+                        .child(render_spider_graph_row(
+                            d,
+                            entity.clone(),
+                            plugin_idx,
+                            state,
+                            text,
+                            theme,
+                        )),
                 )
                 .child(
                     div()
@@ -336,7 +372,6 @@ fn render_medium_area(
                         .p(d.pad_y)
                         .bg(theme.surface)
                         .rounded(d.r_lg)
-                        .child(render_section_header(d, text.label("Primary"), theme))
                         .child(render_tab_bar(
                             d,
                             entity.clone(),
@@ -380,20 +415,12 @@ fn render_narrow_area(
         .flex()
         .flex_col()
         .gap(d.gap)
-        .child(render_speaker_config_selector(
+        .child(render_primary_control_strip(
             d,
             entity.clone(),
             plugin_idx,
             state,
-            text,
-            theme,
-        ))
-        .child(render_spider_controls(
-            d,
-            entity.clone(),
-            plugin_idx,
-            state,
-            text,
+            layout_scale,
             theme,
         ))
         .child(
@@ -403,7 +430,14 @@ fn render_narrow_area(
                 .p(d.pad_y)
                 .bg(theme.surface)
                 .rounded(d.r_lg)
-                .child(render_spider_graph_row(d, state, text, theme)),
+                .child(render_spider_graph_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    text,
+                    theme,
+                )),
         )
         .child(render_tab_bar(
             d,
@@ -454,78 +488,77 @@ fn render_compact_config_content(
     theme: &Theme,
 ) -> AnyElement {
     match selected_config {
-        10 => div()
-            .flex()
-            .flex_col()
-            .gap(d.section)
-            .child(render_compact_config_content(
-                d,
-                entity.clone(),
-                plugin_idx,
-                1,
-                state,
-                layout_scale,
-                text,
-                theme,
-            ))
-            .child(render_compact_lane_group(
-                d,
-                "Output",
-                vec![
-                    compact_lane(
+        10 => render_upmixer_section_accordion(
+            entity.clone(),
+            theme,
+            &state.expanded_sections,
+            text.configuration,
+            vec![
+                (
+                    "upmixer-lfe",
+                    text.label("LFE & Bass"),
+                    render_compact_config_content(
                         d,
                         entity.clone(),
                         plugin_idx,
+                        1,
                         state,
                         layout_scale,
-                        "Safety",
-                        state.safety_cap_db,
-                        "safety_cap_db",
-                        param_idx::SAFETY_CAP_DB,
-                        "dB",
+                        text,
                         theme,
                     ),
-                    render_compact_toggle_row(
+                ),
+                (
+                    "upmixer-output",
+                    text.label("Output"),
+                    render_compact_lane_group(
                         d,
-                        entity.clone(),
-                        plugin_idx,
-                        text.label("Auto Gain"),
-                        state.auto_gain_enabled,
-                        param_idx::AUTO_GAIN_ENABLED,
+                        "Output",
+                        vec![
+                            render_compact_toggle_row(
+                                d,
+                                entity.clone(),
+                                plugin_idx,
+                                text.label("Auto Gain"),
+                                state.auto_gain_enabled,
+                                param_idx::AUTO_GAIN_ENABLED,
+                                theme,
+                            ),
+                            compact_lane_enabled(
+                                d,
+                                entity.clone(),
+                                plugin_idx,
+                                state,
+                                layout_scale,
+                                "Auto Max",
+                                state.auto_gain_max_db,
+                                "auto_gain_max_db",
+                                param_idx::AUTO_GAIN_MAX_DB,
+                                "dB",
+                                state.auto_gain_enabled,
+                                theme,
+                            ),
+                            compact_lane_enabled(
+                                d,
+                                entity,
+                                plugin_idx,
+                                state,
+                                layout_scale,
+                                "Smooth",
+                                state.auto_gain_smoothing_ms,
+                                "auto_gain_smoothing_ms",
+                                param_idx::AUTO_GAIN_SMOOTHING_MS,
+                                "ms",
+                                state.auto_gain_enabled,
+                                theme,
+                            ),
+                        ],
                         theme,
-                    ),
-                    compact_lane_enabled(
-                        d,
-                        entity.clone(),
-                        plugin_idx,
-                        state,
-                        layout_scale,
-                        "Auto Max",
-                        state.auto_gain_max_db,
-                        "auto_gain_max_db",
-                        param_idx::AUTO_GAIN_MAX_DB,
-                        "dB",
-                        state.auto_gain_enabled,
-                        theme,
-                    ),
-                    compact_lane_enabled(
-                        d,
-                        entity,
-                        plugin_idx,
-                        state,
-                        layout_scale,
-                        "Smooth",
-                        state.auto_gain_smoothing_ms,
-                        "auto_gain_smoothing_ms",
-                        param_idx::AUTO_GAIN_SMOOTHING_MS,
-                        "ms",
-                        state.auto_gain_enabled,
-                        theme,
-                    ),
-                ],
-                theme,
-            ))
-            .into_any_element(),
+                    )
+                    .into_any_element(),
+                ),
+            ],
+        ),
         11 => render_upmixer_section_accordion(
             entity.clone(),
             theme,
@@ -964,17 +997,11 @@ fn render_compact_config_content(
             d,
             "Decorrelation",
             vec![
-                compact_lane(
+                render_compact_decorrelation_choices(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    state,
-                    layout_scale,
-                    "Mode",
-                    state.decorrelation_mode as f64,
-                    "decorrelation_mode",
-                    param_idx::DECORRELATION_MODE,
-                    "",
+                    state.decorrelation_mode,
                     theme,
                 ),
                 compact_lane_enabled(
@@ -1036,17 +1063,29 @@ fn render_compact_config_content(
                     param_idx::LOW_LATENCY,
                     theme,
                 ),
-                compact_lane(
+                render_compact_toggle_row(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    state,
-                    layout_scale,
-                    "Resolution",
-                    state.frequency_resolution as f64,
-                    "frequency_resolution",
-                    param_idx::FREQUENCY_RESOLUTION,
-                    "",
+                    text.label("Binaural"),
+                    state.binaural_preview,
+                    param_idx::BINAURAL_PREVIEW,
+                    theme,
+                ),
+                render_compact_resolution_choices(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state.frequency_resolution,
+                    theme,
+                ),
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    text.label("Multi Source"),
+                    state.multi_source_extraction,
+                    param_idx::MULTI_SOURCE_EXTRACTION,
                     theme,
                 ),
                 compact_lane_enabled(
@@ -1076,7 +1115,7 @@ fn render_compact_config_content(
                     entity.clone(),
                     plugin_idx,
                     text.label("Bypass All"),
-                    state.bypass_all_processing,
+                    diagnostic_param_value(state, param_idx::BYPASS_ALL_PROCESSING),
                     param_idx::BYPASS_ALL_PROCESSING,
                     theme,
                 ),
@@ -1085,7 +1124,7 @@ fn render_compact_config_content(
                     entity.clone(),
                     plugin_idx,
                     text.label("Bypass Decorr"),
-                    state.bypass_decorrelation,
+                    diagnostic_param_value(state, param_idx::BYPASS_DECORRELATION),
                     param_idx::BYPASS_DECORRELATION,
                     theme,
                 ),
@@ -1094,7 +1133,7 @@ fn render_compact_config_content(
                     entity.clone(),
                     plugin_idx,
                     text.label("Bypass Trans"),
-                    state.bypass_transient_detection,
+                    diagnostic_param_value(state, param_idx::BYPASS_TRANSIENT_DETECTION),
                     param_idx::BYPASS_TRANSIENT_DETECTION,
                     theme,
                 ),
@@ -1103,26 +1142,8 @@ fn render_compact_config_content(
                     entity.clone(),
                     plugin_idx,
                     text.label("ML Detect"),
-                    state.enable_ml_detection,
+                    diagnostic_param_value(state, param_idx::ENABLE_ML_DETECTION),
                     param_idx::ENABLE_ML_DETECTION,
-                    theme,
-                ),
-                render_compact_toggle_row(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Multi Source"),
-                    state.multi_source_extraction,
-                    param_idx::MULTI_SOURCE_EXTRACTION,
-                    theme,
-                ),
-                render_compact_toggle_row(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Binaural"),
-                    state.binaural_preview,
-                    param_idx::BINAURAL_PREVIEW,
                     theme,
                 ),
             ],
@@ -1134,6 +1155,119 @@ fn render_compact_config_content(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn render_compact_resolution_choices(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    selected: usize,
+    theme: &Theme,
+) -> AnyElement {
+    render_compact_choice_row(
+        d,
+        entity,
+        plugin_idx,
+        selected,
+        param_idx::FREQUENCY_RESOLUTION,
+        "Resolution",
+        theme,
+    )
+}
+
+fn render_compact_decorrelation_choices(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    selected: usize,
+    theme: &Theme,
+) -> AnyElement {
+    render_compact_choice_row(
+        d,
+        entity,
+        plugin_idx,
+        selected,
+        param_idx::DECORRELATION_MODE,
+        "Mode",
+        theme,
+    )
+}
+
+fn render_compact_choice_row(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    selected: usize,
+    param_idx: usize,
+    label: &str,
+    theme: &Theme,
+) -> AnyElement {
+    use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
+    let choices = ButtonSet::new(("upmixer-compact-choice", plugin_idx * 1000 + param_idx))
+        .options(
+            UP[param_idx]
+                .choice_labels()
+                .iter()
+                .enumerate()
+                .map(|(index, label)| ButtonSetOption::new(index.to_string(), *label))
+                .collect(),
+        )
+        .selected(selected.to_string())
+        .size(ButtonSetSize::Xs)
+        .theme(theme.to_button_set_theme())
+        .on_change(move |value, _, cx| {
+            if let Ok(value) = value.parse::<usize>() {
+                entity.update(cx, |state, cx| {
+                    select_upmixer_param(state, plugin_idx, param_idx);
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, param_idx, value as f64);
+                    cx.notify();
+                });
+            }
+        });
+    #[cfg(feature = "dev-api")]
+    let choices = {
+        use crate::app::dev_api::DevTrackExt;
+        choices.option_wrapper(move |index, option| {
+            let option = option.dev_track(format!(
+                "plugin.upmixer.choice.{plugin_idx}.{param_idx}.{index}"
+            ));
+            if param_idx == param_idx::FREQUENCY_RESOLUTION {
+                option
+                    .dev_track(match index {
+                        0 => "compact-freq-erb",
+                        1 => "compact-freq-fine",
+                        _ => "compact-freq-bin",
+                    })
+                    .into_any_element()
+            } else {
+                option.into_any_element()
+            }
+        })
+    };
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(d.grid)
+        .min_w(rems(14.0))
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .rounded(d.r_sm)
+        .bg(theme.surface)
+        .border_1()
+        .border_color(theme.border)
+        .child(
+            div()
+                .min_w(rems(3.8))
+                .text_size(d.text_xs)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .child(label.to_string()),
+        )
+        .child(choices)
+        .into_any_element()
+}
+
 fn compact_lane(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1200,16 +1334,15 @@ fn compact_lane_enabled(
 
 fn render_compact_lane_group(
     d: &Ds,
-    label: &'static str,
+    _label: &'static str,
     lanes: Vec<AnyElement>,
-    theme: &Theme,
+    _theme: &Theme,
 ) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
         .gap(d.grid)
         .min_w_0()
-        .child(render_section_header(d, label, theme))
         .child(div().flex().flex_col().gap(d.grid).children(lanes))
 }
 
@@ -1217,11 +1350,38 @@ fn render_compact_toggle_row(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
-    label: &'static str,
+    label: &str,
     checked: bool,
     param_idx: usize,
     theme: &Theme,
 ) -> AnyElement {
+    let toggle =
+        gpui_ui_kit::ButtonSet::new(("upmix-compact-toggle", plugin_idx * 1000 + param_idx))
+            .options(vec![
+                gpui_ui_kit::ButtonSetOption::new("0", "Off"),
+                gpui_ui_kit::ButtonSetOption::new("1", "On"),
+            ])
+            .selected(if checked { "1" } else { "0" })
+            .size(gpui_ui_kit::ButtonSetSize::Xs)
+            .theme(theme.to_button_set_theme())
+            .on_change(move |value, _, cx| {
+                entity.update(cx, |state, cx| {
+                    select_upmixer_param(state, plugin_idx, param_idx);
+                    state.app.set_plugin_param(
+                        plugin_idx,
+                        param_idx,
+                        if value.as_ref() == "1" { 1.0 } else { 0.0 },
+                    );
+                    cx.notify();
+                });
+            });
+    #[cfg(feature = "dev-api")]
+    let toggle = {
+        use crate::app::dev_api::DevTrackExt;
+        toggle
+            .dev_track(format!("plugin.upmixer.control.{plugin_idx}.{param_idx}"))
+            .dev_track(format!("plugin.upmixer.toggle.{plugin_idx}.{param_idx}"))
+    };
     div()
         .flex()
         .items_center()
@@ -1236,58 +1396,14 @@ fn render_compact_toggle_row(
         .border_color(theme.border)
         .child(
             div()
-                .text_size(d.text_sm)
+                .min_w(rems(3.8))
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_secondary)
-                .child(label),
+                .child(label.to_string()),
         )
-        .child(
-            Toggle::new(("upmix-compact-toggle", plugin_idx * 1000 + param_idx))
-                .checked(checked)
-                .style(ToggleStyle::Segmented)
-                .theme(theme.to_toggle_theme())
-                .aria_label(label)
-                .on_change(move |new_value, _, cx| {
-                    entity.update(cx, |state, _| {
-                        select_upmixer_param(state, plugin_idx, param_idx);
-                        state.app.set_plugin_param(
-                            plugin_idx,
-                            param_idx,
-                            if new_value { 1.0 } else { 0.0 },
-                        );
-                    });
-                }),
-        )
+        .child(toggle)
         .into_any_element()
-}
-
-fn render_upmixer_header(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    div()
-        .w_full()
-        .min_w_0()
-        .flex()
-        .flex_wrap()
-        .items_center()
-        .justify_between()
-        .gap(d.gap)
-        .child(render_speaker_config_selector(
-            d,
-            entity.clone(),
-            plugin_idx,
-            state,
-            text,
-            theme,
-        ))
-        .child(render_spider_controls(
-            d, entity, plugin_idx, state, text, theme,
-        ))
 }
 
 fn render_upmixer_summary_strip(
@@ -1374,26 +1490,6 @@ fn render_summary_chip(
         .child(div().text_color(theme.text_primary).child(value.into()))
 }
 
-fn render_spider_controls(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> AnyElement {
-    use crate::components::plugins::spatial_spider::{
-        SpatialSpiderSnapshot, render_spatial_spider_controls, resolve_speaker_config,
-    };
-
-    let snapshot = SpatialSpiderSnapshot {
-        loudness: state.loudness_info.clone(),
-        ui: state.spatial_spider.clone(),
-    };
-    let cfg_opt = resolve_speaker_config(&snapshot, Some(state.speaker_config));
-    render_spatial_spider_controls(d, entity, plugin_idx, &snapshot, cfg_opt, text, theme)
-}
-
 fn render_primary_control_strip(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1417,7 +1513,7 @@ fn render_primary_control_strip(
                     entity.clone(),
                     plugin_idx,
                     ControlLaneSpec {
-                        label: "Mains",
+                        label: "Direct",
                         value: state.gain_front_direct,
                         min: pk(UP, "gain_front_direct").min_f64(),
                         max: pk(UP, "gain_front_direct").max_f64(),
@@ -1434,7 +1530,7 @@ fn render_primary_control_strip(
                     entity.clone(),
                     plugin_idx,
                     ControlLaneSpec {
-                        label: "Center",
+                        label: "Front Ambient",
                         value: state.gain_front_ambient,
                         min: pk(UP, "gain_front_ambient").min_f64(),
                         max: pk(UP, "gain_front_ambient").max_f64(),
@@ -1451,7 +1547,7 @@ fn render_primary_control_strip(
                     entity.clone(),
                     plugin_idx,
                     ControlLaneSpec {
-                        label: "Surr",
+                        label: "Rear",
                         value: state.gain_rear_ambient,
                         min: pk(UP, "gain_rear_ambient").min_f64(),
                         max: pk(UP, "gain_rear_ambient").max_f64(),
@@ -1485,7 +1581,7 @@ fn render_primary_control_strip(
         ))
         .child(render_control_group(
             d,
-            "Space",
+            "Image",
             vec![
                 render_control_lane(
                     d,
@@ -1509,12 +1605,29 @@ fn render_primary_control_strip(
                     entity.clone(),
                     plugin_idx,
                     ControlLaneSpec {
-                        label: "Spread",
+                        label: "Center",
                         value: state.center_spread,
                         min: pk(UP, "center_spread").min_f64(),
                         max: pk(UP, "center_spread").max_f64(),
                         unit: "",
                         param_idx: param_idx::CENTER_SPREAD,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    layout_scale,
+                    theme,
+                ),
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Safety",
+                        value: state.safety_cap_db,
+                        min: pk(UP, "safety_cap_db").min_f64(),
+                        max: pk(UP, "safety_cap_db").max_f64(),
+                        unit: "dB",
+                        param_idx: param_idx::SAFETY_CAP_DB,
                         selected_param: state.selected_param,
                         is_editing: state.is_editing,
                     },
@@ -1553,7 +1666,8 @@ struct ControlLaneSpec {
     is_editing: bool,
 }
 
-const CONTROL_LANE_SLIDER_WIDTH_AT_BASE_SCALE: f32 = 132.0;
+// Fit label, slider and value inside the 16-rem compact lane minimum.
+const CONTROL_LANE_SLIDER_WIDTH_AT_BASE_SCALE: f32 = 96.0;
 
 fn scaled_control_lane_slider_width(layout_scale: f32) -> f32 {
     CONTROL_LANE_SLIDER_WIDTH_AT_BASE_SCALE * layout_scale.max(0.01)
@@ -1626,36 +1740,86 @@ fn render_control_lane_enabled(
     let is_selected = spec.selected_param == spec.param_idx && spec.is_editing;
     let range = sanitize_control_lane_range(&spec);
     let value = range.value;
-    if interactive && is_selected {
-        return NumberInput::new(SharedString::from(format!(
-            "upmix-number-input-{plugin_idx}-{}",
+    let exact_input = NumberInput::new(SharedString::from(format!(
+        "upmix-number-input-{plugin_idx}-{}",
+        spec.param_idx
+    )))
+    .value(value)
+    .min(range.min)
+    .max(range.max)
+    .step(numeric_step(spec.param_idx))
+    .decimals(UP[spec.param_idx].precision())
+    .unit(spec.unit)
+    .size(NumberInputSize::Xs)
+    .theme(theme.to_number_input_theme())
+    .disabled(!interactive)
+    .aria_label(format!("{} value", spec.label))
+    .on_change({
+        let entity = entity.clone();
+        move |new_value, _window, cx| {
+            entity.update(cx, |state, _| {
+                state
+                    .app
+                    .set_plugin_param(plugin_idx, spec.param_idx, new_value);
+            });
+        }
+    });
+    #[cfg(feature = "dev-api")]
+    let exact_input = {
+        use crate::app::dev_api::DevTrackExt;
+        exact_input.dev_track(format!(
+            "plugin.upmixer.exact.{plugin_idx}.{}",
             spec.param_idx
-        )))
-        .value(value)
-        .min(range.min)
-        .max(range.max)
-        .step(((range.max - range.min) / 1000.0).max(0.0001))
-        .decimals(3)
-        .unit(spec.unit)
-        .label(spec.label)
-        .size(NumberInputSize::Xs)
-        .aria_label(format!("{} value", spec.label))
-        .on_change({
+        ))
+    };
+    let slider_width = scaled_control_lane_slider_width(layout_scale);
+    let value_label = format_compact_value(value, spec.unit);
+    let slider = Slider::new(("upmix-lane", plugin_idx * 1000 + spec.param_idx))
+        .value(value as f32)
+        .range(range.min as f32, range.max as f32)
+        .step(numeric_step(spec.param_idx) as f32)
+        .logarithmic(range.min > 0.0 && matches!(spec.unit, "Hz" | "ms"))
+        .width(slider_width)
+        .size(SliderSize::Sm)
+        .theme(theme.to_slider_theme())
+        .disabled(!interactive)
+        .aria_label(format!("{} {}", spec.label, value_label))
+        .on_drag_start({
             let entity = entity.clone();
-            move |new_value, _window, cx| {
+            move |_, _, _, cx| {
                 entity.update(cx, |state, _| {
-                    state
-                        .app
-                        .set_plugin_param(plugin_idx, spec.param_idx, new_value);
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_state.plugin_param_selection = spec.param_idx;
                 });
             }
         })
-        .into_any_element();
-    }
-    let slider_width = scaled_control_lane_slider_width(layout_scale);
-    let value_label = format_compact_value(value, spec.unit);
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    select_upmixer_param(state, plugin_idx, spec.param_idx);
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, spec.param_idx, new_value as f64);
+                });
+            }
+        })
+        .on_reset(move |_, cx| {
+            entity.update(cx, |state, _| {
+                select_upmixer_param(state, plugin_idx, spec.param_idx);
+                state.app.reset_plugin_param(plugin_idx, spec.param_idx);
+            });
+        });
+    #[cfg(feature = "dev-api")]
+    let slider = {
+        use crate::app::dev_api::DevTrackExt;
+        slider.dev_track(format!(
+            "plugin.upmixer.slider.{plugin_idx}.{}",
+            spec.param_idx
+        ))
+    };
 
-    div()
+    let row = div()
         .flex()
         .items_center()
         .gap(d.grid)
@@ -1683,54 +1847,17 @@ fn render_control_lane_enabled(
                 .text_color(theme.text_secondary)
                 .child(spec.label),
         )
-        .child(
-            Slider::new(("upmix-lane", plugin_idx * 1000 + spec.param_idx))
-                .value(value as f32)
-                .range(range.min as f32, range.max as f32)
-                .width(slider_width)
-                .size(SliderSize::Sm)
-                .theme(theme.to_slider_theme())
-                .disabled(!interactive)
-                .aria_label(format!("{} {}", spec.label, value_label))
-                .on_drag_start({
-                    let entity = entity.clone();
-                    move |_, _, _, cx| {
-                        entity.update(cx, |state, _| {
-                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                            state.app.plugin_state.plugin_param_selection = spec.param_idx;
-                        });
-                    }
-                })
-                .on_change({
-                    let entity = entity.clone();
-                    move |new_value, _, cx| {
-                        entity.update(cx, |state, _| {
-                            select_upmixer_param(state, plugin_idx, spec.param_idx);
-                            state.app.set_plugin_param(
-                                plugin_idx,
-                                spec.param_idx,
-                                new_value as f64,
-                            );
-                        });
-                    }
-                })
-                .on_reset(move |_, cx| {
-                    entity.update(cx, |state, _| {
-                        select_upmixer_param(state, plugin_idx, spec.param_idx);
-                        state.app.reset_plugin_param(plugin_idx, spec.param_idx);
-                    });
-                }),
-        )
-        .child(
-            div()
-                .min_w(rems(3.2))
-                .text_align(TextAlign::Right)
-                .text_size(d.text_xs)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_primary)
-                .child(value_label),
-        )
-        .into_any_element()
+        .child(slider)
+        .child(exact_input);
+    #[cfg(feature = "dev-api")]
+    let row = {
+        use crate::app::dev_api::DevTrackExt;
+        row.dev_track(format!(
+            "plugin.upmixer.lane.{plugin_idx}.{}",
+            spec.param_idx
+        ))
+    };
+    row.into_any_element()
 }
 
 fn format_compact_value(value: f64, unit: &str) -> String {
@@ -1742,164 +1869,6 @@ fn format_compact_value(value: f64, unit: &str) -> String {
         format!("{value:+.1}dB")
     } else {
         format!("{value:.2}{unit}")
-    }
-}
-
-fn render_speaker_config_selector(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    let labels = pk(UP, "speaker_config").choice_labels();
-    div()
-        .flex()
-        .flex_col()
-        .gap(d.grid)
-        .p(d.pad_y)
-        .bg(theme.surface)
-        .rounded(d.r_lg)
-        .child(render_section_header(d, text.label("Output"), theme))
-        .child(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(d.grid)
-                .children(labels.iter().enumerate().map(|(i, label)| {
-                    let is_active = *label == state.speaker_config;
-                    let entity = entity.clone();
-                    render_tab_button(
-                        d,
-                        match i {
-                            0 => "upmix-speaker-51",
-                            1 => "upmix-speaker-714",
-                            2 => "upmix-speaker-916",
-                            _ => "upmix-speaker-other",
-                        },
-                        label,
-                        is_active,
-                        theme,
-                    )
-                    .on_click(move |_, cx| {
-                        entity.update(cx, |state, _| {
-                            select_upmixer_param(state, plugin_idx, param_idx::SPEAKER_CONFIG);
-                            state.app.set_plugin_param(
-                                plugin_idx,
-                                param_idx::SPEAKER_CONFIG,
-                                i as f64,
-                            );
-                        });
-                    })
-                })),
-        )
-}
-
-/// Render the configuration row based on selected config menu item
-fn render_config_row(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    selected_config: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    let content = render_config_content(d, entity, plugin_idx, selected_config, state, text, theme);
-
-    div()
-        .w_full()
-        .p(d.pad_x)
-        .bg(theme.background_secondary)
-        .rounded(d.r_lg)
-        .border_1()
-        .border_color(theme.border)
-        .child(content)
-}
-
-fn render_config_content(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    selected_config: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> AnyElement {
-    match selected_config {
-        10 => render_upmixer_section_accordion(
-            entity.clone(),
-            theme,
-            &state.expanded_sections,
-            text.configuration,
-            vec![
-                (
-                    "upmixer-lfe",
-                    text.label("LFE & Bass"),
-                    render_config_lfe(d, entity.clone(), plugin_idx, state, text, theme)
-                        .into_any_element(),
-                ),
-                (
-                    "upmixer-output",
-                    text.label("Output"),
-                    render_config_output(d, entity, plugin_idx, state, text, theme)
-                        .into_any_element(),
-                ),
-            ],
-        ),
-        11 => render_upmixer_section_accordion(
-            entity.clone(),
-            theme,
-            &state.expanded_sections,
-            text.configuration,
-            vec![
-                (
-                    "upmixer-dialogue",
-                    text.label("Dialogue"),
-                    render_config_dialogue(d, entity.clone(), plugin_idx, state, text, theme)
-                        .into_any_element(),
-                ),
-                (
-                    "upmixer-ambient",
-                    text.label("Ambient"),
-                    render_config_ambient(d, entity.clone(), plugin_idx, state, text, theme)
-                        .into_any_element(),
-                ),
-                (
-                    "upmixer-height",
-                    text.label("Height"),
-                    render_config_height(d, entity.clone(), plugin_idx, state, text, theme)
-                        .into_any_element(),
-                ),
-                (
-                    "upmixer-hr-direct",
-                    text.label("HR Direct"),
-                    render_config_hr_direct(d, entity.clone(), plugin_idx, state, text, theme)
-                        .into_any_element(),
-                ),
-                (
-                    "upmixer-decorrelation",
-                    text.label("Decorrelation"),
-                    render_config_decorrelation(d, entity, plugin_idx, state, text, theme)
-                        .into_any_element(),
-                ),
-            ],
-        ),
-        12 => render_config_analysis(d, entity, plugin_idx, state, text, theme).into_any_element(),
-        13 => {
-            render_config_diagnostic(d, entity, plugin_idx, state, text, theme).into_any_element()
-        }
-        1 => render_config_lfe(d, entity, plugin_idx, state, text, theme).into_any_element(),
-        2 => render_config_dialogue(d, entity, plugin_idx, state, text, theme).into_any_element(),
-        3 => render_config_ambient(d, entity, plugin_idx, state, text, theme).into_any_element(),
-        4 => render_config_height(d, entity, plugin_idx, state, text, theme).into_any_element(),
-        5 => render_config_hr_direct(d, entity, plugin_idx, state, text, theme).into_any_element(),
-        6 => render_config_decorrelation(d, entity, plugin_idx, state, text, theme)
-            .into_any_element(),
-        7 => render_config_analysis(d, entity, plugin_idx, state, text, theme).into_any_element(),
-        8 => render_config_diagnostic(d, entity, plugin_idx, state, text, theme).into_any_element(),
-        _ => div().into_any_element(),
     }
 }
 
@@ -1921,14 +1890,22 @@ fn render_upmixer_section_accordion(
         .collect::<Vec<_>>();
     let state_handle = entity;
 
-    Accordion::new()
+    let accordion = Accordion::new()
         .items(items)
         .mode(AccordionMode::Multiple)
         .expanded(expanded_ids)
         .bordered(false)
         .rounded(false)
         .theme(theme.to_accordion_theme())
-        .aria_label(aria_label)
+        .aria_label(aria_label);
+    #[cfg(feature = "dev-api")]
+    let accordion = accordion.header_wrapper(move |id, header| {
+        use crate::app::dev_api::DevTrackExt;
+        header
+            .dev_track(format!("upmixer.section.{id}"))
+            .into_any_element()
+    });
+    accordion
         .on_change(move |id, is_expanded, _window, cx| {
             let id = id.to_string();
             state_handle.update(cx, |state, _| {
@@ -1955,918 +1932,25 @@ fn render_section_header(d: &Ds, label: &str, theme: &Theme) -> impl IntoElement
         .child(label.to_string())
 }
 
-/// LFE & Bass configuration row
-fn render_config_lfe(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    let subharm_enabled = state.enable_subharmonic_synth;
-
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        // Header row: "LFE & Bass" label + "SubHarmonic" label + toggle
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(d.gap_md)
-                .child(render_section_header(d, text.label("LFE & Bass"), theme))
-                // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(rems(0.0625)).h(rems(0.875)).bg(theme.border))
-                .child(render_section_header(d, text.label("SubHarmonic"), theme))
-                .child(
-                    Toggle::new(("subharm-toggle", plugin_idx))
-                        .checked(subharm_enabled)
-                        .style(ToggleStyle::Segmented)
-                        .theme(theme.to_toggle_theme())
-                        .aria_label(text.label("SubHarmonic"))
-                        .on_change({
-                            let entity = entity.clone();
-                            move |new_value, _, cx| {
-                                entity.update(cx, |state, _| {
-                                    select_upmixer_param(
-                                        state,
-                                        plugin_idx,
-                                        param_idx::ENABLE_SUBHARMONIC_SYNTH,
-                                    );
-                                    state.app.set_plugin_param(
-                                        plugin_idx,
-                                        param_idx::ENABLE_SUBHARMONIC_SYNTH,
-                                        if new_value { 1.0 } else { 0.0 },
-                                    );
-                                });
-                            }
-                        }),
-                ),
-        )
-        // Knobs row: all 6 knobs on the same baseline
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                // LFE knobs
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("LFE Cut"),
-                    state.lfe_cutoff_hz,
-                    pk(UP, "lfe_cutoff_hz").min_f64(),
-                    pk(UP, "lfe_cutoff_hz").max_f64(),
-                    "Hz",
-                    param_idx::LFE_CUTOFF_HZ,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Bandpass"),
-                    state.bandpass_hz,
-                    pk(UP, "bandpass_hz").min_f64(),
-                    pk(UP, "bandpass_hz").max_f64(),
-                    "Hz",
-                    param_idx::BANDPASS_HZ,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                // Separator
-                // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(rems(0.0625)).h(rems(5.0)).bg(theme.border))
-                // SubHarmonic knobs (dimmed when disabled)
-                .child(
-                    div()
-                        .flex()
-                        .gap(d.gap_md)
-                        .when(!subharm_enabled, |el| el.opacity(0.3))
-                        .child(render_knob_enabled(
-                            entity.clone(),
-                            plugin_idx,
-                            text.label("Gain"),
-                            state.subharmonic_gain,
-                            pk(UP, "subharmonic_gain").min_f64(),
-                            pk(UP, "subharmonic_gain").max_f64(),
-                            "",
-                            param_idx::SUBHARMONIC_GAIN,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            subharm_enabled,
-                            theme,
-                        ))
-                        .child(render_knob_enabled(
-                            entity.clone(),
-                            plugin_idx,
-                            text.label("Freq"),
-                            state.subharmonic_freq_hz,
-                            pk(UP, "subharmonic_freq_hz").min_f64(),
-                            pk(UP, "subharmonic_freq_hz").max_f64(),
-                            "Hz",
-                            param_idx::SUBHARMONIC_FREQ_HZ,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            subharm_enabled,
-                            theme,
-                        ))
-                        .child(render_knob_enabled(
-                            entity.clone(),
-                            plugin_idx,
-                            text.label("Attack"),
-                            state.subharmonic_attack_ms,
-                            pk(UP, "subharmonic_attack_ms").min_f64(),
-                            pk(UP, "subharmonic_attack_ms").max_f64(),
-                            "ms",
-                            param_idx::SUBHARMONIC_ATTACK_MS,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            subharm_enabled,
-                            theme,
-                        ))
-                        .child(render_knob_enabled(
-                            entity.clone(),
-                            plugin_idx,
-                            text.label("Release"),
-                            state.subharmonic_release_ms,
-                            pk(UP, "subharmonic_release_ms").min_f64(),
-                            pk(UP, "subharmonic_release_ms").max_f64(),
-                            "ms",
-                            param_idx::SUBHARMONIC_RELEASE_MS,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            subharm_enabled,
-                            theme,
-                        )),
-                )
-                .build(),
-        )
-        .build()
-}
-
-/// Dialogue configuration row
-fn render_config_output(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, text.label("Output"), theme))
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Top Gain"),
-                    state.height_gain,
-                    pk(UP, "height_gain").min_f64(),
-                    pk(UP, "height_gain").max_f64(),
-                    "x",
-                    param_idx::HEIGHT_GAIN,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Safety"),
-                    state.safety_cap_db,
-                    pk(UP, "safety_cap_db").min_f64(),
-                    pk(UP, "safety_cap_db").max_f64(),
-                    "dB",
-                    param_idx::SAFETY_CAP_DB,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_diag_toggle(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Auto Gain",
-                    state.auto_gain_enabled,
-                    param_idx::AUTO_GAIN_ENABLED,
-                    theme,
-                ))
-                .child(render_knob_enabled(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("AG Max"),
-                    state.auto_gain_max_db,
-                    pk(UP, "auto_gain_max_db").min_f64(),
-                    pk(UP, "auto_gain_max_db").max_f64(),
-                    "dB",
-                    param_idx::AUTO_GAIN_MAX_DB,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    state.auto_gain_enabled,
-                    theme,
-                ))
-                .child(render_knob_enabled(
-                    entity,
-                    plugin_idx,
-                    text.label("AG Smooth"),
-                    state.auto_gain_smoothing_ms,
-                    pk(UP, "auto_gain_smoothing_ms").min_f64(),
-                    pk(UP, "auto_gain_smoothing_ms").max_f64(),
-                    "ms",
-                    param_idx::AUTO_GAIN_SMOOTHING_MS,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    state.auto_gain_enabled,
-                    theme,
-                ))
-                .build(),
-        )
-        .build()
-}
-
-/// Dialogue configuration row
-fn render_config_dialogue(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, text.label("Dialogue"), theme))
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Weight"),
-                    state.dialogue_weight,
-                    pk(UP, "dialogue_weight").min_f64(),
-                    pk(UP, "dialogue_weight").max_f64(),
-                    "",
-                    param_idx::DIALOGUE_WEIGHT,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Voice Lo"),
-                    state.voice_freq_min_hz,
-                    pk(UP, "voice_freq_min_hz").min_f64(),
-                    pk(UP, "voice_freq_min_hz").max_f64(),
-                    "Hz",
-                    param_idx::VOICE_FREQ_MIN_HZ,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Voice Hi"),
-                    state.voice_freq_max_hz,
-                    pk(UP, "voice_freq_max_hz").min_f64(),
-                    pk(UP, "voice_freq_max_hz").max_f64(),
-                    "Hz",
-                    param_idx::VOICE_FREQ_MAX_HZ,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                // Separator
-                // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(rems(0.0625)).h(rems(2.5)).bg(theme.border))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Centroid"),
-                    state.dialogue_centroid_weight,
-                    pk(UP, "dialogue_centroid_weight").min_f64(),
-                    pk(UP, "dialogue_centroid_weight").max_f64(),
-                    "",
-                    param_idx::DIALOGUE_CENTROID_WEIGHT,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Variance"),
-                    state.dialogue_variance_weight,
-                    pk(UP, "dialogue_variance_weight").min_f64(),
-                    pk(UP, "dialogue_variance_weight").max_f64(),
-                    "",
-                    param_idx::DIALOGUE_VARIANCE_WEIGHT,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Coherence"),
-                    state.dialogue_coherence_weight,
-                    pk(UP, "dialogue_coherence_weight").min_f64(),
-                    pk(UP, "dialogue_coherence_weight").max_f64(),
-                    "",
-                    param_idx::DIALOGUE_COHERENCE_WEIGHT,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .build(),
-        )
-        .build()
-}
-
-/// Ambient configuration row
-fn render_config_ambient(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, text.label("Ambient"), theme))
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Boost"),
-                    state.ambient_boost,
-                    pk(UP, "ambient_boost").min_f64(),
-                    pk(UP, "ambient_boost").max_f64(),
-                    "x",
-                    param_idx::AMBIENT_BOOST,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Bleed"),
-                    state.surround_direct_bleed,
-                    pk(UP, "surround_direct_bleed").min_f64(),
-                    pk(UP, "surround_direct_bleed").max_f64(),
-                    "",
-                    param_idx::SURROUND_DIRECT_BLEED,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Rear Boost"),
-                    state.rear_ambient_boost,
-                    pk(UP, "rear_ambient_boost").min_f64(),
-                    pk(UP, "rear_ambient_boost").max_f64(),
-                    "x",
-                    param_idx::REAR_AMBIENT_BOOST,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Reflection"),
-                    state.rear_late_reflection,
-                    pk(UP, "rear_late_reflection").min_f64(),
-                    pk(UP, "rear_late_reflection").max_f64(),
-                    "",
-                    param_idx::REAR_LATE_REFLECTION,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .build(),
-        )
-        .build()
-}
-
-/// Height configuration row (pure height channel params, no HR Direct)
-fn render_config_height(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, text.label("Height"), theme))
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Top Gain"),
-                    state.height_gain,
-                    pk(UP, "height_gain").min_f64(),
-                    pk(UP, "height_gain").max_f64(),
-                    "x",
-                    param_idx::HEIGHT_GAIN,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("HF Cap"),
-                    state.height_hf_cap_hz,
-                    pk(UP, "height_hf_cap_hz").min_f64(),
-                    pk(UP, "height_hf_cap_hz").max_f64(),
-                    "Hz",
-                    param_idx::HEIGHT_HF_CAP_HZ,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Trans Red"),
-                    state.height_transient_reduction,
-                    pk(UP, "height_transient_reduction").min_f64(),
-                    pk(UP, "height_transient_reduction").max_f64(),
-                    "",
-                    param_idx::HEIGHT_TRANSIENT_REDUCTION,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Dir Leak"),
-                    state.height_direct_leak,
-                    pk(UP, "height_direct_leak").min_f64(),
-                    pk(UP, "height_direct_leak").max_f64(),
-                    "",
-                    param_idx::HEIGHT_DIRECT_LEAK,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .build(),
-        )
-        .build()
-}
-
-/// HR Direct configuration row
-fn render_config_hr_direct(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(d.gap_md)
-                .child(render_section_header(d, text.label("HR Direct"), theme))
-                .child(
-                    Toggle::new(("hr-direct-toggle", plugin_idx))
-                        .checked(state.enable_hr_direct)
-                        .style(ToggleStyle::Segmented)
-                        .theme(theme.to_toggle_theme())
-                        .aria_label(text.label("HR Direct"))
-                        .on_change({
-                            let entity = entity.clone();
-                            move |new_value, _, cx| {
-                                entity.update(cx, |state, _| {
-                                    select_upmixer_param(
-                                        state,
-                                        plugin_idx,
-                                        param_idx::ENABLE_HR_DIRECT,
-                                    );
-                                    state.app.set_plugin_param(
-                                        plugin_idx,
-                                        param_idx::ENABLE_HR_DIRECT,
-                                        if new_value { 1.0 } else { 0.0 },
-                                    );
-                                });
-                            }
-                        }),
-                ),
-        )
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .child(
-                    div()
-                        .when(!state.enable_hr_direct, |d| d.opacity(0.3))
-                        .child(render_knob_enabled(
-                            entity.clone(),
-                            plugin_idx,
-                            text.label("Sharpen"),
-                            state.hr_sharpen,
-                            pk(UP, "hr_sharpen").min_f64(),
-                            pk(UP, "hr_sharpen").max_f64(),
-                            "",
-                            param_idx::HR_SHARPEN,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            state.enable_hr_direct,
-                            theme,
-                        )),
-                )
-                .build(),
-        )
-        .build()
-}
-
-/// Decorrelation configuration row
-fn render_config_decorrelation(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    let decorrelation_mode = state.decorrelation_mode;
-    let decorrelation_modes = [(0usize, "Velvet"), (1usize, "LFO")];
-
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(d.gap_md)
-                .child(render_section_header(d, text.label("Decorrelation"), theme))
-                .child(HStack::new().spacing(StackSpacing::Xs).children(
-                    decorrelation_modes.into_iter().map(|(mode, label)| {
-                        let is_active = decorrelation_mode == mode;
-                        let entity = entity.clone();
-                        render_tab_button(
-                            d,
-                            if mode == 0 {
-                                "decorr-velvet"
-                            } else {
-                                "decorr-lfo"
-                            },
-                            label,
-                            is_active,
-                            theme,
-                        )
-                        .on_click(move |_window, cx| {
-                            entity.update(cx, |state, _| {
-                                select_upmixer_param(
-                                    state,
-                                    plugin_idx,
-                                    param_idx::DECORRELATION_MODE,
-                                );
-                                state.app.set_plugin_param(
-                                    plugin_idx,
-                                    param_idx::DECORRELATION_MODE,
-                                    mode as f64,
-                                );
-                            });
-                        })
-                    }),
-                )),
-        )
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .when(decorrelation_mode == 1, |el| {
-                    el.child(render_knob(
-                        entity.clone(),
-                        plugin_idx,
-                        text.label("LFO Rate"),
-                        state.decorrelation_lfo_rate_hz,
-                        pk(UP, "decorrelation_lfo_rate_hz").min_f64(),
-                        pk(UP, "decorrelation_lfo_rate_hz").max_f64(),
-                        "Hz",
-                        param_idx::DECORRELATION_LFO_RATE_HZ,
-                        state.selected_param,
-                        state.is_editing,
-                        None,
-                        theme,
-                    ))
-                })
-                .when(decorrelation_mode == 0, |el| {
-                    el.child(render_knob(
-                        entity.clone(),
-                        plugin_idx,
-                        text.label("Duration"),
-                        state.velvet_noise_duration_ms,
-                        pk(UP, "velvet_noise_duration_ms").min_f64(),
-                        pk(UP, "velvet_noise_duration_ms").max_f64(),
-                        "ms",
-                        param_idx::VELVET_NOISE_DURATION_MS,
-                        state.selected_param,
-                        state.is_editing,
-                        None,
-                        theme,
-                    ))
-                    .child(render_knob(
-                        entity.clone(),
-                        plugin_idx,
-                        text.label("Density"),
-                        state.velvet_noise_density,
-                        pk(UP, "velvet_noise_density").min_f64(),
-                        pk(UP, "velvet_noise_density").max_f64(),
-                        "/s",
-                        param_idx::VELVET_NOISE_DENSITY,
-                        state.selected_param,
-                        state.is_editing,
-                        None,
-                        theme,
-                    ))
-                })
-                .build(),
-        )
-        .build()
-}
-
-/// Analysis & Source Extraction configuration row
-fn render_config_analysis(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(d.gap_md)
-                .child(render_section_header(d, text.label("Analysis"), theme))
-                // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(rems(0.0625)).h(rems(0.875)).bg(theme.border))
-                .child(render_section_header(
-                    d,
-                    text.label("Source Extraction"),
-                    theme,
-                ))
-                .child(
-                    Toggle::new(("multi-source-toggle", plugin_idx))
-                        .checked(state.multi_source_extraction)
-                        .style(ToggleStyle::Segmented)
-                        .theme(theme.to_toggle_theme())
-                        .aria_label(text.label("Source Extraction"))
-                        .on_change({
-                            let entity = entity.clone();
-                            move |new_value, _, cx| {
-                                entity.update(cx, |state, _| {
-                                    select_upmixer_param(
-                                        state,
-                                        plugin_idx,
-                                        param_idx::MULTI_SOURCE_EXTRACTION,
-                                    );
-                                    state.app.set_plugin_param(
-                                        plugin_idx,
-                                        param_idx::MULTI_SOURCE_EXTRACTION,
-                                        if new_value { 1.0 } else { 0.0 },
-                                    );
-                                });
-                            }
-                        }),
-                ),
-        )
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                // Analysis: Low Latency toggle
-                .child(render_diag_toggle(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Low Latency",
-                    state.low_latency,
-                    param_idx::LOW_LATENCY,
-                    theme,
-                ))
-                .child(render_diag_toggle(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Binaural",
-                    state.binaural_preview,
-                    param_idx::BINAURAL_PREVIEW,
-                    theme,
-                ))
-                // Analysis: Freq Resolution selector
-                .child({
-                    let freq_res = state.frequency_resolution;
-                    let labels = pk(UP, "frequency_resolution").choice_labels();
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(d.gap)
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .text_color(theme.text_secondary)
-                                .child(text.resolution),
-                        )
-                        .children(labels.iter().enumerate().map(|(i, label)| {
-                            let is_active = freq_res == i;
-                            let entity = entity.clone();
-                            render_tab_button(
-                                d,
-                                match i {
-                                    0 => "freq-erb",
-                                    1 => "freq-fine",
-                                    _ => "freq-bin",
-                                },
-                                label,
-                                is_active,
-                                theme,
-                            )
-                            .on_click(move |_window, cx| {
-                                entity.update(cx, |state, _| {
-                                    select_upmixer_param(
-                                        state,
-                                        plugin_idx,
-                                        param_idx::FREQUENCY_RESOLUTION,
-                                    );
-                                    state.app.set_plugin_param(
-                                        plugin_idx,
-                                        param_idx::FREQUENCY_RESOLUTION,
-                                        i as f64,
-                                    );
-                                });
-                            })
-                        }))
-                })
-                // Separator
-                // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(rems(0.0625)).h(rems(2.5)).bg(theme.border))
-                // Source Extraction threshold (dimmed when disabled)
-                .child(
-                    div()
-                        .when(!state.multi_source_extraction, |d| d.opacity(0.3))
-                        .child(render_knob_enabled(
-                            entity.clone(),
-                            plugin_idx,
-                            text.label("Threshold"),
-                            state.multi_source_threshold,
-                            pk(UP, "multi_source_threshold").min_f64(),
-                            pk(UP, "multi_source_threshold").max_f64(),
-                            "",
-                            param_idx::MULTI_SOURCE_THRESHOLD,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            state.multi_source_extraction,
-                            theme,
-                        )),
-                )
-                .build(),
-        )
-        .build()
-}
-
-/// Diagnostic configuration row — auto-discovered from PARAMS.
-///
-/// Iterates the upmixer's `PARAMS` and renders a toggle for every spec tagged
-/// `ParamCategory::Diagnostic`. Adding a `.diagnostic()` param in `params.rs`
-/// auto-populates this tab — no edits here required (only a new field/match
-/// arm in `UpmixerRenderState` + `diagnostic_param_value`).
-fn render_config_diagnostic(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    text: PluginCommonTranslations,
-    theme: &Theme,
-) -> impl IntoElement {
-    let mut row = HStack::new().spacing(StackSpacing::Md);
-    for (idx, spec) in UP.iter().enumerate() {
-        if !matches!(spec.category, ParamCategory::Diagnostic) {
-            continue;
-        }
-        let value = diagnostic_param_value(state, idx);
-        row = row.child(render_diag_toggle(
-            d,
-            entity.clone(),
-            plugin_idx,
-            spec.name,
-            value,
-            idx,
-            theme,
-        ));
-    }
-
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, text.label("Diagnostic"), theme))
-        .child(row.build())
-        .build()
-}
-
-/// Render a single diagnostic toggle with label
-fn render_diag_toggle(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    label: &str,
-    value: bool,
-    param_id: usize,
-    theme: &Theme,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(d.gap)
-        .child(
-            div()
-                .text_size(d.text_xs)
-                .text_color(theme.text_secondary)
-                .child(label.to_string()),
-        )
-        .child(
-            Toggle::new((SharedString::from(format!("diag-{param_id}")), plugin_idx))
-                .checked(value)
-                .style(ToggleStyle::Segmented)
-                .theme(theme.to_toggle_theme())
-                .aria_label(label)
-                .on_change({
-                    move |new_value, _, cx| {
-                        entity.update(cx, |state, _| {
-                            select_upmixer_param(state, plugin_idx, param_id);
-                            state.app.set_plugin_param(
-                                plugin_idx,
-                                param_id,
-                                if new_value { 1.0 } else { 0.0 },
-                            );
-                        });
-                    }
-                }),
-        )
-}
-
 /// Permanent spider graph row below the tab bar. Always visible regardless
 /// of which tab is selected, so the user can watch the spatial field while
 /// editing parameters in any tab.
 fn render_spider_graph_row(
     d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
     state: &UpmixerRenderState,
     text: PluginCommonTranslations,
     theme: &Theme,
-) -> impl IntoElement {
+) -> AnyElement {
     use crate::components::plugins::spatial_spider::{
-        SpatialSpiderSnapshot, render_spatial_spider_graph, resolve_speaker_config,
+        SpatialSpiderSnapshot, render_spatial_spider_graph, render_spatial_spider_metric_controls,
+        resolve_speaker_config,
     };
 
+    if state.spatial_spider.view_mode == super::super::spatial_spider::SpiderViewMode::Off {
+        return div().into_any_element();
+    }
     let snapshot = SpatialSpiderSnapshot {
         loudness: state.loudness_info.clone(),
         ui: state.spatial_spider.clone(),
@@ -2875,8 +1959,12 @@ fn render_spider_graph_row(
     div()
         .w_full()
         .pt(d.pad_y)
+        .child(render_spatial_spider_metric_controls(
+            d, entity, plugin_idx, &snapshot, cfg_opt, text, theme,
+        ))
         .child(render_spatial_spider_graph(
             d, &snapshot, cfg_opt, text, theme,
         ))
+        .into_any_element()
 }
 use crate::app::i18n::PluginCommonTranslations;

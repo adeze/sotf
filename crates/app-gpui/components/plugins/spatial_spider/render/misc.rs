@@ -29,18 +29,19 @@ pub(super) fn translucent(color: Rgba, alpha: f32) -> Rgba {
     Rgba { a: alpha, ..color }
 }
 
-/// Resolve the speaker layout to render against. Explicit id wins, else
-/// derive from the loudness data's channel count, else `None`.
+/// Resolve the chain-output layout, preserving an explicit layout when its width matches.
 pub fn resolve_speaker_config(
     snapshot: &SpatialSpiderSnapshot,
     speaker_config_id: Option<&str>,
 ) -> Option<&'static SpeakerConfig> {
-    speaker_config_id.and_then(get_speaker_config).or_else(|| {
-        snapshot
-            .loudness
-            .as_ref()
-            .and_then(|li| get_speaker_config_by_channels(li.true_peaks_dbtp.len()))
-    })
+    let channels = snapshot
+        .loudness
+        .as_ref()
+        .map(|data| data.channel_peaks.len());
+    speaker_config_id
+        .and_then(get_speaker_config)
+        .filter(|config| channels.is_none_or(|n| n == 0 || config.total_channels == n))
+        .or_else(|| channels.and_then(get_speaker_config_by_channels))
 }
 
 /// Attach left-drag → rotate, middle-drag → pan, scroll → zoom handlers to

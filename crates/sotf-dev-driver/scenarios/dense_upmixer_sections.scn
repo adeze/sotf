@@ -1,0 +1,68 @@
+# Wide and compact layouts share section ownership and canonical controls.
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/upmixer-sections-before.json
+scroll_into_view rack.params cfg-bass-output
+click cfg-bass-output
+wait_idle 500ms
+scroll_into_view rack.params upmixer.section.upmixer-lfe
+click upmixer.section.upmixer-lfe
+wait_idle 500ms
+click upmixer.section.upmixer-lfe
+wait_idle 500ms
+scroll_into_view rack.params plugin.upmixer.exact.2.6
+assert_within plugin.upmixer.exact.2.6 rack.params
+click plugin.upmixer.exact.2.6
+key cmd-a
+type "100"
+key enter
+assert plugins.plugin.2.param.6.value == 100 tolerance=0.001
+screenshot upmixer-bass-wide
+scroll_into_view rack.params cfg-spatial
+click cfg-spatial
+wait_idle 500ms
+scroll_into_view rack.params upmixer.section.upmixer-dialogue
+click upmixer.section.upmixer-dialogue
+wait_idle 500ms
+click upmixer.section.upmixer-dialogue
+wait_idle 500ms
+scroll_into_view rack.params plugin.upmixer.exact.2.29
+click plugin.upmixer.exact.2.29
+key cmd-a
+type "700"
+key enter
+assert plugins.plugin.2.param.29.value == 700 tolerance=0.001
+scroll_into_view rack.params plugin.upmixer.choice.2.18.1
+click plugin.upmixer.choice.2.18.1
+assert plugins.plugin.2.param.18.value == 1
+screenshot upmixer-spatial-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.upmixer.exact.2.29
+assert_within plugin.upmixer.exact.2.29 rack.params
+assert plugins.plugin.2.param.29.value == 700 tolerance=0.001
+screenshot upmixer-spatial-compact
+scroll_into_view rack.params cfg-analysis
+click cfg-analysis
+wait_idle 500ms
+scroll_into_view rack.params compact-freq-fine
+click compact-freq-fine
+assert plugins.plugin.2.param.36.value == 1
+screenshot upmixer-analysis-compact
+scroll_into_view rack.params cfg-diagnostics
+click cfg-diagnostics
+wait_idle 500ms
+screenshot upmixer-diagnostics-compact
+plugin_chain_save $SOTF_QA_DIR/upmixer-sections-edited.json
+plugin_chain_load $SOTF_QA_DIR/upmixer-sections-edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.6.value == 100 tolerance=0.001
+assert plugins.plugin.2.param.29.value == 700 tolerance=0.001
+assert plugins.plugin.2.param.36.value == 1
+assert plugins.plugin.2.param.18.value == 1
+plugin_chain_save $SOTF_QA_DIR/upmixer-sections-reloaded.json

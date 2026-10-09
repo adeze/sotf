@@ -1,39 +1,58 @@
-//! Channel Mute/Solo Plugin UI Component
+//! Compact channel mute, solo and dim controls.
 //!
-//! Layout (3-column):
-//! +------------------+--------------------------------------------+------------------+
-//! | SETUP            | CHANNELS (dynamic per channel count)       | (no output)      |
-//! |                  |                                            |                  |
-//! | [Enabled] toggle | [Ch1: M S] [Ch2: M S] [Ch3: M S] ...      |                  |
-//! +------------------+--------------------------------------------+------------------+
+//! Master enable belongs to the plugin header. Schema-backed gain and fade
+//! controls remain visible above independent per-channel M/S/D buttons.
 
-// intentional-file: channel strip with embedded level meter geometry
-
-use super::common::{render_knob, render_section_title, render_toggle};
+use super::ui_layout_renderer::{render_compact_choice_param, render_horizontal_param};
 use crate::app::AppState;
 use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
-use crate::components::themed_tooltip;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::ChannelState;
-use sotf_plugins::param_specs::{channel_mute_solo::PARAMS as CMS, find_by_key as pk};
+use sotf_plugins::param_specs::channel_mute_solo::PARAMS as CMS;
 
-/// State for rendering the Channel Mute/Solo plugin
+/// State for rendering the Channel Mute/Solo plugin.
+#[derive(Debug)]
 pub struct ChannelMuteSoloRenderState<'a> {
-    pub enabled: bool,
     pub dim_gain_db: f64,
     pub fade_ms: f64,
     pub channel_states: &'a [ChannelState],
+    pub channel_count: usize,
     pub is_editing: bool,
     pub selected_param: usize,
 }
 
-// Layout constants
+/// Render master enable beside the plugin title.
+pub(crate) fn render_header(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    settings: &PluginSettings,
+    text: PluginCommonTranslations,
+    theme: &Theme,
+) -> AnyElement {
+    let mut param = CMS[0];
+    param.name = text.label(param.name);
+    div()
+        .flex_1()
+        .min_w_0()
+        .child(render_compact_choice_param(
+            d,
+            entity,
+            plugin_idx,
+            0,
+            &param,
+            settings.param_value(0).unwrap_or(param.default_f64()),
+            theme,
+        ))
+        .into_any_element()
+}
 
-/// Render the Channel Mute/Solo plugin
+/// Render primary settings and independent channel actions.
 pub fn render_mute_solo_plugin(
     d: &Ds,
     entity: Entity<AppState>,
@@ -41,244 +60,128 @@ pub fn render_mute_solo_plugin(
     state: ChannelMuteSoloRenderState,
     text: PluginCommonTranslations,
     theme: &Theme,
+    scroll_handle: Option<ScrollHandle>,
 ) -> impl IntoElement {
-    let channel_count = state.channel_states.len();
-
-    let channel_names = (0..channel_count)
-        .map(|index| sotf_audio_player::get_channel_label(index, channel_count))
-        .collect::<Vec<_>>();
-
-    // === LEFT COLUMN: Setup ===
-    let setup_col = div()
-        .flex()
-        .flex_col()
-        .flex_shrink_0()
-        .gap(d.gap_md)
-        .child(render_section_title(d, text.label("SETUP"), theme))
-        .child(render_toggle(
-            entity.clone(),
-            plugin_idx,
-            text.label("Enabled"),
-            state.enabled,
-            0,
-            state.selected_param,
-            state.is_editing,
-            theme,
-        ))
-        .child(render_knob(
-            entity.clone(),
-            plugin_idx,
-            text.label("Dim Gain"),
-            state.dim_gain_db,
-            pk(CMS, "dim_gain_db").min_f64(),
-            pk(CMS, "dim_gain_db").max_f64(),
-            "dB",
-            1,
-            state.selected_param,
-            state.is_editing,
-            None,
-            theme,
-        ))
-        .child(render_knob(
-            entity.clone(),
-            plugin_idx,
-            text.label("Fade Time"),
-            state.fade_ms,
-            pk(CMS, "fade_ms").min_f64(),
-            pk(CMS, "fade_ms").max_f64(),
-            "ms",
-            2,
-            state.selected_param,
-            state.is_editing,
-            None,
-            theme,
-        ))
-        .child(
+    let mut primary = div().flex().flex_wrap().gap(d.grid).w_full().min_w_0();
+    for (index, value) in [(1, state.dim_gain_db), (2, state.fade_ms)] {
+        let mut param = CMS[index];
+        param.name = text.label(param.name);
+        primary = primary.child(
             div()
-                .text_size(d.text_xs)
-                .text_color(theme.text_muted)
-                .child(format!("{} channels", channel_count)),
+                .flex_1()
+                .min_w(rems(23.0))
+                .child(render_horizontal_param(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    index,
+                    &param,
+                    value,
+                    state.is_editing,
+                    state.selected_param,
+                    true,
+                    theme,
+                )),
         );
-
-    // === CENTER COLUMN: Channel strips ===
-    let center_col = div()
+    }
+    let channels = div()
+        .flex()
+        .flex_wrap()
+        .gap(d.grid)
+        .children((0..state.channel_count).map(|index| {
+            let channel = state.channel_states.get(index).cloned().unwrap_or_default();
+            let name = sotf_audio_player::get_channel_label(index, state.channel_count);
+            div()
+                .flex()
+                .items_center()
+                .gap(d.gap)
+                .child(Text::label(name.clone()))
+                .child(render_channel_button(
+                    entity.clone(),
+                    plugin_idx,
+                    index,
+                    &name,
+                    MsdAction::Mute,
+                    channel.muted,
+                    theme,
+                    scroll_handle.clone(),
+                ))
+                .child(render_channel_button(
+                    entity.clone(),
+                    plugin_idx,
+                    index,
+                    &name,
+                    MsdAction::Solo,
+                    channel.soloed,
+                    theme,
+                    scroll_handle.clone(),
+                ))
+                .child(render_channel_button(
+                    entity.clone(),
+                    plugin_idx,
+                    index,
+                    &name,
+                    MsdAction::Dim,
+                    channel.dimmed,
+                    theme,
+                    scroll_handle.clone(),
+                ))
+        }));
+    div()
+        .w_full()
+        .min_w_0()
         .flex()
         .flex_col()
-        .flex_1()
-        .gap(d.gap_md)
-        .child(render_section_title(d, text.label("CHANNELS"), theme))
-        .child(div().flex().gap(d.gap_md).flex_wrap().children(
-            state.channel_states.iter().enumerate().map(|(i, s)| {
-                let name = channel_names.get(i).map(String::as_str).unwrap_or("Ch");
-                let is_muted = s.muted;
-                let is_soloed = s.soloed;
-                let is_dimmed = s.dimmed;
-                let mute_hint = format!("Mute {name}");
-                let solo_hint = format!("Solo {name}");
-                let dim_hint = format!("Dim {name}");
-                let mute_theme = theme.clone();
-                let solo_theme = theme.clone();
-                let dim_theme = theme.clone();
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap(d.gap)
-                    .p(d.pad_y)
-                    .rounded(d.r_lg)
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(if is_soloed {
-                        theme.warning
-                    } else if is_muted {
-                        theme.error
-                    } else {
-                        theme.border
-                    })
-                    // Channel label
-                    .child(
-                        div()
-                            .text_size(d.text_xs)
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.text_primary)
-                            .child(name.to_string()),
-                    )
-                    // Mute button
-                    .child(
-                        div()
-                            .id(ElementId::Name(
-                                format!("mute-channel-{plugin_idx}-{i}").into(),
-                            ))
-                            .w(rems(1.75))
-                            .h(rems(1.5))
-                            .rounded(d.r_sm)
-                            .bg(if is_muted {
-                                theme.error
-                            } else {
-                                theme.background
-                            })
-                            .border_1()
-                            .border_color(if is_muted { theme.error } else { theme.border })
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(d.text_xs)
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(if is_muted {
-                                theme.text_on_accent
-                            } else {
-                                theme.text_muted
-                            })
-                            .cursor_pointer()
-                            .hover(|s| s.opacity(0.85))
-                            .tooltip(move |_window, cx| {
-                                themed_tooltip(mute_hint.clone(), &mute_theme, cx)
-                            })
-                            .on_mouse_down(MouseButton::Left, {
-                                let entity = entity.clone();
-                                move |_, _, cx| {
-                                    toggle_msd_state(&entity, plugin_idx, i, MsdAction::Mute, cx);
-                                }
-                            })
-                            .child("M"),
-                    )
-                    // Solo button
-                    .child(
-                        div()
-                            .id(ElementId::Name(
-                                format!("solo-channel-{plugin_idx}-{i}").into(),
-                            ))
-                            .w(rems(1.75))
-                            .h(rems(1.5))
-                            .rounded(d.r_sm)
-                            .bg(if is_soloed {
-                                theme.warning
-                            } else {
-                                theme.background
-                            })
-                            .border_1()
-                            .border_color(if is_soloed {
-                                theme.warning
-                            } else {
-                                theme.border
-                            })
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(d.text_xs)
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(if is_soloed {
-                                theme.text_on_accent
-                            } else {
-                                theme.text_muted
-                            })
-                            .cursor_pointer()
-                            .hover(|s| s.opacity(0.85))
-                            .tooltip(move |_window, cx| {
-                                themed_tooltip(solo_hint.clone(), &solo_theme, cx)
-                            })
-                            .on_mouse_down(MouseButton::Left, {
-                                let entity = entity.clone();
-                                move |_, _, cx| {
-                                    toggle_msd_state(&entity, plugin_idx, i, MsdAction::Solo, cx);
-                                }
-                            })
-                            .child("S"),
-                    )
-                    // Dim button
-                    .child(
-                        div()
-                            .id(ElementId::Name(
-                                format!("dim-channel-{plugin_idx}-{i}").into(),
-                            ))
-                            .w(rems(1.75))
-                            .h(rems(1.5))
-                            .rounded(d.r_sm)
-                            .bg(if is_dimmed {
-                                theme.accent
-                            } else {
-                                theme.background
-                            })
-                            .border_1()
-                            .border_color(if is_dimmed {
-                                theme.accent
-                            } else {
-                                theme.border
-                            })
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(d.text_xs)
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(if is_dimmed {
-                                theme.text_on_accent
-                            } else {
-                                theme.text_muted
-                            })
-                            .cursor_pointer()
-                            .hover(|s| s.opacity(0.85))
-                            .tooltip(move |_window, cx| {
-                                themed_tooltip(dim_hint.clone(), &dim_theme, cx)
-                            })
-                            .on_mouse_down(MouseButton::Left, {
-                                let entity = entity.clone();
-                                move |_, _, cx| {
-                                    toggle_msd_state(&entity, plugin_idx, i, MsdAction::Dim, cx);
-                                }
-                            })
-                            .child("D"),
-                    )
-            }),
-        ));
+        .gap(d.grid)
+        .child(primary)
+        .child(Text::caption(format!(
+            "{} channels · M: Mute · S: Solo · D: Dim",
+            state.channel_count
+        )))
+        .child(channels)
+}
 
-    // === Main layout, centered ===
-    div().w_full().flex().justify_center().p(d.pad_x).child(
-        div()
-            .flex()
-            .gap(d.section)
-            .child(setup_col)
-            .child(center_col),
+fn render_channel_button(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    channel_idx: usize,
+    channel_name: &str,
+    action: MsdAction,
+    active: bool,
+    theme: &Theme,
+    scroll_handle: Option<ScrollHandle>,
+) -> impl IntoElement {
+    let (id, label, action_name) = match action {
+        MsdAction::Mute => ("mute", "M", "Mute"),
+        MsdAction::Solo => ("solo", "S", "Solo"),
+        MsdAction::Dim => ("dim", "D", "Dim"),
+    };
+    let button = Button::new(
+        SharedString::from(format!("{id}-channel-{plugin_idx}-{channel_idx}")),
+        label,
     )
+    .aria_label(format!("{action_name} {channel_name}"))
+    .variant(if active {
+        ButtonVariant::Primary
+    } else {
+        ButtonVariant::Secondary
+    })
+    .size(ButtonSize::Xs)
+    .theme(theme.to_button_theme())
+    .on_click_event(move |_, _, cx| {
+        toggle_msd_state(&entity, plugin_idx, channel_idx, action, cx);
+    });
+    let button = if let Some(handle) = scroll_handle {
+        button.scroll_anchor(ScrollAnchor::for_handle(handle))
+    } else {
+        button
+    };
+    #[cfg(feature = "dev-api")]
+    let button = {
+        use crate::app::dev_api::DevTrackExt;
+        button.dev_track(format!("{id}-channel-{plugin_idx}-{channel_idx}"))
+    };
+    button
 }
 
 #[derive(Clone, Copy)]

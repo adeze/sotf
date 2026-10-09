@@ -46,6 +46,22 @@ pub(super) fn adjust_plugin_param(
     channel_count_changed: &mut bool,
 ) -> bool {
     match settings {
+        settings @ PluginSettings::Crossover { .. }
+            if param_idx >= sotf_plugins::param_specs::crossover::CHANNEL_PARAM_START =>
+        {
+            let Some(spec) = super::crossover::spec(settings, param_idx) else {
+                return false;
+            };
+            let Some(current) = super::crossover::value(settings, param_idx) else {
+                return false;
+            };
+            super::set::set_plugin_param_value(
+                settings,
+                param_idx,
+                spec.adjust_f64(current, delta) * spec.display_scale,
+                channel_count_changed,
+            )
+        }
         // === EQ: dynamic filter array, param indices map to band/field ===
         //
         // Controller index space: idx 0 = band-0-frequency, idx 1 = band-0-q,
@@ -68,46 +84,53 @@ pub(super) fn adjust_plugin_param(
 
             adjust_eq_band_field_for_plugin(filter_idx, field_idx, filters, delta, true)
         }
-        PluginSettings::LinearPhaseEq { filters, .. } => {
-            if filters.is_empty() {
+        settings @ PluginSettings::LinearPhaseEq { .. } => {
+            let Some(current) = super::linear_phase::value(settings, param_idx) else {
                 return false;
-            }
-
-            let total_params = filters.len() * 4;
-            if param_idx >= total_params {
+            };
+            let Some(spec) = super::linear_phase::spec(param_idx) else {
                 return false;
-            }
-
-            let filter_idx = param_idx / 4;
-            let field_idx = param_idx % 4;
-            adjust_eq_band_field_for_plugin(filter_idx, field_idx, filters, delta, false)
+            };
+            super::set::set_plugin_param_value(
+                settings,
+                param_idx,
+                spec.adjust_f64(current, delta) * spec.display_scale,
+                channel_count_changed,
+            )
         }
         // === SpectrumAnalyzer: no_params_struct — not in the macro, needs manual handling ===
+        settings @ PluginSettings::SpectrumAnalyzer { .. } if param_idx < 4 => {
+            if !delta.is_finite() {
+                return false;
+            }
+            let current = match settings {
+                PluginSettings::SpectrumAnalyzer {
+                    num_bins,
+                    min_freq,
+                    max_freq,
+                    smoothing,
+                    ..
+                } => match param_idx {
+                    0 => *num_bins as f64,
+                    1 => f64::from(*min_freq),
+                    2 => f64::from(*max_freq),
+                    _ => f64::from(*smoothing),
+                },
+                _ => unreachable!(),
+            };
+            let spec = &sotf_plugins::param_specs::spectrum::PARAMS[param_idx];
+            super::set::set_plugin_param_value(
+                settings,
+                param_idx,
+                spec.adjust_f64(current, delta) * spec.display_scale,
+                channel_count_changed,
+            )
+        }
         PluginSettings::SpectrumAnalyzer {
-            num_bins,
-            min_freq,
-            max_freq,
-            smoothing,
             tilt_correction,
             tilt_reference,
             ..
         } => match param_idx {
-            0 => {
-                *num_bins = (*num_bins as i64 + delta as i64).clamp(10, 100) as usize;
-                true
-            }
-            1 => {
-                *min_freq = (*min_freq + delta as f32).clamp(10.0, 100.0);
-                true
-            }
-            2 => {
-                *max_freq = (*max_freq + delta as f32 * 100.0).clamp(1000.0, 24000.0);
-                true
-            }
-            3 => {
-                *smoothing = (*smoothing + delta as f32 * 0.01).clamp(0.0, 1.0);
-                true
-            }
             4 => {
                 use sotf_plugins::SpectralTiltCorrection as STC;
                 let modes = [
@@ -154,6 +177,9 @@ pub(super) fn adjust_plugin_param(
             let local_idx = (param_idx - 100) % 10;
             if let Some(band) = bands.get_mut(band_idx) {
                 use sotf_plugins::param_specs::{dynamic_eq::BAND_PARAMS as BT, find_by_key as p};
+                let Some(spec) = super::misc::dynamic_eq_band_spec(param_idx) else {
+                    return false;
+                };
                 match local_idx {
                     0 => {
                         let s = p(BT, "frequency");
@@ -189,6 +215,30 @@ pub(super) fn adjust_plugin_param(
                         band.solo = !band.solo;
                         true
                     }
+                    7..=9 => {
+                        let current = match local_idx {
+                            7 => f64::from(band.shape.choice_index()),
+                            8 => f64::from(band.shelf_slope),
+                            _ => f64::from(band.placement.choice_index()),
+                        };
+                        let next = spec.adjust_f64(current, delta);
+                        match local_idx {
+                            7 => {
+                                band.shape =
+                                    sotf_plugins::plugin_dynamic_eq::DynEqShape::from_choice_index(
+                                        next as i32,
+                                    )
+                                    .unwrap_or_default()
+                            }
+                            8 => band.shelf_slope = next as f32,
+                            _ => band.placement =
+                                sotf_plugins::plugin_dynamic_eq::DynEqPlacement::from_choice_index(
+                                    next as i32,
+                                )
+                                .unwrap_or_default(),
+                        }
+                        true
+                    }
                     _ => false,
                 }
             } else {
@@ -203,6 +253,8 @@ pub(super) fn adjust_plugin_param(
             attack_ms,
             release_ms,
             knee_db,
+            range_db,
+            hold_ms,
             bands,
             ..
         } if param_idx >= 100 => {
@@ -229,7 +281,7 @@ pub(super) fn adjust_plugin_param(
             let band_idx = (param_idx / 100) - 1;
             let local_idx = param_idx % 100;
             if band_idx >= *num_bands
-                || !matches!(local_idx, 6..=10 | 13..=17)
+                || !matches!(local_idx, 6..=10 | 13..=19)
                 || !delta.is_finite()
             {
                 return false;
@@ -264,6 +316,8 @@ pub(super) fn adjust_plugin_param(
                         band.active = !band.active;
                         true
                     }
+                    18 => band_adj!(band.range_db, range_db, "range_db", delta as f32 * 0.5),
+                    19 => band_adj!(band.hold_ms, hold_ms, "hold_ms", delta as f32),
                     _ => false,
                 }
             } else {
@@ -388,6 +442,28 @@ pub(super) fn adjust_plugin_param(
             *mb_mid_feed_db = pp.mb_mid_feed_db as f64;
             *mb_high_feed_db = pp.mb_high_feed_db as f64;
             true
+        }
+        // Keep inherited Dynamic EQ band values aligned with the adjusted
+        // global value, just as the exact setter does.
+        settings @ PluginSettings::DynamicEq { .. } if matches!(param_idx, 1 | 2) => {
+            let old = settings.param_value(param_idx).unwrap_or_default();
+            let adjusted = settings.adjust_param_value(param_idx, delta);
+            if adjusted {
+                let next = settings.param_value(param_idx).unwrap_or(old);
+                if let PluginSettings::DynamicEq { bands, .. } = settings {
+                    for band in bands {
+                        let inherited = if param_idx == 1 {
+                            &mut band.band_threshold
+                        } else {
+                            &mut band.band_ratio
+                        };
+                        if (f64::from(*inherited) - old).abs() <= 0.01 {
+                            *inherited = next as f32;
+                        }
+                    }
+                }
+            }
+            adjusted
         }
         // === Generic path: all other plugins use adjust_param_value() ===
         other => {

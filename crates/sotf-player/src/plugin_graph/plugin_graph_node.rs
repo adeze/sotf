@@ -67,6 +67,7 @@ impl PluginGraphNode {
                 state.descriptor.audio_inputs,
                 state.descriptor.audio_outputs,
             ),
+            settings if super::misc::uses_external_key(settings) => (4, 2),
             _ => (2, 2), // Most plugins are stereo in/out
         }
     }

@@ -27,10 +27,24 @@ pub fn resolve(path: &str, window: AnyWindowHandle, cx: &mut App) -> Result<Valu
             if path.starts_with("performance.") {
                 return performance::resolve(path);
             }
+            if path == "settings.effective_design_language" {
+                return Ok(json!(
+                    cx.global::<gpui_design::DesignSystemState>()
+                        .system
+                        .language
+                        .as_str()
+                ));
+            }
             let entity = any_view
                 .downcast::<PlayerView>()
                 .map_err(|_| anyhow!("root view is not PlayerView"))?;
             let view = entity.read(cx);
+            if path == "settings.interface_model_open" {
+                return Ok(json!(view.interface_model_menu().0));
+            }
+            if path == "settings.interface_model_highlight" {
+                return Ok(json!(view.interface_model_menu().1));
+            }
             let state: &AppState = view.state.read(cx);
             read_path(path, state)
         })
@@ -56,8 +70,205 @@ fn maximum_shortterm_lufs_query(loudness: Option<&sotf_audio_player::LoudnessDat
 }
 
 fn read_path(path: &str, state: &AppState) -> Result<Value> {
+    if let Some(field) = path.strip_prefix("plugins.parameter_receipt.") {
+        const FIELDS: &[&str] = &[
+            "status",
+            "request_id",
+            "latest_request_id",
+            "instance_id",
+            "param_index",
+            "engine_index",
+            "engine_generation",
+            "accepted_generation",
+            "transport_epoch",
+            "key",
+            "requested_value",
+            "error",
+            "reason",
+        ];
+        if FIELDS.contains(&field) {
+            return Ok(read_path("plugins.parameter_receipt", state)?
+                .get(field)
+                .cloned()
+                .unwrap_or(Value::Null));
+        }
+    }
+    if let Some(field) = path.strip_prefix("plugins.binaural.")
+        && ["initialized", "loaded", "ir_length", "sample_rate"].contains(&field)
+    {
+        return Ok(read_path("plugins.binaural", state)?
+            .get(field)
+            .cloned()
+            .unwrap_or(Value::Null));
+    }
+    if let Some(field) = path.strip_prefix("plugins.loudness.")
+        && [
+            "instance_id",
+            "request_id",
+            "running",
+            "momentary_valid",
+            "shortterm_valid",
+            "integrated_valid",
+            "momentary_lufs",
+            "shortterm_lufs",
+            "integrated_lufs",
+            "maximum_true_peak_dbtp",
+        ]
+        .contains(&field)
+    {
+        return Ok(read_path("plugins.loudness", state)?
+            .get(field)
+            .cloned()
+            .unwrap_or(Value::Null));
+    }
+    if let Some(field) = path.strip_prefix("plugins.spectrum.")
+        && ["bins", "minimum_frequency", "maximum_frequency", "peak_db"].contains(&field)
+    {
+        return Ok(read_path("plugins.spectrum", state)?
+            .get(field)
+            .cloned()
+            .unwrap_or(Value::Null));
+    }
+    if let Some(field) = path.strip_prefix("plugins.gain_reduction.")
+        && [
+            "kind",
+            "channels",
+            "maximum_db",
+            "is_limiting",
+            "input_peak_db",
+            "output_peak_db",
+        ]
+        .contains(&field)
+    {
+        return Ok(read_path("plugins.gain_reduction", state)?
+            .get(field)
+            .cloned()
+            .unwrap_or(Value::Null));
+    }
+    if let Some(field) = path.strip_prefix("plugins.profile.")
+        && [
+            "kind",
+            "learning",
+            "progress",
+            "present",
+            "using",
+            "requested",
+        ]
+        .contains(&field)
+    {
+        return Ok(read_path("plugins.profile", state)?
+            .get(field)
+            .cloned()
+            .unwrap_or(Value::Null));
+    }
     let app = &state.app;
+    if let Some(field) = path.strip_prefix("plugins.external_editor.") {
+        return Ok(read_path("plugins.external_editor", state)?
+            .pointer(&format!("/{}", field.replace('.', "/")))
+            .cloned()
+            .unwrap_or(Value::Null));
+    }
     Ok(match path {
+        "plugins.binaural" => app.playback.rack_plugin_data.as_ref()
+            .and_then(|data| data.downcast_ref::<sotf_plugins::BinauralDecoderData>())
+            .map(|data| json!({
+                "initialized": data.initialized,
+                "loaded": data.loaded_sofa_path.is_some(),
+                "ir_length": data.ir_length,
+                "sample_rate": data.sample_rate,
+            })).unwrap_or(Value::Null),
+        "plugins.loudness" => app.playback.rack_plugin_data.as_ref()
+            .and_then(|data| data.downcast_ref::<sotf_plugins::LoudnessData>())
+            .map(|data| json!({
+                "instance_id": data.integrated_control_instance_id,
+                "request_id": data.integrated_control_request_id,
+                "running": data.integrated_measurement_running,
+                "momentary_valid": data.momentary_valid,
+                "shortterm_valid": data.shortterm_valid,
+                "integrated_valid": data.integrated_valid,
+                "momentary_lufs": data.momentary_lufs,
+                "shortterm_lufs": data.shortterm_lufs,
+                "integrated_lufs": data.integrated_lufs,
+                "maximum_true_peak_dbtp": data.maximum_true_peak_dbtp,
+            })).unwrap_or(Value::Null),
+        "plugins.spectrum" => app.playback.rack_plugin_data.as_ref()
+            .and_then(|data| data.downcast_ref::<sotf_plugins::SpectrumData>())
+            .map(|data| json!({
+                "bins": data.magnitudes.len(),
+                "minimum_frequency": data.frequencies.first(),
+                "maximum_frequency": data.frequencies.last(),
+                "peak_db": data.peak_magnitude,
+            })).unwrap_or(Value::Null),
+        "plugins.gain_reduction" => app.playback.rack_plugin_data.as_ref().and_then(|data| {
+            let (kind, values) = if let Some(data) = data.downcast_ref::<sotf_plugins::DeEsserData>() {
+                ("DeEsser", data.gain_reduction_db.as_slice())
+            } else if let Some(data) = data.downcast_ref::<sotf_plugins::GateData>() {
+                ("Gate", data.attenuation_db.as_slice())
+            } else if let Some(data) = data.downcast_ref::<sotf_plugins::CompressorData>() {
+                ("Compressor", data.gain_reduction_db.as_slice())
+            } else if let Some(data) = data.downcast_ref::<sotf_plugins::MultibandExpanderData>() {
+                ("Expander", data.attenuation_db.as_slice())
+            } else if let Some(data) = data.downcast_ref::<sotf_plugins::LimiterData>() {
+                // Limiter publishes one aggregate reduction, not per-channel values.
+                return Some(json!({
+                    "kind": "Limiter",
+                    "channels": Value::Null,
+                    "maximum_db": data.gain_reduction_db.is_finite().then_some(data.gain_reduction_db),
+                    "is_limiting": data.is_limiting,
+                    "input_peak_db": data.peak_db.is_finite().then_some(data.peak_db),
+                    "output_peak_db": data.output_peak_db.is_finite().then_some(data.output_peak_db),
+                }));
+            } else {
+                return None;
+            };
+            Some(json!({
+                "kind": kind,
+                "channels": values.len(),
+                "maximum_db": values.iter().copied().filter(|value| value.is_finite()).reduce(f32::max),
+            }))
+        }).unwrap_or(Value::Null),
+        "plugins.profile" => app.playback.rack_plugin_data.as_ref().and_then(|data| {
+            if let Some(data) = data.downcast_ref::<sotf_plugins::DenoiserData>() {
+                Some(json!({
+                    "kind": "Denoiser",
+                    "learning": data.is_learning_noise,
+                    "progress": data.learning_progress,
+                    "present": data.has_captured_profile,
+                    "using": data.using_captured_profile,
+                    "requested": data.requested_use_profile,
+                }))
+            } else if let Some(data) = data.downcast_ref::<sotf_plugins::plugin_hiss_reducer::snapshot::ProfileSnapshot>() {
+                let (learning, progress) = data.capture_state();
+                data.try_status().ok().map(|status| json!({
+                    "kind": "HissReducer",
+                    "learning": learning,
+                    "progress": progress,
+                    "present": status.present,
+                    "using": status.present && status.use_flag,
+                    "requested": status.use_flag,
+                }))
+            } else {
+                None
+            }
+        }).unwrap_or(Value::Null),
+        "plugins.external_editor" => app
+            .playback
+            .rack_plugin_data
+            .as_ref()
+            .and_then(|data| data.downcast_ref::<sotf_plugins::ExternalPluginEditorData>())
+            .map(|data| {
+                json!({
+                    "instance_id": data.plugin_instance_id,
+                    "plugin_id": data.descriptor.id,
+                    "state_captured": data.native_state.is_ok(),
+                    "parameters": data.parameters.iter().map(|parameter| json!({
+                        "id": parameter.id.as_str(),
+                        "name": parameter.name,
+                        "value": data.parameter_values.get(&parameter.id),
+                    })).collect::<Vec<_>>(),
+                })
+            })
+            .unwrap_or(Value::Null),
         "navigation.compact_open" => json!(app.ui_state.show_studio_menu),
         "navigation.compact_highlight" => json!(app.ui_state.navigation.compact_highlight),
         "navigation.studio_picker_open" => json!(app.ui_state.navigation.studio_picker_open),
@@ -84,6 +295,42 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .map(|item| item.current_track_index)
         ),
         "meters.has_data" => json!(app.playback.loudness_info.is_some()),
+        "meters.output.integrated_instance_id" => json!(
+            app.playback
+                .loudness_info
+                .as_ref()
+                .map(|data| data.integrated_control_instance_id)
+        ),
+        "meters.output.integrated_request_id" => json!(
+            app.playback
+                .loudness_info
+                .as_ref()
+                .map(|data| data.integrated_control_request_id)
+        ),
+        "meters.output.integrated_running" => json!(
+            app.playback
+                .loudness_info
+                .as_ref()
+                .map(|data| data.integrated_measurement_running)
+        ),
+        "meters.input.integrated_instance_id" => json!(
+            app.playback
+                .input_loudness_info
+                .as_ref()
+                .map(|data| data.integrated_control_instance_id)
+        ),
+        "meters.input.integrated_request_id" => json!(
+            app.playback
+                .input_loudness_info
+                .as_ref()
+                .map(|data| data.integrated_control_request_id)
+        ),
+        "meters.input.integrated_running" => json!(
+            app.playback
+                .input_loudness_info
+                .as_ref()
+                .map(|data| data.integrated_measurement_running)
+        ),
         "meters.integrated_control_requests" => json!(
             app.plugin_state
                 .plugin_ui_state
@@ -429,6 +676,8 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .unwrap_or(false)
         ),
         "screen.focused" => json!(format!("{:?}", app.ui_state.current_screen)),
+        "navigation.collapsed" => json!(app.ui_state.primary_nav_collapsed),
+        "navigation.output_menu_open" => json!(app.audio_device_state.output_ui.open),
         "input_mode" => json!(format!("{:?}", app.ui_state.input_mode)),
         "onboarding.completed" => json!(app.tutorial.completed),
         "queue.length" => json!(app.queue_state.len()),
@@ -1372,7 +1621,128 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                     .update_state
                     .pending_plugin_update
                     .is_some()
+                || !app.plugin_state.update_state.pending_actions.is_empty()
         ),
+        "plugins.rack_editor_height" => json!(app.plugin_state.plugin_ui_state.rack_editor_height),
+        "plugins.profile_action_status" => state.player.profile_action_diagnostics(),
+        "plugins.profile_action.kind" => state.player.profile_action_diagnostics()["kind"].clone(),
+        "plugins.profile_action.capturing" => {
+            state.player.profile_action_diagnostics()["capturing"].clone()
+        }
+        "plugins.profile_action.progress" => {
+            state.player.profile_action_diagnostics()["progress"].clone()
+        }
+        "plugins.profile_action.profile_present" => {
+            state.player.profile_action_diagnostics()["profile_present"].clone()
+        }
+        "plugins.profile_action.using_profile" => {
+            state.player.profile_action_diagnostics()["using_profile"].clone()
+        }
+        "plugins.profile_action.requested_use_profile" => {
+            state.player.profile_action_diagnostics()["requested_use_profile"].clone()
+        }
+        "plugins.upmixer_output_select" => json!({
+            "open": app.plugin_ui.upmixer_config_open,
+            "highlighted_index": app.plugin_ui.upmixer_config_highlighted_index,
+        }),
+        "plugins.acknowledged_processing_graph" => {
+            json!(app.plugin_state.update_state.acknowledged_processing_graph)
+        }
+        "plugins.engine_matches_current_graph" => {
+            // Synchronization aid for QA gestures. Deferred/offline ACKs can
+            // also settle this snapshot; a live-processing receipt is still
+            // required to establish that an edit reached the engine.
+            let update = &app.plugin_state.update_state;
+            json!(
+                app.correction_processing_snapshot()
+                    .is_some_and(|expected| {
+                        update.acknowledged_processing_graph.as_ref() == Some(&expected)
+                            && update.pending_ack.is_none()
+                            && update.pending_plugin_update.is_none()
+                    })
+            )
+        }
+        "plugins.parameter_receipt" => {
+            let update = &app.plugin_state.update_state;
+            if let Some(last) = &update.last_parameter_receipt {
+                use crate::app::state::plugin::DevParameterOutcome;
+                let completion = match &last.outcome {
+                    DevParameterOutcome::Parameter(receipt)
+                    | DevParameterOutcome::Action(receipt)
+                    | DevParameterOutcome::Structural(receipt) => receipt.poll(),
+                    DevParameterOutcome::Deferred(_) | DevParameterOutcome::SubmissionError(_) => {
+                        None
+                    }
+                };
+                let stale = last.request_id != update.parameter_request_id
+                    || last.accepted_generation.unwrap_or(last.engine_generation)
+                        != update.engine_generation
+                    || last.transport_epoch != state.player.qa_transport_epoch()
+                    || update
+                        .pending_ack
+                        .as_ref()
+                        .is_some_and(|pending| match &last.outcome {
+                            DevParameterOutcome::Structural(receipt) => {
+                                !receipt.is_same_command(&pending.receipt)
+                            }
+                            _ => true,
+                        })
+                    || update.pending_plugin_update.is_some();
+                let (status, error) = if stale {
+                    ("stale", None)
+                } else {
+                    match (&last.outcome, completion) {
+                        (DevParameterOutcome::Deferred(reason), _) => {
+                            ("deferred", Some((*reason).to_owned()))
+                        }
+                        (DevParameterOutcome::SubmissionError(reason), _) => {
+                            ("error", Some(reason.clone()))
+                        }
+                        (_, None) => ("pending", None),
+                        (DevParameterOutcome::Action(_), Some(Err(failure))) => {
+                            ("error", Some(failure.error))
+                        }
+                        (_, Some(Err(failure))) if failure.error == "No engine running" => {
+                            ("deferred", Some(failure.error))
+                        }
+                        (DevParameterOutcome::Structural(_), Some(Ok(()))) => {
+                            ("structural_ack", None)
+                        }
+                        (DevParameterOutcome::Parameter(_), Some(Ok(()))) => ("applied", None),
+                        (DevParameterOutcome::Action(_), Some(Ok(()))) => ("applied", None),
+                        (_, Some(Err(failure))) => ("error", Some(failure.error)),
+                    }
+                };
+                json!({
+                    "request_id": last.request_id,
+                    "latest_request_id": update.parameter_request_id,
+                    "instance_id": last.instance_id,
+                    "engine_generation": last.engine_generation,
+                    "accepted_generation": last.accepted_generation,
+                    "transport_epoch": last.transport_epoch,
+                    "engine_index": last.engine_index,
+                    "param_index": last.param_index,
+                    "key": last.key,
+                    "requested_value": last.requested_value,
+                    "status": status,
+                    "error": error,
+                })
+            } else if update.parameter_request_id > 0 {
+                json!({
+                    "request_id": update.parameter_request_id,
+                    "instance_id": update.last_edit_target.map(|target| target.0),
+                    "param_index": update.last_edit_target.map(|target| target.1),
+                    "status": match update.last_edit_rejection {
+                        Some("routing draft has not been applied") => "draft",
+                        Some(_) => "no_change",
+                        None => "queued",
+                    },
+                    "reason": update.last_edit_rejection,
+                })
+            } else {
+                json!(null)
+            }
+        }
         "routing.applying" => json!(app.plugin_state.graph_state.applying_original.is_some()),
         "routing.header_details_open" => json!(app.plugin_state.graph_state.header_details_open),
         "routing.dirty" => json!(app.plugin_state.routing_draft_is_dirty()),
@@ -1410,6 +1780,19 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .collect::<Vec<_>>()
                 .join(";")
         ),
+        "plugins.catalog" => {
+            let mut plugin_types = sotf_audio_player::PluginType::all();
+            if !plugin_types.contains(&sotf_audio_player::PluginType::FletcherMunson) {
+                plugin_types.push(sotf_audio_player::PluginType::FletcherMunson);
+            }
+            json!(
+                plugin_types
+                    .into_iter()
+                    .filter(|plugin_type| *plugin_type != sotf_audio_player::PluginType::External)
+                    .map(|plugin_type| format!("{plugin_type:?}"))
+                    .collect::<Vec<_>>()
+            )
+        }
         "plugins.user_count" => json!(
             app.plugin_state
                 .graph
@@ -1418,6 +1801,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .filter(|node| !node.plugin.permanent)
                 .count()
         ),
+        "plugins.selected_index" => json!(app.plugin_state.selected_plugin_index),
         "plugins.first_user_type" => json!(
             app.plugin_state
                 .graph

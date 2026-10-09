@@ -1,0 +1,40 @@
+# Menu coordinates measured from native run-1791563507 at 1600x1000.
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+assert_text plugin.shell.2.spatial == "2D"
+assert_selected upmixer.metric.spl == true
+assert_selected upmixer.metric.correlation == false
+click plugin.shell.2.spatial
+wait_idle 300ms
+click_at 686 410
+wait_idle 500ms
+assert_text plugin.shell.2.spatial == "Off"
+assert_absent upmixer.metric.mode
+click plugin.shell.2.spatial
+wait_idle 300ms
+click_at 686 444
+wait_idle 500ms
+assert_text plugin.shell.2.spatial == "2D"
+assert_visible upmixer.metric.mode
+click upmixer.metric.correlation
+wait_idle 500ms
+assert_selected upmixer.metric.correlation == true
+assert_selected upmixer.metric.spl == false
+screenshot upmixer-correlation-wide
+click upmixer.metric.spl
+wait_idle 500ms
+assert_selected upmixer.metric.spl == true
+assert_selected upmixer.metric.correlation == false
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.shell.2.spatial rack.params
+scroll_into_view rack.params upmixer.metric.mode
+assert_within upmixer.metric.spl rack.params
+assert_within upmixer.metric.correlation rack.params
+screenshot upmixer-metric-narrow
+plugin_chain_save $SOTF_QA_DIR/after.json

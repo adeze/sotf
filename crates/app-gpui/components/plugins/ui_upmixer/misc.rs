@@ -4,7 +4,6 @@ pub(super) mod param_idx {
 
     use sotf_plugins::param_specs::{index_of, upmixer::PARAMS as P};
 
-    pub const SPEAKER_CONFIG: usize = index_of(P, "speaker_config");
     pub const GAIN_FRONT_DIRECT: usize = index_of(P, "gain_front_direct");
     pub const GAIN_FRONT_AMBIENT: usize = index_of(P, "gain_front_ambient");
     pub const GAIN_REAR_AMBIENT: usize = index_of(P, "gain_rear_ambient");

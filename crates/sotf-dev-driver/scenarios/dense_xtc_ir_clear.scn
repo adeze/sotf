@@ -1,0 +1,23 @@
+# Native Clear uses the real string setter on a valid impulse-file fixture.
+# Browse keeps the existing native OS dialog route; dialog selection is not automated here.
+resize 1440 1100
+focus Studio
+plugin_chain_load crates/app-gpui/tests/fixtures/xtc-room-ir-chain.json
+action PluginSelectFirstUser
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params xtc.section.xtc-room
+click xtc.section.xtc-room
+wait_idle 1s
+scroll_into_view rack.params plugin.file_clear.2.room_ir_file
+assert_within plugin.file_clear.2.room_ir_file rack.params
+snapshot $SOTF_QA_DIR/xtc-ir-loaded.json
+screenshot xtc-ir-loaded
+click plugin.file_clear.2.room_ir_file
+wait_idle 1s
+snapshot $SOTF_QA_DIR/xtc-ir-cleared.json
+screenshot xtc-ir-cleared
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

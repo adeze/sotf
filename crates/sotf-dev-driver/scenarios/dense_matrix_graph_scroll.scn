@@ -1,0 +1,56 @@
+# 2026-10-09: graph vertical ancestors translated horizontal wheel input into
+# vertical movement, placing Matrix routes behind the workspace picker.
+# ui_graph/player_view.rs and ui_matrix/render.rs restrict scroll axes.
+# View-owned handles preserve capture position and reset on graph owner changes.
+# Run from sotf: ../sotf-daw/target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+resize 1440 1000
+focus Studio
+plugin_clear
+plugin_add Matrix
+action PluginSetInputChannels {"channels":16}
+plugin_add Gain
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+focus PluginGraph
+wait_idle 500ms
+click routing.node.3
+action GraphEditSelectedNode
+wait_idle 500ms
+assert_visible matrix.cell.2.0.0
+resize 1000 900
+wait_idle 500ms
+scroll_horizontal matrix.grid -1000
+wait_idle 500ms
+assert_within matrix.cell.2.15.1 matrix.grid
+assert_in_viewport matrix.gain.exact
+screenshot matrix-graph-right
+assert_within matrix.cell.2.15.1 matrix.grid
+click matrix.cell.2.15.1
+wait_idle 300ms
+assert screen.focused == "PluginGraph"
+click routing.inspector.close
+wait_idle 500ms
+assert screen.focused == "PluginGraph"
+resize 1440 1000
+wait_idle 300ms
+action GraphSelectNextNode
+action GraphEditSelectedNode
+wait_idle 300ms
+screenshot matrix-graph-other-owner
+click routing.inspector.close
+wait_idle 300ms
+action GraphSelectPreviousNode
+action GraphEditSelectedNode
+wait_idle 500ms
+resize 1000 900
+wait_idle 500ms
+assert_within matrix.cell.2.0.0 matrix.grid
+screenshot matrix-graph-reset
+click routing.inspector.close
+focus Studio
+wait_idle 500ms
+assert_within matrix.cell.2.0.0 matrix.grid
+screenshot matrix-rack-independent
+plugin_chain_save $SOTF_QA_DIR/after.json

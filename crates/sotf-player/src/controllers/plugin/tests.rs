@@ -6,6 +6,63 @@ use crate::{PluginSettings, PluginType};
 use crate::plugin_graph::NodePosition;
 
 #[test]
+fn spectrum_controller_edits_share_widget_ranges_and_steps() {
+    for by_node in [false, true] {
+        let mut controller = PluginController::new();
+        let node = controller
+            .graph
+            .add_user_plugin(&PluginType::SpectrumAnalyzer)
+            .unwrap();
+        let index = controller.graph.linear_index_of_node(node).unwrap();
+        controller.editing_plugin_index = Some(index);
+        for (param, initial, delta, expected) in [
+            (0, 8.0, -1.0, 8.0),
+            (0, 119.0, 1.0, 120.0),
+            (0, 120.0, 1.0, 120.0),
+            (1, 20.0, 1.0, 21.0),
+            (2, 5000.0, -1.0, 5000.0),
+            (2, 20000.0, 1.0, 20100.0),
+            (2, 22050.0, 1.0, 22050.0),
+            (3, 0.7, 1.0, 0.71),
+        ] {
+            controller.set_plugin_param(index, param, initial);
+            if by_node {
+                assert!(controller.adjust_param_by_node_id(node, param, delta));
+            } else {
+                controller.plugin_param_selection = param;
+                let (adjusted, effect) = controller.adjust_selected_param(delta);
+                assert!(adjusted);
+                if param < 3 {
+                    assert!(matches!(effect, PluginUpdateEffect::Structural));
+                } else {
+                    assert!(matches!(effect, PluginUpdateEffect::Parameter { .. }));
+                }
+            }
+            let settings = &controller.graph.get_plugin(index).unwrap().settings;
+            let actual = super::parameter_metadata::desktop_param_value(settings, param).unwrap();
+            assert!(
+                (actual - expected).abs() < 1e-6,
+                "{by_node}/{param}: {actual}"
+            );
+        }
+        let before = serde_json::to_value(&controller.graph).unwrap();
+        for param in 0..4 {
+            for delta in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                if by_node {
+                    assert!(!controller.adjust_param_by_node_id(node, param, delta));
+                } else {
+                    controller.plugin_param_selection = param;
+                    let (adjusted, effect) = controller.adjust_selected_param(delta);
+                    assert!(!adjusted);
+                    assert!(matches!(effect, PluginUpdateEffect::None));
+                }
+                assert_eq!(serde_json::to_value(&controller.graph).unwrap(), before);
+            }
+        }
+    }
+}
+
+#[test]
 fn try_add_plugin_selects_the_inserted_plugin() {
     let mut controller = PluginController::new();
     let index = controller.graph.user_plugin_insert_index();
@@ -40,6 +97,388 @@ fn try_add_plugin_returns_channel_error_without_mutating_graph_or_selection() {
     ));
     assert_eq!(serde_json::to_value(&controller.graph).unwrap(), before);
     assert_eq!(controller.selected_plugin_index, selected);
+}
+
+#[test]
+fn linear_gate_rejects_unrouted_external_sidechain_without_mutation() {
+    let mut controller = PluginController::new();
+    let gate_idx = controller.graph.user_plugin_insert_index();
+    controller.try_add_plugin(&PluginType::Gate).unwrap();
+    let before = serde_json::to_value(&controller.graph).unwrap();
+    let external_idx = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::gate::PARAMS,
+        "sidechain_external",
+    );
+    assert!(matches!(
+        controller.set_plugin_param(gate_idx, external_idx, 1.0),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&controller.graph).unwrap(), before);
+
+    // Graph edits retain the external-key path; the graph host validates the
+    // actual sidechain edges before committing that structural candidate.
+    let node_id = controller.graph.plugins_linear().unwrap()[gate_idx].id;
+    assert!(matches!(
+        controller.set_plugin_param_by_node_id(node_id, external_idx, 1.0),
+        PluginUpdateEffect::Structural
+    ));
+}
+
+#[test]
+fn linear_de_esser_rejects_unrouted_external_sidechain_without_mutation() {
+    let mut controller = PluginController::new();
+    let index = controller.graph.user_plugin_insert_index();
+    controller.try_add_plugin(&PluginType::DeEsser).unwrap();
+    let before = serde_json::to_value(&controller.graph).unwrap();
+    let external = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::de_esser::PARAMS,
+        "sidechain_external",
+    );
+    assert!(matches!(
+        controller.set_plugin_param(index, external, 1.0),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&controller.graph).unwrap(), before);
+    let node_id = controller.graph.plugins_linear().unwrap()[index].id;
+    assert!(matches!(
+        controller.set_plugin_param_by_node_id(node_id, external, 1.0),
+        PluginUpdateEffect::Structural
+    ));
+}
+
+#[test]
+fn dynamic_eq_reset_preserves_global_inheritance_in_linear_and_node_routes() {
+    let mut controller = PluginController::new();
+    let index = controller.graph.user_plugin_insert_index();
+    controller.try_add_plugin(&PluginType::DynamicEq).unwrap();
+    let node_id = controller.graph.plugins_linear().unwrap()[index].id;
+    controller.set_plugin_param(index, 113, -35.0);
+    controller.set_plugin_param(index, 114, 8.0);
+    controller.set_plugin_param(index, 1, -30.0);
+    controller.set_plugin_param_by_node_id(node_id, 2, 4.0);
+    controller.reset_plugin_param(index, 1);
+    controller.reset_plugin_param_by_node_id(node_id, 2);
+    let PluginSettings::DynamicEq {
+        threshold,
+        ratio,
+        bands,
+        ..
+    } = &controller.graph.get_plugin(index).unwrap().settings
+    else {
+        panic!("expected Dynamic EQ settings");
+    };
+    assert_eq!(*threshold, -20.0);
+    assert_eq!(*ratio, 2.0);
+    assert_eq!(bands[0].band_threshold, -20.0);
+    assert_eq!(bands[0].band_ratio, 2.0);
+    assert_eq!(bands[1].band_threshold, -35.0);
+    assert_eq!(bands[1].band_ratio, 8.0);
+}
+
+#[test]
+fn incompatible_linear_modes_preserve_the_existing_chain() {
+    let mut downmix = PluginController::new();
+    let index = downmix.graph.user_plugin_insert_index();
+    downmix.try_add_plugin(&PluginType::Downmix).unwrap();
+    let ltrt = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::downmix::PARAMS,
+        "matrix_ltrt",
+    );
+    let phase = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::downmix::PARAMS,
+        "phase_coherence",
+    );
+    let before = serde_json::to_value(&downmix.graph).unwrap();
+    assert!(matches!(
+        downmix.set_plugin_param(index, ltrt, 1.0),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&downmix.graph).unwrap(), before);
+    downmix.set_plugin_param(index, phase, 0.0);
+    assert!(matches!(
+        downmix.set_plugin_param(index, ltrt, 1.0),
+        PluginUpdateEffect::Structural
+    ));
+    let after_ltrt = serde_json::to_value(&downmix.graph).unwrap();
+    assert!(matches!(
+        downmix.set_plugin_param(index, phase, 1.0),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&downmix.graph).unwrap(), after_ltrt);
+    let downmix_id = downmix.graph.plugins_linear().unwrap()[index].id;
+    assert!(matches!(
+        downmix.reset_plugin_param(index, phase),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&downmix.graph).unwrap(), after_ltrt);
+    assert!(matches!(
+        downmix.set_plugin_param_by_node_id(downmix_id, phase, 1.0),
+        PluginUpdateEffect::None
+    ));
+    assert!(matches!(
+        downmix.reset_plugin_param_by_node_id(downmix_id, phase),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&downmix.graph).unwrap(), after_ltrt);
+
+    let mut loudness = PluginController::new();
+    let index = loudness.graph.user_plugin_insert_index();
+    loudness
+        .try_add_plugin(&PluginType::LoudnessCompensation)
+        .unwrap();
+    let calibration = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::loudness_compensation::PARAMS,
+        "auto_calibrated",
+    );
+    let mode = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::loudness_compensation::PARAMS,
+        "mode",
+    );
+    loudness.set_plugin_param(index, calibration, 1.0);
+    loudness.set_plugin_param(index, mode, 2.0);
+    let before = serde_json::to_value(&loudness.graph).unwrap();
+    assert!(matches!(
+        loudness.set_plugin_param(index, calibration, 0.0),
+        PluginUpdateEffect::None
+    ));
+    assert!(matches!(
+        loudness.reset_plugin_param(index, calibration),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&loudness.graph).unwrap(), before);
+    let calibrated_id = loudness.graph.plugins_linear().unwrap()[index].id;
+    assert!(matches!(
+        loudness.reset_plugin_param_by_node_id(calibrated_id, calibration),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&loudness.graph).unwrap(), before);
+    loudness.set_plugin_param(index, mode, 0.0);
+    assert!(matches!(
+        loudness.set_plugin_param(index, calibration, 0.0),
+        PluginUpdateEffect::Structural
+    ));
+    let uncalibrated = serde_json::to_value(&loudness.graph).unwrap();
+    assert!(matches!(
+        loudness.set_plugin_param(index, mode, 2.0),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&loudness.graph).unwrap(), uncalibrated);
+    let loudness_id = loudness.graph.plugins_linear().unwrap()[index].id;
+    assert!(matches!(
+        loudness.set_plugin_param_by_node_id(loudness_id, mode, 2.0),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&loudness.graph).unwrap(), uncalibrated);
+}
+
+#[test]
+fn profile_actions_dispatch_named_commands_without_latching_saved_flags() {
+    for (plugin_type, learn, clear) in [
+        (PluginType::Denoiser, 20, 22),
+        (PluginType::HissReducer, 5, 7),
+    ] {
+        let mut controller = PluginController::new();
+        let index = controller.graph.user_plugin_insert_index();
+        controller.try_add_plugin(&plugin_type).unwrap();
+        let before = serde_json::to_value(&controller.graph).unwrap();
+        let node_id = controller.graph.plugins_linear().unwrap()[index].id;
+        for (param, key) in [(learn, "learn_noise"), (clear, "clear_profile")] {
+            assert_eq!(
+                super::super::plugin_param_map::momentary_action_param(
+                    &controller.graph.get_plugin(index).unwrap().settings,
+                    param,
+                ),
+                Some(key)
+            );
+            assert!(
+                super::plugin_controller::param_index_to_engine_param(
+                    &controller.graph.get_plugin(index).unwrap().settings,
+                    param,
+                )
+                .is_none()
+            );
+            assert!(matches!(
+                controller.set_plugin_param(index, param, 1.0),
+                PluginUpdateEffect::Action { plugin_index, param_index, key: dispatched, value: true, .. }
+                    if plugin_index == index && param_index == param && dispatched == key
+            ));
+            assert!(matches!(
+                controller.set_plugin_param_by_node_id(node_id, param, 1.0),
+                PluginUpdateEffect::Action { node_id: Some(dispatched), value: true, .. }
+                    if dispatched == node_id
+            ));
+            if key == "learn_noise" {
+                assert!(matches!(
+                    controller.set_plugin_param(index, param, 0.0),
+                    PluginUpdateEffect::Action { value: false, .. }
+                ));
+            } else {
+                assert!(matches!(
+                    controller.set_plugin_param(index, param, 0.0),
+                    PluginUpdateEffect::None
+                ));
+            }
+            assert_eq!(serde_json::to_value(&controller.graph).unwrap(), before);
+        }
+    }
+}
+
+#[test]
+fn output_layout_choices_normalize_downstream_matrix_before_save() {
+    for (plugin_type, param_idx) in [(PluginType::AAE, 0), (PluginType::AmbisonicsDecoder, 1)] {
+        let mut controller = PluginController::new();
+        if plugin_type == PluginType::AmbisonicsDecoder {
+            controller.graph.input_node_mut().unwrap().channels = 4;
+            controller.graph.update_channel_dependent_plugins();
+        }
+        let target_idx = controller.graph.user_plugin_insert_index();
+        controller.try_add_plugin(&plugin_type).unwrap();
+        assert!(matches!(
+            controller.set_plugin_param(target_idx, param_idx, 2.0),
+            PluginUpdateEffect::Structural
+        ));
+        let matrix = controller.graph.get_plugin(target_idx + 1).unwrap();
+        let PluginSettings::Matrix {
+            input_channels,
+            output_channels,
+            channel_states,
+            matrix,
+            ..
+        } = &matrix.settings
+        else {
+            panic!("expected downstream Matrix");
+        };
+        assert_eq!((*input_channels, *output_channels), (8, 8));
+        assert_eq!(channel_states.len(), 8);
+        assert_eq!(matrix.len(), 64);
+
+        let serialized = serde_json::to_string(&controller.graph).unwrap();
+        let mut restored: PluginGraph = serde_json::from_str(&serialized).unwrap();
+        restored.update_channel_dependent_plugins();
+        assert_eq!(
+            serde_json::to_value(restored).unwrap(),
+            serde_json::to_value(&controller.graph).unwrap(),
+            "{plugin_type:?} should already be normalized before reload"
+        );
+    }
+}
+
+#[test]
+fn custom_ambisonics_choice_without_geometry_preserves_the_working_chain() {
+    let mut controller = PluginController::new();
+    controller.graph.input_node_mut().unwrap().channels = 4;
+    controller.graph.update_channel_dependent_plugins();
+    let index = controller.graph.user_plugin_insert_index();
+    controller
+        .try_add_plugin(&PluginType::AmbisonicsDecoder)
+        .unwrap();
+    let before = serde_json::to_value(&controller.graph).unwrap();
+    assert!(matches!(
+        controller.set_plugin_param(index, 1, 8.0),
+        PluginUpdateEffect::None
+    ));
+    assert_eq!(serde_json::to_value(&controller.graph).unwrap(), before);
+    assert!(matches!(
+        controller.set_plugin_param(index, 1, 2.0),
+        PluginUpdateEffect::Structural
+    ));
+}
+
+#[test]
+fn node_id_output_layout_edit_normalizes_downstream_matrix() {
+    let mut controller = PluginController::new();
+    controller.try_add_plugin(&PluginType::AAE).unwrap();
+    let node_id = *controller
+        .graph
+        .nodes
+        .iter()
+        .find(|(_, node)| node.plugin.plugin_type() == PluginType::AAE)
+        .map(|(id, _)| id)
+        .unwrap();
+    assert!(matches!(
+        controller.set_plugin_param_by_node_id(node_id, 0, 2.0),
+        PluginUpdateEffect::Structural
+    ));
+    let matrix = controller
+        .graph
+        .plugins_linear()
+        .unwrap()
+        .into_iter()
+        .find(|node| node.plugin.plugin_type() == PluginType::Matrix)
+        .unwrap();
+    let PluginSettings::Matrix {
+        input_channels,
+        output_channels,
+        ..
+    } = &matrix.plugin.settings
+    else {
+        panic!("expected downstream Matrix");
+    };
+    assert_eq!((*input_channels, *output_channels), (8, 8));
+}
+
+#[test]
+fn crossover_and_band_split_edits_follow_engine_channel_width() {
+    let mut crossover = PluginController::new();
+    let crossover_idx = crossover.graph.user_plugin_insert_index();
+    crossover.try_add_plugin(&PluginType::Crossover).unwrap();
+    for (param_idx, value, channels) in [
+        (2, 2.0, 4), // Both: two bands per input channel.
+        (5, 1.0, 6), // Three bands.
+        (5, 2.0, 8), // Four bands.
+        (4, 1.0, 2), // Per-channel topology restores original width.
+    ] {
+        assert!(matches!(
+            crossover.set_plugin_param(crossover_idx, param_idx, value),
+            PluginUpdateEffect::Structural
+        ));
+        let target_id = crossover.graph.get_plugin(crossover_idx).unwrap().id;
+        let target = crossover
+            .graph
+            .nodes
+            .values()
+            .find(|node| node.plugin.id == target_id)
+            .unwrap();
+        let matrix = crossover.graph.get_plugin(crossover_idx + 1).unwrap();
+        assert_eq!(target.output_channels, channels);
+        let PluginSettings::Matrix {
+            input_channels,
+            output_channels,
+            ..
+        } = &matrix.settings
+        else {
+            panic!("expected downstream Matrix");
+        };
+        assert_eq!((*input_channels, *output_channels), (channels, channels));
+    }
+
+    let mut split = PluginController::new();
+    let split_idx = split.graph.user_plugin_insert_index();
+    split.try_add_plugin(&PluginType::BandSplit).unwrap();
+    for (value, channels) in [(1.0, 6), (2.0, 8), (0.0, 4)] {
+        assert!(matches!(
+            split.set_plugin_param(split_idx, 3, value),
+            PluginUpdateEffect::Structural
+        ));
+        let target_id = split.graph.get_plugin(split_idx).unwrap().id;
+        let target = split
+            .graph
+            .nodes
+            .values()
+            .find(|node| node.plugin.id == target_id)
+            .unwrap();
+        let matrix = split.graph.get_plugin(split_idx + 1).unwrap();
+        assert_eq!(target.output_channels, channels);
+        let PluginSettings::Matrix {
+            input_channels,
+            output_channels,
+            ..
+        } = &matrix.settings
+        else {
+            panic!("expected downstream Matrix");
+        };
+        assert_eq!((*input_channels, *output_channels), (channels, channels));
+    }
 }
 
 #[test]
@@ -201,6 +640,118 @@ fn remove_eq_band_by_node_id_drops_the_band() {
     let before = eq_filter_count(&ctrl, id);
     ctrl.remove_eq_band_by_node_id(id, before - 1).unwrap();
     assert_eq!(eq_filter_count(&ctrl, id), before - 1);
+}
+
+#[test]
+fn linear_phase_eq_band_actions_keep_dsp_count_in_sync() {
+    let mut ctrl = PluginController::new();
+    let node_id = ctrl
+        .graph
+        .add_user_plugin(&PluginType::LinearPhaseEq)
+        .unwrap();
+    let index = ctrl.graph.linear_index_of_node(node_id).unwrap();
+    ctrl.editing_plugin_index = Some(index);
+
+    let count = |ctrl: &PluginController| {
+        let PluginSettings::LinearPhaseEq {
+            num_filters,
+            filters,
+            ..
+        } = &ctrl.graph.nodes.get(&node_id).unwrap().plugin.settings
+        else {
+            panic!("expected Linear Phase EQ")
+        };
+        assert_eq!(*num_filters as usize, filters.len());
+        filters.len()
+    };
+
+    let original = count(&ctrl);
+    assert!(matches!(
+        ctrl.add_eq_band().unwrap(),
+        PluginUpdateEffect::Structural
+    ));
+    assert_eq!(count(&ctrl), original + 1);
+    assert!(matches!(
+        ctrl.remove_eq_band(original).unwrap(),
+        PluginUpdateEffect::Structural
+    ));
+    assert_eq!(count(&ctrl), original);
+
+    assert!(matches!(
+        ctrl.add_eq_band_by_node_id(node_id).unwrap(),
+        PluginUpdateEffect::Structural
+    ));
+    assert_eq!(count(&ctrl), original + 1);
+    assert!(matches!(
+        ctrl.remove_eq_band_by_node_id(node_id, original).unwrap(),
+        PluginUpdateEffect::Structural
+    ));
+    assert_eq!(count(&ctrl), original);
+
+    while count(&ctrl) > 1 {
+        let last = count(&ctrl) - 1;
+        ctrl.remove_eq_band(last).unwrap();
+    }
+    assert!(ctrl.remove_eq_band(0).is_err());
+    assert!(ctrl.remove_eq_band_by_node_id(node_id, 0).is_err());
+    assert_eq!(count(&ctrl), 1);
+
+    while count(&ctrl) < 10 {
+        ctrl.add_eq_band_by_node_id(node_id).unwrap();
+    }
+    assert!(ctrl.add_eq_band().is_err());
+    assert!(ctrl.add_eq_band_by_node_id(node_id).is_err());
+    assert_eq!(count(&ctrl), 10);
+}
+
+#[test]
+fn linear_phase_eq_apo_import_keeps_count_and_rejects_unsupported_sizes() {
+    let mut ctrl = PluginController::new();
+    let node_id = ctrl
+        .graph
+        .add_user_plugin(&PluginType::LinearPhaseEq)
+        .unwrap();
+    let index = ctrl.graph.linear_index_of_node(node_id).unwrap();
+    ctrl.editing_plugin_index = Some(index);
+    let path = std::env::temp_dir().join(format!("sotf-lp-band-count-{}.apo", std::process::id()));
+    let write_apo = |count: usize| {
+        let contents = (0..count)
+            .map(|i| format!("Filter {}: ON PK Fc 1000 Hz Gain 2 dB Q 1", i + 1))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&path, contents).unwrap();
+    };
+    let assert_count = |ctrl: &PluginController, expected: usize| {
+        let PluginSettings::LinearPhaseEq {
+            num_filters,
+            filters,
+            ..
+        } = &ctrl.graph.nodes.get(&node_id).unwrap().plugin.settings
+        else {
+            panic!("expected Linear Phase EQ")
+        };
+        assert_eq!(*num_filters as usize, expected);
+        assert_eq!(filters.len(), expected);
+    };
+
+    write_apo(6);
+    assert!(matches!(
+        ctrl.load_apo_filters(&path).unwrap(),
+        PluginUpdateEffect::Structural
+    ));
+    assert_count(&ctrl, 6);
+    write_apo(4);
+    assert!(matches!(
+        ctrl.load_apo_filters_by_node_id(node_id, &path).unwrap(),
+        PluginUpdateEffect::Structural
+    ));
+    assert_count(&ctrl, 4);
+
+    write_apo(11);
+    assert!(ctrl.load_apo_filters(&path).is_err());
+    assert!(ctrl.load_apo_filters_by_node_id(node_id, &path).is_err());
+    assert_count(&ctrl, 4);
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
@@ -916,19 +1467,21 @@ fn multiband_band_reset_restores_inheritance_without_erasing_other_edits() {
             ctrl.set_plugin_param_by_node_id(id, 106, -33.0);
             ctrl.set_plugin_param_by_node_id(id, 107, 5.0);
             ctrl.set_plugin_param_by_node_id(id, 206, -45.0);
-            if by_node {
-                ctrl.reset_plugin_param_by_node_id(id, 106);
+            let effect = if by_node {
+                ctrl.reset_plugin_param_by_node_id(id, 106)
             } else {
                 let index = ctrl.graph.linear_index_of_node(id).unwrap();
-                ctrl.reset_plugin_param(index, 106);
-            }
+                ctrl.reset_plugin_param(index, 106)
+            };
+            assert!(matches!(effect, PluginUpdateEffect::Structural));
+            ctrl.set_plugin_param_by_node_id(id, 6, -20.0);
             match &ctrl.graph.nodes[&id].plugin.settings {
                 PluginSettings::MultibandCompressor {
                     threshold_db,
                     bands,
                     ..
                 } => {
-                    assert_eq!(*threshold_db, -25.0);
+                    assert_eq!(*threshold_db, -20.0);
                     assert_eq!(bands[0].threshold_db, None);
                     assert_eq!(bands[0].ratio, Some(5.0));
                     assert_eq!(bands[1].threshold_db, Some(-45.0));
@@ -938,13 +1491,52 @@ fn multiband_band_reset_restores_inheritance_without_erasing_other_edits() {
                     bands,
                     ..
                 } => {
-                    assert_eq!(*threshold_db, -25.0);
+                    assert_eq!(*threshold_db, -20.0);
                     assert_eq!(bands[0].threshold_db, None);
                     assert_eq!(bands[0].ratio, Some(5.0));
                     assert_eq!(bands[1].threshold_db, Some(-45.0));
                 }
                 _ => unreachable!(),
             }
+        }
+    }
+}
+
+#[test]
+fn multiband_adjust_below_min_rebuilds_inherited_band_state() {
+    for (kind, index, key) in [
+        (PluginType::MultibandCompressor, 118, "range_db"),
+        (PluginType::MultibandExpander, 110, "range"),
+    ] {
+        let template = match &kind {
+            PluginType::MultibandCompressor => {
+                sotf_plugins::param_specs::multiband_compressor::BAND_TEMPLATE
+            }
+            _ => sotf_plugins::param_specs::multiband_expander::BAND_TEMPLATE,
+        };
+        let minimum = sotf_plugins::param_specs::find_by_key(template, key).min_f64();
+        let mut ctrl = PluginController::new();
+        let node = ctrl.graph.add_user_plugin(&kind).unwrap();
+        let linear = ctrl.graph.linear_index_of_node(node).unwrap();
+        ctrl.set_plugin_param_by_node_id(node, index, minimum);
+        ctrl.editing_plugin_index = Some(linear);
+        ctrl.plugin_param_selection = index;
+        let (changed, effect) = ctrl.adjust_selected_param(-1.0);
+        assert!(changed);
+        assert!(matches!(effect, PluginUpdateEffect::Structural));
+        assert!(matches!(
+            ctrl.determine_update_effect_by_node_id(node, index, false),
+            PluginUpdateEffect::Structural
+        ));
+        let settings = &ctrl.graph.nodes[&node].plugin.settings;
+        match settings {
+            PluginSettings::MultibandCompressor { bands, .. } => {
+                assert_eq!(bands[0].range_db, None)
+            }
+            PluginSettings::MultibandExpander { bands, .. } => {
+                assert_eq!(bands[0].range_db, None)
+            }
+            _ => unreachable!(),
         }
     }
 }
@@ -974,4 +1566,259 @@ fn multiband_direct_entry_clamps_before_float_conversion() {
             _ => unreachable!(),
         }
     }
+}
+
+#[test]
+fn dynamic_eq_new_band_fields_set_adjust_reset_in_both_routes() {
+    use sotf_plugins::plugin_dynamic_eq::{DynEqPlacement, DynEqShape};
+    for by_node in [false, true] {
+        let mut controller = PluginController::new();
+        let index = controller.graph.user_plugin_insert_index();
+        controller.try_add_plugin(&PluginType::DynamicEq).unwrap();
+        let node = controller.graph.plugins_linear().unwrap()[index].id;
+        for (param, value) in [(117, 1.0), (118, 0.37), (119, 3.0)] {
+            let effect = if by_node {
+                controller.set_plugin_param_by_node_id(node, param, value)
+            } else {
+                controller.set_plugin_param(index, param, value)
+            };
+            assert!(matches!(effect, PluginUpdateEffect::Structural));
+        }
+        let PluginSettings::DynamicEq { bands, .. } =
+            &controller.graph.get_plugin(index).unwrap().settings
+        else {
+            panic!("Dynamic EQ");
+        };
+        assert_eq!(bands[1].shape, DynEqShape::LowShelf);
+        assert!((bands[1].shelf_slope - 0.37).abs() < 1e-6);
+        assert_eq!(bands[1].placement, DynEqPlacement::Mid);
+        assert_eq!(bands[0].shape, DynEqShape::Peak);
+        let before = serde_json::to_value(&controller.graph).unwrap();
+        let effect = if by_node {
+            controller.set_plugin_param_by_node_id(node, 187, 2.0)
+        } else {
+            controller.set_plugin_param(index, 187, 2.0)
+        };
+        assert!(matches!(effect, PluginUpdateEffect::None));
+        assert_eq!(before, serde_json::to_value(&controller.graph).unwrap());
+        controller.editing_plugin_index = Some(index);
+        controller.plugin_param_selection = 118;
+        assert!(controller.adjust_selected_param(1.0).0);
+        let PluginSettings::DynamicEq { bands, .. } =
+            &controller.graph.get_plugin(index).unwrap().settings
+        else {
+            panic!("Dynamic EQ");
+        };
+        assert!((bands[1].shelf_slope - 0.38).abs() < 1e-6);
+        for param in [117, 118, 119] {
+            let effect = if by_node {
+                controller.reset_plugin_param_by_node_id(node, param)
+            } else {
+                controller.reset_plugin_param(index, param)
+            };
+            assert!(matches!(effect, PluginUpdateEffect::Structural));
+        }
+        let PluginSettings::DynamicEq { bands, .. } =
+            &controller.graph.get_plugin(index).unwrap().settings
+        else {
+            panic!("Dynamic EQ");
+        };
+        assert_eq!(bands[1].shape, DynEqShape::Peak);
+        assert_eq!(bands[1].shelf_slope, 1.0);
+        assert_eq!(bands[1].placement, DynEqPlacement::Stereo);
+        // Reset must address newly added bands, beyond the four-band default.
+        controller.set_plugin_param(index, 0, 8.0);
+        controller.set_plugin_param(index, 171, 3.5);
+        controller.set_plugin_param(index, 173, -45.0);
+        controller.set_plugin_param(index, 1, -31.0);
+        controller.reset_plugin_param_by_node_id(node, 171);
+        controller.reset_plugin_param(index, 173);
+        let PluginSettings::DynamicEq { bands, .. } =
+            &controller.graph.get_plugin(index).unwrap().settings
+        else {
+            panic!("Dynamic EQ");
+        };
+        assert_eq!(bands[7].q, 1.0);
+        assert_eq!(bands[7].band_threshold, -31.0);
+    }
+}
+
+#[cfg(feature = "dev-api")]
+#[test]
+fn dynamic_eq_new_band_fields_have_sparse_query_metadata() {
+    use super::dev_api::queries::plugin_query;
+    let mut controller = PluginController::new();
+    let index = controller.graph.user_plugin_insert_index();
+    controller.try_add_plugin(&PluginType::DynamicEq).unwrap();
+    let prefix = format!("plugins.plugin.{index}");
+    assert_eq!(
+        plugin_query(&controller.graph, &format!("{prefix}.param_count")).unwrap(),
+        serde_json::json!(48)
+    );
+    let indices = plugin_query(&controller.graph, &format!("{prefix}.param_indices")).unwrap();
+    assert_eq!(indices.as_array().unwrap().len(), 48);
+    for (param, name, value) in [
+        (117, "Shape", 2.0),
+        (118, "Shelf Slope", 0.43),
+        (119, "Placement", 4.0),
+    ] {
+        controller.set_plugin_param(index, param, value);
+        assert_eq!(
+            plugin_query(&controller.graph, &format!("{prefix}.param.{param}.name")).unwrap(),
+            serde_json::json!(name)
+        );
+        let read = plugin_query(&controller.graph, &format!("{prefix}.param.{param}.value"))
+            .unwrap()
+            .as_f64()
+            .unwrap();
+        assert!((read - value).abs() < 1e-6);
+    }
+    assert!(plugin_query(&controller.graph, &format!("{prefix}.param.147.name")).is_err());
+}
+
+#[test]
+fn linear_phase_eq_dense_addresses_preserve_band_stride_and_globals() {
+    for by_node in [false, true] {
+        let mut controller = PluginController::new();
+        let node = controller
+            .graph
+            .add_user_plugin(&PluginType::LinearPhaseEq)
+            .unwrap();
+        let index = controller.graph.linear_index_of_node(node).unwrap();
+        for (param, value) in [
+            (100, 10.0),
+            (101, 2.0),
+            (102, 1.0),
+            (103, 1.0),
+            (104, 65.0),
+            (46, 750.0),
+            (47, 2.35),
+            (48, -3.5),
+            (49, 0.0),
+            (209, 4.0),
+        ] {
+            let effect = if by_node {
+                controller.set_plugin_param_by_node_id(node, param, value)
+            } else {
+                controller.set_plugin_param(index, param, value)
+            };
+            assert!(matches!(effect, PluginUpdateEffect::Structural), "{param}");
+        }
+        let settings = &controller.graph.get_plugin(index).unwrap().settings;
+        let PluginSettings::LinearPhaseEq {
+            num_filters,
+            filters,
+            mix,
+            ..
+        } = settings
+        else {
+            unreachable!()
+        };
+        assert_eq!(*num_filters, 10.0);
+        assert_eq!(filters.len(), 10);
+        assert!((*mix - 0.65).abs() < 1e-6);
+        assert_eq!(filters[9].frequency, 750.0);
+        assert_eq!(filters[9].q, 2.35);
+        assert_eq!(filters[9].gain_db, -3.5);
+        assert!(filters[9].muted);
+        assert_eq!(super::linear_phase::value(settings, 209), Some(4.0));
+        let before = serde_json::to_value(&controller.graph).unwrap();
+        assert!(matches!(
+            controller.set_plugin_param(index, 210, 1.0),
+            PluginUpdateEffect::None
+        ));
+        assert_eq!(serde_json::to_value(&controller.graph).unwrap(), before);
+        controller.editing_plugin_index = Some(index);
+        controller.plugin_param_selection = 47;
+        controller.adjust_selected_param(1.0);
+        assert!(
+            (super::linear_phase::value(&controller.graph.get_plugin(index).unwrap().settings, 47)
+                .unwrap()
+                - 2.40)
+                .abs()
+                < 1e-6
+        );
+        controller.plugin_param_selection = 104;
+        controller.adjust_selected_param(1.0);
+        assert!(
+            (super::linear_phase::value(
+                &controller.graph.get_plugin(index).unwrap().settings,
+                104
+            )
+            .unwrap()
+                - 0.66)
+                .abs()
+                < 1e-6
+        );
+        for param in [46, 47, 48, 49, 209, 104] {
+            let effect = if by_node {
+                controller.reset_plugin_param_by_node_id(node, param)
+            } else {
+                controller.reset_plugin_param(index, param)
+            };
+            assert!(
+                matches!(effect, PluginUpdateEffect::Structural),
+                "reset {param}"
+            );
+            let settings = &controller.graph.get_plugin(index).unwrap().settings;
+            assert_eq!(
+                super::linear_phase::value(settings, param),
+                Some(super::linear_phase::spec(param).unwrap().default_f64())
+            );
+        }
+        // A band type edit must not alias the filter-count resize side effect.
+        controller.set_plugin_param(index, 0, 1.0);
+        assert_eq!(
+            super::linear_phase::value(&controller.graph.get_plugin(index).unwrap().settings, 100),
+            Some(10.0)
+        );
+        controller.set_plugin_param(index, 100, 3.0);
+        assert_eq!(
+            crate::get_param_count(&controller.graph.get_plugin(index).unwrap().settings),
+            23
+        );
+    }
+}
+
+#[cfg(feature = "dev-api")]
+#[test]
+fn linear_phase_eq_dense_query_addresses_cover_globals_and_placements() {
+    use super::dev_api::queries::plugin_query;
+    let mut controller = PluginController::new();
+    let node = controller
+        .graph
+        .add_user_plugin(&PluginType::LinearPhaseEq)
+        .unwrap();
+    let index = controller.graph.linear_index_of_node(node).unwrap();
+    controller.set_plugin_param(index, 100, 2.0);
+    let key = format!("plugins.plugin.{index}");
+    assert_eq!(
+        plugin_query(&controller.graph, &format!("{key}.param_count")).unwrap(),
+        serde_json::json!(17)
+    );
+    assert_eq!(
+        plugin_query(&controller.graph, &format!("{key}.param_indices")).unwrap(),
+        serde_json::json!([
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 101, 102, 103, 104, 200, 201
+        ])
+    );
+    for (param, name, input, expected) in [
+        (101, "FIR Length", 3.0, 3.0),
+        (102, "Phase Mode", 1.0, 1.0),
+        (103, "Auto Gain", 1.0, 1.0),
+        (104, "Mix", 42.0, 0.42),
+        (201, "Placement", 5.0, 5.0),
+    ] {
+        controller.set_plugin_param(index, param, input);
+        assert_eq!(
+            plugin_query(&controller.graph, &format!("{key}.param.{param}.name")).unwrap(),
+            serde_json::json!(name)
+        );
+        let value = plugin_query(&controller.graph, &format!("{key}.param.{param}.value"))
+            .unwrap()
+            .as_f64()
+            .unwrap();
+        assert!((value - expected).abs() < 1e-6);
+    }
+    assert!(plugin_query(&controller.graph, &format!("{key}.param.202.name")).is_err());
 }

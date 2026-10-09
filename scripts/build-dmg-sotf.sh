@@ -30,6 +30,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/macos_plugin_helpers.sh"
 source "$PROJECT_ROOT/../sotf-daw/scripts/lib/nnnoiseless_model_notices.sh"
 
 # Extract version from root Cargo.toml
@@ -51,6 +52,7 @@ UNIVERSAL=false
 CLEAN=false
 ARCH=""
 SOURCE_BINARY=""
+HELPERS_DIR=""
 WITH_MOBILE=false
 WITH_EXPERIMENTAL_TVOS=false
 
@@ -111,6 +113,14 @@ while [[ $# -gt 0 ]]; do
             ARCH="$2"
             shift 2
             ;;
+        --helpers-dir)
+            if [ $# -lt 2 ]; then
+                echo "ERROR: --helpers-dir requires a path"
+                exit 1
+            fi
+            HELPERS_DIR="$2"
+            shift 2
+            ;;
         --binary)
             if [ $# -lt 2 ]; then
                 echo "ERROR: --binary requires a path"
@@ -126,6 +136,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --universal    Build universal binary (Intel + Apple Silicon)"
             echo "  --arch <arch>  Architecture label for DMG name (e.g., arm64, x86_64)"
             echo "  --binary <path> Package an existing sotf-desktop binary instead of rebuilding"
+            echo "  --helpers-dir <path> AU worker/helper directory (defaults beside the binary)"
             echo "  --with-mobile  Also build the iOS device .app bundle"
             echo "  --with-experimental-tvos  Also build the unreleased tvOS device bundle"
             echo "  --clean        Clean build directory before building"
@@ -219,12 +230,16 @@ build_binary() {
             cp "$source_binary" "$staged_binary"
         fi
         chmod +x "$staged_binary"
+        if [ -z "$HELPERS_DIR" ]; then
+            HELPERS_DIR=$(dirname "$source_binary")
+        fi
 
         log_success "Existing binary staged successfully"
         return
     fi
 
     log_info "Building release binary..."
+    export MACOSX_DEPLOYMENT_TARGET=15.0
 
     cd "$PROJECT_ROOT"
 
@@ -235,8 +250,10 @@ build_binary() {
         rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
         # Build for both architectures
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --profile dist --package sotf-gpui --features hal --target x86_64-apple-darwin --target-dir ./target-static
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --profile dist --package sotf-gpui --features hal,onnx --target aarch64-apple-darwin --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --profile dist --package sotf-gpui --features shipping,hal --target x86_64-apple-darwin --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --profile dist --package sotf-gpui --features shipping,hal,onnx --target aarch64-apple-darwin --target-dir ./target-static
+        build_macos_plugin_helpers "$PROJECT_ROOT/../sotf-daw" "$PROJECT_ROOT/target-static" x86_64-apple-darwin
+        build_macos_plugin_helpers "$PROJECT_ROOT/../sotf-daw" "$PROJECT_ROOT/target-static" aarch64-apple-darwin
 
         # Create universal binary
         mkdir -p "$BUILD_DIR"
@@ -244,6 +261,13 @@ build_binary() {
             "$PROJECT_ROOT/target-static/x86_64-apple-darwin/dist/$BINARY_NAME" \
             "$PROJECT_ROOT/target-static/aarch64-apple-darwin/dist/$BINARY_NAME" \
             -output "$BUILD_DIR/$BINARY_NAME"
+        local helper
+        for helper in sotf-external-plugin-worker sotf-macos-sandbox-helper; do
+            lipo -create \
+                "$PROJECT_ROOT/target-static/x86_64-apple-darwin/dist/$helper" \
+                "$PROJECT_ROOT/target-static/aarch64-apple-darwin/dist/$helper" \
+                -output "$BUILD_DIR/$helper"
+        done
 
         log_success "Universal binary created"
     else
@@ -252,11 +276,12 @@ build_binary() {
         if [ -z "$effective_arch" ]; then
             effective_arch=$(uname -m)
         fi
-        local features="hal"
+        local features="shipping,hal"
         if [ "$effective_arch" != "x86_64" ]; then
-            features="hal,onnx"
+            features="shipping,hal,onnx"
         fi
         RUSTFLAGS="-C target-feature=+crt-static" cargo build --profile dist --package sotf-gpui --features "$features" --target-dir ./target-static
+        build_macos_plugin_helpers "$PROJECT_ROOT/../sotf-daw" "$PROJECT_ROOT/target-static"
     fi
 
     if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then
@@ -265,6 +290,9 @@ build_binary() {
     fi
 
     log_success "Binary built successfully"
+    if [ -z "$HELPERS_DIR" ]; then
+        HELPERS_DIR="$BUILD_DIR"
+    fi
 }
 
 # Create app bundle structure
@@ -279,6 +307,13 @@ create_app_bundle() {
 
     # Copy binary
     cp "$BUILD_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/"
+    local helpers_dir="$HELPERS_DIR"
+    case "$helpers_dir" in
+        /*) ;;
+        *) helpers_dir="$PROJECT_ROOT/$helpers_dir" ;;
+    esac
+    stage_macos_plugin_helpers "$helpers_dir" "$APP_BUNDLE/Contents/MacOS" \
+        "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 
     # Copy Info.plist and update version
     sed -e "s/<string>SOTF_VERSION<\/string>/<string>$VERSION<\/string>/" \
@@ -302,12 +337,19 @@ create_app_bundle() {
 
 # Bundle dynamic libraries from Homebrew and other non-system locations
 bundle_dylibs() {
+    local executable
+    for executable in sotf-desktop sotf-external-plugin-worker sotf-macos-sandbox-helper; do
+        bundle_binary_dylibs "$APP_BUNDLE/Contents/MacOS/$executable"
+    done
+}
+
+bundle_binary_dylibs() {
     log_info "Bundling dynamic libraries..."
 
     local frameworks_dir="$APP_BUNDLE/Contents/Frameworks"
     mkdir -p "$frameworks_dir"
 
-    local binary="$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
+    local binary="$1"
 
     # Get list of non-system dylibs
     local dylibs
@@ -321,8 +363,8 @@ bundle_dylibs() {
     # Process each dylib
     for dylib in $dylibs; do
         if [ ! -f "$dylib" ]; then
-            log_warning "Dylib not found: $dylib"
-            continue
+            log_error "Dylib required by $binary not found: $dylib"
+            return 1
         fi
 
         local dylib_name

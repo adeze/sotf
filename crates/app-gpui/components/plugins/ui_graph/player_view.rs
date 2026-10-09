@@ -362,6 +362,11 @@ impl PlayerView {
             .min_h_0()
             .min_w_0()
             .overflow_y_scroll()
+            .map(|mut content| {
+                // Nested plugin grids own horizontal wheel navigation.
+                content.style().restrict_scroll_to_axis = Some(true);
+                content
+            })
             .bg(theme.background)
             // Header
             .child(if compact {
@@ -1220,7 +1225,7 @@ impl PlayerView {
             .when(!inline, |el| {
                 el.absolute().inset_0().bg(theme.feedback.overlay_bg)
             })
-            .when(inline, |el| el.min_w_0().flex_shrink_0())
+            .when(inline, |el| el.min_w_0().min_h_0().h_full().flex_shrink_0())
             .flex()
             .when(!inline, |el| el.items_center().justify_center())
             .when(inline, |el| el.items_start().justify_start())
@@ -1231,6 +1236,7 @@ impl PlayerView {
                     .id("plugin-node-modal")
                     .w(px(modal_w))
                     .max_h(px(modal_h))
+                    .when(inline, |el| el.h_full().max_h_full().min_h_0())
                     .bg(theme.surface)
                     .rounded(d.r_lg)
                     .border_1()
@@ -1247,6 +1253,7 @@ impl PlayerView {
                     .child(
                         div()
                             .flex()
+                            .flex_shrink_0()
                             .justify_between()
                             .items_center()
                             .px(d.card)
@@ -1445,7 +1452,13 @@ impl PlayerView {
                         div()
                             .id("plugin-modal-body")
                             .flex_1()
+                            .min_h_0()
                             .overflow_y_scroll()
+                            .map(|mut content| {
+                                // Keep horizontal grid navigation from scrolling the inspector vertically.
+                                content.style().restrict_scroll_to_axis = Some(true);
+                                content
+                            })
                             .p(d.card)
                             .flex()
                             .flex_col()
@@ -1530,6 +1543,17 @@ impl PlayerView {
             &d,
             self.state.clone(),
             plugin_idx,
+            {
+                let app = &self.state.read(cx).app;
+                super::super::plugin_instance_id_for_render(
+                    app.ui_state.input_mode,
+                    app.plugin_state.graph_state.editing_graph_node_uuid,
+                    &app.plugin_state.graph,
+                    plugin_idx,
+                )
+            },
+            self.state.read(cx).app.plugin_ui.layout_choice_menu,
+            self.state.read(cx).app.plugin_ui.layout_choice_highlight,
             settings,
             is_editing,
             selected_param,
@@ -1715,6 +1739,14 @@ impl PlayerView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        self.scroll.retain_graph_matrix(
+            self.state
+                .read(cx)
+                .app
+                .plugin_state
+                .graph_state
+                .editing_graph_node_uuid,
+        );
         let (
             plugin_graph,
             loudness,
@@ -1780,6 +1812,9 @@ impl PlayerView {
             self.plugin_exact_entry_focus_handle.clone(),
             cx,
             Some(editor_width),
+            None,
+            None,
+            self.scroll.graph_matrix_grid.clone(),
         )
     }
 }

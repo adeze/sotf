@@ -1,0 +1,29 @@
+# 2026-10-08: Loudness lifecycle controls sat below the entire meter stack.
+# ui_loudness.rs now puts existing Xs controls and compact status first.
+# Run from sotf: target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The suite uses a fresh QA directory and a dev-api desktop.
+# This case checks unavailable controls; it does not qualify live acknowledgements.
+resize 1000 700
+action MetersSetFixture {"active":false}
+focus Studio
+plugin_clear
+plugin_add LoudnessMonitor
+action PluginSelectFirstUser
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/before.json
+assert_visible plugin.loudness.no-data
+assert_within plugin.loudness.control.5.start rack.params
+assert_within plugin.loudness.control.5.pause rack.params
+assert_within plugin.loudness.control.5.continue rack.params
+assert_within plugin.loudness.control.5.reset rack.params
+assert_enabled plugin.loudness.control.5.start == false
+assert_enabled plugin.loudness.control.5.pause == false
+assert_enabled plugin.loudness.control.5.continue == false
+assert_enabled plugin.loudness.control.5.reset == false
+click plugin.loudness.control.5.reset
+wait_idle 1s
+assert playback.is_playing == false
+snapshot $SOTF_QA_DIR/loudness-unavailable.json
+screenshot loudness-unavailable-narrow
+plugin_chain_save $SOTF_QA_DIR/after.json

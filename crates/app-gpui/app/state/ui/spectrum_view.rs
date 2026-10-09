@@ -42,7 +42,10 @@ impl SpectrumViewState {
         let frequencies = &data.frequencies;
         if frequencies.len() < 2
             || frequencies.len() != data.magnitudes.len()
-            || data.magnitudes.iter().any(|level| !level.is_finite())
+            || data
+                .magnitudes
+                .iter()
+                .any(|level| level.is_nan() || *level == f32::INFINITY)
             || frequencies.iter().any(|f| !f.is_finite() || *f <= 0.0)
             || frequencies.windows(2).any(|pair| pair[0] >= pair[1])
         {
@@ -57,22 +60,55 @@ impl SpectrumViewState {
     /// Optional five-band display smoothing, shared by the bars and inspection.
     /// This changes only the display and does not change audio or analyzer setup.
     pub fn magnitudes(data: &SpectrumData, smoothed: bool) -> Arc<[f32]> {
-        if data.magnitudes.iter().any(|level| !level.is_finite()) {
-            return Arc::from([]);
-        }
-        if !smoothed {
-            return data.magnitudes.clone();
+        let display = Self::display_magnitudes(&data.magnitudes);
+        if !smoothed || display.is_empty() {
+            return display;
         }
         (0..data.magnitudes.len())
             .map(|index| {
                 let start = index.saturating_sub(2);
                 let end = (index + 3).min(data.magnitudes.len());
-                let values = &data.magnitudes[start..end];
+                let values = &display[start..end];
                 let sum: f64 = values.iter().map(|value| f64::from(*value)).sum();
                 (sum / values.len() as f64) as f32
             })
             .collect::<Vec<_>>()
             .into()
+    }
+
+    /// Interpolate unmeasured log bands for display without changing band power.
+    pub fn display_magnitudes(magnitudes: &Arc<[f32]>) -> Arc<[f32]> {
+        if magnitudes
+            .iter()
+            .any(|value| value.is_nan() || *value == f32::INFINITY)
+        {
+            return Arc::from([]);
+        }
+        if magnitudes.iter().all(|value| value.is_finite()) {
+            return magnitudes.clone();
+        }
+        let mut display = magnitudes.to_vec();
+        let measured: Vec<_> = magnitudes
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| value.is_finite())
+            .map(|(index, _)| index)
+            .collect();
+        let Some(&first) = measured.first() else {
+            display.fill(-100.0);
+            return display.into();
+        };
+        display[..first].fill(magnitudes[first]);
+        for pair in measured.windows(2) {
+            let (left, right) = (pair[0], pair[1]);
+            for (offset, value) in display[left + 1..right].iter_mut().enumerate() {
+                let fraction = (offset + 1) as f32 / (right - left) as f32;
+                *value = magnitudes[left] + fraction * (magnitudes[right] - magnitudes[left]);
+            }
+        }
+        let last = *measured.last().unwrap();
+        display[last + 1..].fill(magnitudes[last]);
+        display.into()
     }
 
     pub fn inspected_band(&self, count: usize) -> Option<usize> {

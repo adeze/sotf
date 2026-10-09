@@ -599,6 +599,14 @@ pub enum PluginUpdateType {
         node_id: sotf_audio_player::GraphNodeId,
         param_index: usize,
     },
+    Action {
+        plugin_index: usize,
+        node_id: Option<sotf_audio_player::GraphNodeId>,
+        param_index: usize,
+        key: &'static str,
+        value: bool,
+        request_id: u64,
+    },
     /// Structural change (add/remove/reorder/toggle) - use update_plugins() for full rebuild
     Structural,
 }

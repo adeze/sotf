@@ -1,0 +1,85 @@
+{
+  "version": 2,
+  "plugins": [
+    {
+      "id": 1,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    },
+    {
+      "id": 2,
+      "enabled": false,
+      "settings": {
+        "Gain": {
+          "channels": 2,
+          "gain_db": 0.0,
+          "smoothing_ms": 10.0
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 5,
+      "enabled": true,
+      "settings": {
+        "LoudnessCompensation": {
+          "low_freq": 60.0,
+          "low_gain": 5.0,
+          "high_freq": 12000.0,
+          "high_gain": 2.0,
+          "mid_enabled": true,
+          "mid_freq": 4000.0,
+          "mid_gain": 6.0,
+          "mid_q": 0.7,
+          "auto_gain_enabled": false,
+          "auto_gain_max_db": 6.0,
+          "auto_gain_smoothing_ms": 100.0,
+          "mode": 2,
+          "playback_level_db": 65.0,
+          "reference_level_db": 83.0,
+          "playback_volume_db": -18.0,
+          "auto_gain_position": 0,
+          "headroom_normalized": true,
+          "auto_calibrated": true
+        }
+      },
+      "permanent": false
+    },
+    {
+      "id": 3,
+      "enabled": true,
+      "settings": {
+        "Matrix": {
+          "input_channels": 2,
+          "output_channels": 2,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "channel_states": [
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            }
+          ]
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 4,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    }
+  ]
+}

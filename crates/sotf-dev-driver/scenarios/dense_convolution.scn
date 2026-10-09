@@ -1,0 +1,60 @@
+# One primary resource row; all six non-file controls use real widgets.
+# Native file-dialog selection and live IR processing are separate gates.
+resize 1440 1100
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add Convolution
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/convolution-before.json
+assert_within plugin.file_picker.2.ir_file rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+click plugin.param.2.1.exact
+key cmd-a
+type "37"
+key enter
+assert plugins.plugin.2.param.1.value == 0.37 tolerance=0.000001
+click plugin.param.2.2.exact
+key cmd-a
+type "-3.5"
+key enter
+assert plugins.plugin.2.param.2.value == -3.5 tolerance=0.000001
+scroll_into_view rack.params plugin.choice.2.3.0
+click plugin.choice.2.3.0
+assert plugins.plugin.2.param.3.value == 0
+scroll_into_view rack.params plugin.choice.2.4.1
+click plugin.choice.2.4.1
+assert plugins.plugin.2.param.4.value == 1
+scroll_into_view rack.params plugin.param.2.5.exact
+click plugin.param.2.5.exact
+key up
+key escape
+assert plugins.plugin.2.param.5.value == 160 tolerance=0
+click plugin.param.2.5.exact
+key cmd-a
+type "224"
+key enter
+assert plugins.plugin.2.param.5.value == 224 tolerance=0
+scroll_into_view rack.params plugin.choice.2.6.1
+click plugin.choice.2.6.1
+assert plugins.plugin.2.param.6.value == 1
+assert_text convolution.status.2 == "Choose or drop an impulse-response WAV file · Zero-latency head · 224 taps"
+plugin_chain_save $SOTF_QA_DIR/convolution-edited.json
+screenshot convolution-wide
+plugin_chain_load $SOTF_QA_DIR/convolution-edited.json
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/convolution-reloaded.json
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.file_picker.2.ir_file
+assert_within plugin.file_picker.2.ir_file rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+screenshot convolution-narrow
+click rack.config.toggle
+assert_visible rack.config.view
+assert_visible rack.config.skin
+screenshot convolution-appearance-only
+click rack.config.toggle
+plugin_chain_save $SOTF_QA_DIR/convolution-final.json

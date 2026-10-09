@@ -569,182 +569,189 @@ impl PlayerView {
         target: ListeningPathTarget,
         cx: &mut Context<Self>,
     ) {
-        let weak_state = self.state.downgrade();
-        let path_filter = self
-            .state
-            .read(cx)
-            .app
-            .ui_state
-            .translations
-            .listening_test
-            .setup
-            .path_json_filter;
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter(path_filter, &["json"])
-                .pick_file()
-                .await;
-            let Some(file) = file else { return };
-            let path = file.path().to_path_buf();
-            let result = std::fs::read_to_string(&path)
-                .map_err(|error| error.to_string())
-                .and_then(|json| {
-                    serde_json::from_str::<PathConfig>(&json).map_err(|error| error.to_string())
-                });
-            let Some(entity) = weak_state.upgrade() else {
-                return;
-            };
-            entity.update(&mut cx.clone(), |state, cx| {
-                let path_loaded = state
-                    .app
-                    .ui_state
-                    .translations
-                    .listening_test
-                    .status
-                    .path_loaded;
-                let listening = &mut state.app.plugin_state.listening_test_state;
-                match result {
-                    Ok(config) => {
-                        let config = simplify_linear_path_config(config);
-                        let label = path
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or(path_filter)
-                            .to_owned();
-                        match target {
-                            ListeningPathTarget::A => {
-                                listening.path_a = Some(config);
-                                listening.path_a_label = label;
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            let weak_state = self.state.downgrade();
+            let path_filter = self
+                .state
+                .read(cx)
+                .app
+                .ui_state
+                .translations
+                .listening_test
+                .setup
+                .path_json_filter;
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter(path_filter, &["json"])
+                    .pick_file()
+                    .await;
+                let Some(file) = file else { return };
+                let path = file.path().to_path_buf();
+                let result = std::fs::read_to_string(&path)
+                    .map_err(|error| error.to_string())
+                    .and_then(|json| {
+                        serde_json::from_str::<PathConfig>(&json).map_err(|error| error.to_string())
+                    });
+                let Some(entity) = weak_state.upgrade() else {
+                    return;
+                };
+                entity.update(&mut cx.clone(), |state, cx| {
+                    let path_loaded = state
+                        .app
+                        .ui_state
+                        .translations
+                        .listening_test
+                        .status
+                        .path_loaded;
+                    let listening = &mut state.app.plugin_state.listening_test_state;
+                    match result {
+                        Ok(config) => {
+                            let config = simplify_linear_path_config(config);
+                            let label = path
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .unwrap_or(path_filter)
+                                .to_owned();
+                            match target {
+                                ListeningPathTarget::A => {
+                                    listening.path_a = Some(config);
+                                    listening.path_a_label = label;
+                                }
+                                ListeningPathTarget::B => {
+                                    listening.path_b = Some(config);
+                                    listening.path_b_label = label;
+                                }
                             }
-                            ListeningPathTarget::B => {
-                                listening.path_b = Some(config);
-                                listening.path_b_label = label;
-                            }
+                            clear_listening_canvas(listening, target);
+                            let _ = listening.ab_test.clear_session();
+                            listening.status = path_loaded.into();
                         }
-                        clear_listening_canvas(listening, target);
-                        let _ = listening.ab_test.clear_session();
-                        listening.status = path_loaded.into();
+                        Err(error) => listening.status = error,
                     }
-                    Err(error) => listening.status = error,
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
     }
 
     pub(super) fn pick_listening_session_file(&mut self, load: bool, cx: &mut Context<Self>) {
-        let weak_state = self.state.downgrade();
-        let session_filter = self
-            .state
-            .read(cx)
-            .app
-            .ui_state
-            .translations
-            .listening_test
-            .setup
-            .session_filter;
-        let mut session = self
-            .state
-            .read(cx)
-            .app
-            .plugin_state
-            .listening_test_state
-            .ab_test
-            .session()
-            .cloned();
-        if let Some(session) = session.as_mut() {
-            session.planned_trials = u32::try_from(
-                self.state
-                    .read(cx)
-                    .app
-                    .plugin_state
-                    .plugin_ui_state
-                    .listening_workspace
-                    .planned_trials,
-            )
-            .ok();
-        }
-        #[cfg(feature = "dev-api")]
-        let qa_path = std::env::var_os("SOTF_QA_DIR")
-            .map(std::path::PathBuf::from)
-            .map(|directory| directory.join("listening-session.json"));
-        #[cfg(not(feature = "dev-api"))]
-        let qa_path: Option<std::path::PathBuf> = None;
-        cx.spawn(async move |_, cx| {
-            let path = if let Some(path) = qa_path {
-                Some(path)
-            } else if load {
-                rfd::AsyncFileDialog::new()
-                    .add_filter(session_filter, &["json"])
-                    .pick_file()
-                    .await
-                    .map(|file| file.path().to_path_buf())
-            } else {
-                rfd::AsyncFileDialog::new()
-                    .set_file_name("sotf-listening-session.json")
-                    .save_file()
-                    .await
-                    .map(|file| file.path().to_path_buf())
-            };
-            let Some(path) = path else { return };
-            let result = if load {
-                load_ab_test_session(&path).map(Some)
-            } else if let Some(session) = session.as_ref() {
-                save_ab_test_session(session, &path).map(|_| None)
-            } else {
-                return;
-            };
-            let Some(entity) = weak_state.upgrade() else {
-                return;
-            };
-            entity.update(&mut cx.clone(), |state, cx| {
-                let localized = state
-                    .app
-                    .ui_state
-                    .translations
-                    .listening_test
-                    .status
-                    .clone();
-                let listening = &mut state.app.plugin_state.listening_test_state;
-                match result {
-                    Ok(Some(session)) => {
-                        let setup = session.setup.clone();
-                        let planned_trials = session.planned_trials.map(|count| count as usize);
-                        match listening.ab_test.replace_session(session) {
-                            Ok(()) => {
-                                // A running comparison can reject replacement. Publish
-                                // its setup only after the controller accepts the session.
-                                listening.path_a = Some(setup.path_a.config);
-                                listening.path_b = Some(setup.path_b.config);
-                                listening.path_a_label = setup.path_a.label;
-                                listening.path_b_label = setup.path_b.label;
-                                listening.path_a_canvas = None;
-                                listening.path_b_canvas = None;
-                                listening.level_match_config = setup.level_match.config();
-                                listening.segment_start_ms = setup.media.start_ms;
-                                listening.status = localized.session_loaded.into();
-                                state.app.plugin_state.plugin_ui_state.listening_workspace =
-                                    crate::app::state::plugin::ListeningWorkspaceState::default();
-                                if let Some(planned_trials) = planned_trials {
-                                    state
-                                        .app
-                                        .plugin_state
-                                        .plugin_ui_state
-                                        .listening_workspace
-                                        .planned_trials = planned_trials;
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            let weak_state = self.state.downgrade();
+            let session_filter = self
+                .state
+                .read(cx)
+                .app
+                .ui_state
+                .translations
+                .listening_test
+                .setup
+                .session_filter;
+            let mut session = self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .listening_test_state
+                .ab_test
+                .session()
+                .cloned();
+            if let Some(session) = session.as_mut() {
+                session.planned_trials = u32::try_from(
+                    self.state
+                        .read(cx)
+                        .app
+                        .plugin_state
+                        .plugin_ui_state
+                        .listening_workspace
+                        .planned_trials,
+                )
+                .ok();
+            }
+            #[cfg(feature = "dev-api")]
+            let qa_path = std::env::var_os("SOTF_QA_DIR")
+                .map(std::path::PathBuf::from)
+                .map(|directory| directory.join("listening-session.json"));
+            #[cfg(not(feature = "dev-api"))]
+            let qa_path: Option<std::path::PathBuf> = None;
+            cx.spawn(async move |_, cx| {
+                let path = if let Some(path) = qa_path {
+                    Some(path)
+                } else if load {
+                    rfd::AsyncFileDialog::new()
+                        .add_filter(session_filter, &["json"])
+                        .pick_file()
+                        .await
+                        .map(|file| file.path().to_path_buf())
+                } else {
+                    rfd::AsyncFileDialog::new()
+                        .set_file_name("sotf-listening-session.json")
+                        .save_file()
+                        .await
+                        .map(|file| file.path().to_path_buf())
+                };
+                let Some(path) = path else { return };
+                let result = if load {
+                    load_ab_test_session(&path).map(Some)
+                } else if let Some(session) = session.as_ref() {
+                    save_ab_test_session(session, &path).map(|_| None)
+                } else {
+                    return;
+                };
+                let Some(entity) = weak_state.upgrade() else {
+                    return;
+                };
+                entity.update(&mut cx.clone(), |state, cx| {
+                    let localized = state
+                        .app
+                        .ui_state
+                        .translations
+                        .listening_test
+                        .status
+                        .clone();
+                    let listening = &mut state.app.plugin_state.listening_test_state;
+                    match result {
+                        Ok(Some(session)) => {
+                            let setup = session.setup.clone();
+                            let planned_trials = session.planned_trials.map(|count| count as usize);
+                            match listening.ab_test.replace_session(session) {
+                                Ok(()) => {
+                                    // A running comparison can reject replacement. Publish
+                                    // its setup only after the controller accepts the session.
+                                    listening.path_a = Some(setup.path_a.config);
+                                    listening.path_b = Some(setup.path_b.config);
+                                    listening.path_a_label = setup.path_a.label;
+                                    listening.path_b_label = setup.path_b.label;
+                                    listening.path_a_canvas = None;
+                                    listening.path_b_canvas = None;
+                                    listening.level_match_config = setup.level_match.config();
+                                    listening.segment_start_ms = setup.media.start_ms;
+                                    listening.status = localized.session_loaded.into();
+                                    state.app.plugin_state.plugin_ui_state.listening_workspace =
+                                        crate::app::state::plugin::ListeningWorkspaceState::default(
+                                        );
+                                    if let Some(planned_trials) = planned_trials {
+                                        state
+                                            .app
+                                            .plugin_state
+                                            .plugin_ui_state
+                                            .listening_workspace
+                                            .planned_trials = planned_trials;
+                                    }
                                 }
+                                Err(error) => listening.status = error.to_string(),
                             }
-                            Err(error) => listening.status = error.to_string(),
                         }
+                        Ok(None) => listening.status = localized.session_saved.into(),
+                        Err(error) => listening.status = error.to_string(),
                     }
-                    Ok(None) => listening.status = localized.session_saved.into(),
-                    Err(error) => listening.status = error.to_string(),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
     }
 
     pub(super) fn is_listening_test_active(&self, cx: &Context<Self>) -> bool {

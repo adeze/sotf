@@ -104,7 +104,11 @@ pub struct DragState {
 }
 
 pub struct PluginUiState {
+    /// The open long-choice selector, scoped to stable plugin instance and parameter.
+    pub layout_choice_menu: Option<(usize, usize)>,
+    pub layout_choice_highlight: Option<usize>,
     pub upmixer_config_open: bool,
+    pub upmixer_config_highlighted_index: Option<usize>,
     pub upmixer_tab: usize,
     pub upmixer_expanded_sections: Vec<String>,
     pub spatial_spider: crate::components::plugins::spatial_spider::SpatialSpiderUiState,
@@ -347,7 +351,10 @@ impl App {
                 knob_drag: None,
             },
             plugin_ui: PluginUiState {
+                layout_choice_menu: None,
+                layout_choice_highlight: None,
                 upmixer_config_open: false,
+                upmixer_config_highlighted_index: None,
                 // Upmixer configuration tabs use the 10..=13 namespace.
                 upmixer_tab: 10,
                 upmixer_expanded_sections: vec![

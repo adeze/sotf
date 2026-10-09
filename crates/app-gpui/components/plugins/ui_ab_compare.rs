@@ -108,47 +108,13 @@ pub fn render_ab_compare(
         crate::app::i18n::PluginRackTranslations::for_language(state.app.ui_state.language);
     let text = ABCompareTranslations::for_language(state.app.ui_state.language);
     let common_text = PluginCommonTranslations::for_language(state.app.ui_state.language);
-    let stack_paths = ctx.available_width / ctx.layout_scale.max(0.01) < 600.0;
+    // Two compact source headers fit side by side in the short rack. Stacking
+    // them at this width hides Path B behind the player footer.
+    let stack_paths = ctx.available_width / ctx.layout_scale.max(0.01) < 450.0;
+    let compact_paths = ctx.available_height < 420.0;
+    let wide_short = compact_paths && ctx.available_width / ctx.layout_scale.max(0.01) >= 800.0;
     let (path_a_param_idx, path_a_value) = path_selection_update(ctx.settings, 0);
     let (path_b_param_idx, path_b_value) = path_selection_update(ctx.settings, 1);
-    let bypass_param_idx = sotf_plugins::param_specs::index_of(
-        sotf_plugins::param_specs::ab_compare::PARAMS,
-        "bypass",
-    );
-
-    let bypass_button = Button::new(
-        "ab-bypass-toggle",
-        if is_bypassed {
-            text.resume
-        } else {
-            text.bypass
-        },
-    )
-    .aria_label(if is_bypassed {
-        text.resume
-    } else {
-        text.bypass
-    })
-    .variant(if is_bypassed {
-        ButtonVariant::Primary
-    } else {
-        ButtonVariant::Secondary
-    })
-    .size(ButtonSize::Xs)
-    .theme(ctx.theme.to_button_theme())
-    .on_click_event(cx.listener(move |_view, _: &ClickEvent, window, cx| {
-        window.dispatch_action(
-            Box::new(UpdatePluginParam {
-                plugin_idx,
-                param_idx: bypass_param_idx,
-                value: if is_bypassed { 0.0 } else { 1.0 },
-            }),
-            cx,
-        );
-    }));
-    #[cfg(feature = "dev-api")]
-    let bypass_button = bypass_button.dev_track("ab.bypass.toggle");
-
     let warning = div()
         .flex()
         .flex_wrap()
@@ -167,8 +133,7 @@ pub fn render_ab_compare(
                 .flex_1()
                 .min_w(rems(12.0))
                 .child(Text::caption(text.comparison_warning).color(ctx.theme.warning)),
-        )
-        .child(div().flex_shrink_0().child(bypass_button));
+        );
     #[cfg(feature = "dev-api")]
     let warning = warning.dev_track("ab.warning.level-latency");
 
@@ -183,70 +148,98 @@ pub fn render_ab_compare(
     #[cfg(feature = "dev-api")]
     let bypass_notice = bypass_notice.dev_track("ab.bypass.active");
 
+    let primary = div()
+        .flex()
+        .flex_col()
+        .min_w_0()
+        .when(wide_short, |panel| panel.w(px(ctx.available_width * 0.62)))
+        .child(ui_layout_renderer::render_main_controls_from_layout(
+            &d,
+            ctx.entity.clone(),
+            plugin_idx,
+            ctx.plugin_instance_id,
+            ctx.layout_choice_menu,
+            ctx.layout_choice_highlight,
+            ctx.settings,
+            ctx.is_editing,
+            ctx.selected_param,
+            ctx.plugin_data.as_ref(),
+            if wide_short {
+                ctx.available_width * 0.62
+            } else {
+                ctx.available_width
+            },
+            ctx.available_height,
+            ctx.layout_scale,
+            common_text,
+            ctx.theme,
+        ));
+    let paths = div()
+        .flex()
+        .when(stack_paths || wide_short, |paths| paths.flex_col())
+        .gap(d.section)
+        .min_w_0()
+        .when(wide_short, |paths| paths.flex_1())
+        .when(!wide_short, |paths| paths.w_full())
+        .child(render_path_section(
+            text.path_a,
+            0,
+            plugin_idx,
+            &path_a,
+            path_a_file.as_deref(),
+            add_menu_target == Some(ABPathTarget::A),
+            active_path == Some(0),
+            path_a_param_idx,
+            path_a_value,
+            workflow_text,
+            rack_text,
+            text,
+            ctx.theme,
+            compact_paths,
+            cx,
+        ))
+        .child(render_path_section(
+            text.path_b,
+            1,
+            plugin_idx,
+            &path_b,
+            path_b_file.as_deref(),
+            add_menu_target == Some(ABPathTarget::B),
+            active_path == Some(1),
+            path_b_param_idx,
+            path_b_value,
+            workflow_text,
+            rack_text,
+            text,
+            ctx.theme,
+            compact_paths,
+            cx,
+        ));
+
     div()
         .key_context("ABCompare")
         .flex()
         .flex_col()
         .gap(d.section)
         .w_full()
-        .child(warning)
         .when(is_bypassed, |root| root.child(bypass_notice))
         .child(
             div()
                 .flex()
-                .when(stack_paths, |paths| paths.flex_col())
+                .when(!wide_short, |core| core.flex_col())
                 .gap(d.section)
                 .w_full()
-                .child(render_path_section(
-                    text.path_a,
-                    0,
-                    plugin_idx,
-                    &path_a,
-                    path_a_file.as_deref(),
-                    add_menu_target == Some(ABPathTarget::A),
-                    active_path == Some(0),
-                    path_a_param_idx,
-                    path_a_value,
-                    workflow_text,
-                    rack_text,
-                    text,
-                    ctx.theme,
-                    cx,
-                ))
-                .child(render_path_section(
-                    text.path_b,
-                    1,
-                    plugin_idx,
-                    &path_b,
-                    path_b_file.as_deref(),
-                    add_menu_target == Some(ABPathTarget::B),
-                    active_path == Some(1),
-                    path_b_param_idx,
-                    path_b_value,
-                    workflow_text,
-                    rack_text,
-                    text,
-                    ctx.theme,
-                    cx,
-                )),
+                .child(primary)
+                .child(paths),
         )
-        .child(ui_layout_renderer::render_main_controls_from_layout(
-            &d,
-            ctx.entity.clone(),
-            plugin_idx,
-            ctx.settings,
-            ctx.is_editing,
-            ctx.selected_param,
-            ctx.plugin_data.as_ref(),
-            ctx.available_width,
-            ctx.layout_scale,
-            common_text,
-            ctx.theme,
-        ))
+        .child(warning)
         .child(ui_layout_renderer::render_tabs_from_layout(
             &d,
             ctx.entity.clone(),
             plugin_idx,
+            ctx.plugin_instance_id,
+            ctx.layout_choice_menu,
+            ctx.layout_choice_highlight,
             ctx.settings,
             ctx.is_editing,
             ctx.selected_param,
@@ -255,6 +248,7 @@ pub fn render_ab_compare(
             ctx.layout_scale,
             common_text,
             ctx.theme,
+            cx,
         ))
         .into_any_element()
 }
@@ -273,6 +267,7 @@ fn render_path_section(
     rack_text: crate::app::i18n::PluginRackTranslations,
     text: ABCompareTranslations,
     theme: &Theme,
+    compact: bool,
     cx: &mut Context<PlayerView>,
 ) -> Div {
     let d = Ds::from_cx(cx);
@@ -281,8 +276,8 @@ fn render_path_section(
         .min_w_0()
         .flex()
         .flex_col()
-        .gap(d.gap)
-        .p(d.pad_x)
+        .gap(if compact { d.half_grid } else { d.gap })
+        .p(if compact { d.pad_y } else { d.pad_x })
         .bg(theme.background_secondary)
         .rounded(d.r_md)
         .border_1()
@@ -347,39 +342,43 @@ fn render_path_section(
     let add_button = add_button.dev_track(format!("ab.path.{path}.add"));
 
     // Header
-    section = section.child(
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(Text::eyebrow(label.to_string()).color(if is_active {
-                        theme.accent
+    let header = div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .child(Text::eyebrow(label.to_string()).color(if is_active {
+                    theme.accent
+                } else {
+                    theme.text_primary
+                }))
+                .child(Text::caption(format!(
+                    "{} {}",
+                    plugins.len(),
+                    if plugins.len() == 1 {
+                        text.plugin
                     } else {
-                        theme.text_primary
-                    }))
-                    .child(Text::caption(format!(
-                        "{} {}",
-                        plugins.len(),
-                        if plugins.len() == 1 {
-                            text.plugin
-                        } else {
-                            text.plugins
-                        }
-                    ))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(d.grid)
-                    .child(select_button)
-                    .child(add_button),
-            ),
-    );
+                        text.plugins
+                    }
+                )))
+                .when(compact && plugins.is_empty(), |header| {
+                    header.child(Text::caption(workflow_text.empty_pass_through))
+                }),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(d.grid)
+                .child(select_button)
+                .child(add_button),
+        );
+    #[cfg(feature = "dev-api")]
+    let header = header.dev_track(format!("ab.path.{path}.header"));
+    section = section.child(header);
 
     if let Some(file_path) = loaded_config_file.filter(|path| !path.is_empty()) {
         let file_name = display_file_name(file_path);
@@ -402,10 +401,12 @@ fn render_path_section(
         section = section.child(render_add_menu(path, plugin_idx, theme, cx));
     }
 
-    section = section.child(Divider::new().color(theme.border));
+    if !compact {
+        section = section.child(Divider::new().color(theme.border));
+    }
 
     // Plugin list
-    if plugins.is_empty() {
+    if plugins.is_empty() && !compact {
         section = section.child(
             div()
                 .py(d.pad_y)
@@ -517,7 +518,7 @@ fn render_sub_plugin_card(
     if sub_idx > 0 {
         let from = sub_idx;
         let to = sub_idx - 1;
-        card = card.child(
+        card = card.child(track_path_action(
             Button::new(
                 SharedString::from(format!("ab-up-{path}-{sub_idx}")),
                 "\u{25B2}",
@@ -537,14 +538,17 @@ fn render_sub_plugin_card(
                     cx,
                 );
             })),
-        );
+            path,
+            sub_idx,
+            "up",
+        ));
     }
 
     // Move down button
     if sub_idx < total - 1 {
         let from = sub_idx;
         let to = sub_idx + 1;
-        card = card.child(
+        card = card.child(track_path_action(
             Button::new(
                 SharedString::from(format!("ab-down-{path}-{sub_idx}")),
                 "\u{25BC}",
@@ -564,11 +568,14 @@ fn render_sub_plugin_card(
                     cx,
                 );
             })),
-        );
+            path,
+            sub_idx,
+            "down",
+        ));
     }
 
     // Remove button
-    card = card.child(
+    card = card.child(track_path_action(
         Button::new(
             SharedString::from(format!("ab-rm-{path}-{sub_idx}")),
             "\u{2715}",
@@ -587,7 +594,10 @@ fn render_sub_plugin_card(
                 cx,
             );
         })),
-    );
+        path,
+        sub_idx,
+        "remove",
+    ));
 
     #[cfg(feature = "dev-api")]
     let card = card.dev_track(format!(
@@ -598,6 +608,15 @@ fn render_sub_plugin_card(
             .replace([' ', '/'], "-")
     ));
     card.into_any_element()
+}
+
+/// Attach stable native-test selectors to the path rack actions.
+fn track_path_action(button: Button, path: u8, sub_idx: usize, action: &'static str) -> AnyElement {
+    #[cfg(feature = "dev-api")]
+    let button = button.dev_track(format!("ab.path.{path}.plugin.{sub_idx}.{action}"));
+    #[cfg(not(feature = "dev-api"))]
+    let _ = (path, sub_idx, action);
+    button.into_any_element()
 }
 
 fn plugin_display_name(plugin_type: &str) -> Option<&'static str> {

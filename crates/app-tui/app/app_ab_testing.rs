@@ -191,6 +191,8 @@ impl App {
     fn apply_ab_testing_effect(&mut self, effect: PluginUpdateEffect) {
         match effect {
             PluginUpdateEffect::None => {}
+            // The AB testing controller does not issue momentary profile commands.
+            PluginUpdateEffect::Action { .. } => {}
             PluginUpdateEffect::Structural | PluginUpdateEffect::Parameter { .. } => {
                 self.request_plugin_update();
             }

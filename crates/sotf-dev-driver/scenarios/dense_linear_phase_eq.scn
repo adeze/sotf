@@ -1,0 +1,163 @@
+# 2026-10-08: FIR EQ now uses a dense editor with header globals, five-field band
+# addresses and sparse Placement IDs. The former adjustment path used stride 4.
+# Fix: crates/app-gpui/components/plugins/ui_eq/linear_phase.rs:122;
+# crates/sotf-player/src/controllers/plugin/linear_phase.rs:9.
+# Manual app: qa_dir=$(mktemp -d); cargo run -p sotf-gpui --features dev-api --bin sotf-desktop -- --qa "$qa_dir"
+# Manual driver: cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/dense_linear_phase_eq.scn -v
+# Suite app build: cargo build -p sotf-gpui --features dev-api --bin sotf-desktop;
+# sotf-dev-driver run-suite crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The suite runner supplies an isolated temporary QA directory to each app launch.
+# FIR globals, five-field band stride and sparse placement are real desktop controls.
+resize 1440 1100
+focus Studio
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 1s
+click plugin.param.2.100.exact
+key cmd-a
+type "3"
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.100.value == 3
+assert plugins.plugin.2.param_count == 23
+click plugin.param.2.100.exact
+key up
+wait_idle 1s
+assert plugins.plugin.2.param.100.value == 4
+key down
+wait_idle 1s
+key escape
+assert plugins.plugin.2.param.100.value == 3
+plugin_chain_save $SOTF_QA_DIR/before.json
+click plugin.select.2.101
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.101.value == 2
+click plugin.choice.2.102.1
+wait_idle 1s
+assert plugins.plugin.2.param.102.value == 1
+click plugin.choice.2.103.1
+wait_idle 1s
+assert plugins.plugin.2.param.103.value == 1
+click fir.eq.band.1.select
+wait_idle 1s
+click fir.eq.band.1.solo.1
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/solo.json
+click fir.eq.band.1.solo.0
+wait_idle 500ms
+click plugin.param.2.6.exact
+key cmd-a
+type "750"
+key enter
+assert plugins.plugin.2.param.6.value == 750 tolerance=0.001
+click plugin.param.2.7.exact
+key cmd-a
+type "2.35"
+key enter
+click plugin.param.2.7.exact
+key up
+wait_idle 1s
+key escape
+wait_idle 1s
+assert plugins.plugin.2.param.7.value == 2.4 tolerance=0.001
+double_click plugin.slider.2.7
+wait_idle 1s
+assert plugins.plugin.2.param.7.value == 1 tolerance=0.001
+click plugin.param.2.8.exact
+key cmd-a
+type "-3.5"
+key enter
+assert plugins.plugin.2.param.8.value == -3.5 tolerance=0.001
+click plugin.choice.2.9.0
+wait_idle 1s
+assert plugins.plugin.2.param.9.value == 0
+click plugin.choice.2.9.1
+wait_idle 1s
+assert plugins.plugin.2.param.9.value == 1
+click plugin.select.2.201
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.201.value == 4
+click eq.band.reset
+wait_idle 1s
+assert plugins.plugin.2.param.6.value == 1000 tolerance=0.001
+assert plugins.plugin.2.param.7.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.8.value == 0 tolerance=0.001
+assert plugins.plugin.2.param.9.value == 1
+assert plugins.plugin.2.param.201.value == 0
+click plugin.select.2.5
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.5.value == 1
+click plugin.param.2.6.exact
+key cmd-a
+type "750"
+key enter
+click plugin.param.2.7.exact
+key cmd-a
+type "2.35"
+key enter
+click plugin.param.2.8.exact
+key cmd-a
+type "-3.5"
+key enter
+click plugin.select.2.201
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+click plugin.param.2.104.exact
+key cmd-a
+type "65"
+key enter
+assert plugins.plugin.2.param.104.value == 0.65 tolerance=0.001
+snapshot $SOTF_QA_DIR/wide.json
+screenshot linear-phase-eq-wide
+resize 1000 700
+wait_idle 1s
+assert_within plugin.param.2.6.exact rack.params
+assert_within plugin.param.2.7.exact rack.params
+assert_within plugin.param.2.8.exact rack.params
+assert_within plugin.param.2.104.exact rack.params
+assert_within plugin.select.2.5 rack.params
+assert_within plugin.select.2.201 rack.params
+snapshot $SOTF_QA_DIR/narrow.json
+screenshot linear-phase-eq-narrow
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 1s
+assert plugins.plugin.2.param.5.value == 1
+assert plugins.plugin.2.param.6.value == 750 tolerance=0.001
+assert plugins.plugin.2.param.7.value == 2.35 tolerance=0.001
+assert plugins.plugin.2.param.8.value == -3.5 tolerance=0.001
+assert plugins.plugin.2.param.104.value == 0.65 tolerance=0.001
+assert plugins.plugin.2.param.201.value == 4
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+click rack.config.toggle
+wait_idle 1s
+snapshot $SOTF_QA_DIR/gear.json
+screenshot linear-phase-eq-appearance-menu

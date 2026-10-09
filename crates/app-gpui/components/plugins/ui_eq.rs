@@ -12,6 +12,7 @@ mod eq_control_point_drag;
 mod eq_qhandle_drag;
 mod get;
 mod layout_compact;
+mod linear_phase;
 mod misc;
 mod render;
 mod types;
@@ -22,3 +23,5 @@ pub use get::*;
 pub use misc::*;
 pub use render::*;
 pub use types::*;
+
+pub(crate) use linear_phase::render_header as render_linear_phase_eq_header_controls;

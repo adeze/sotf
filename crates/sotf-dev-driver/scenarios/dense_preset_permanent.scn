@@ -1,0 +1,30 @@
+resize 1440 900
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add Gain
+action PluginSelectFirstUser
+wait_idle 500ms
+assert meters.group.0.soloed == false
+assert meters.group.0.dimmed == false
+click meters.group.0.solo
+assert meters.group.0.soloed == true
+assert meters.group.0.muted == false
+click meters.group.0.mute
+assert meters.group.0.muted == true
+click meters.group.0.dim
+assert meters.group.0.dimmed == true
+plugin_chain_save $SOTF_QA_DIR/permanent-before.json
+click plugin.param.2.0.exact
+key cmd-a
+type "-4"
+key enter
+assert plugins.plugin.2.param.0.value == -4
+plugin_chain_save $SOTF_QA_DIR/permanent-edited.json
+plugin_chain_load $SOTF_QA_DIR/permanent-edited.json
+wait_idle 500ms
+assert plugins.plugin.2.param.0.value == -4
+assert meters.group.0.muted == true
+assert meters.group.0.soloed == true
+assert meters.group.0.dimmed == true
+plugin_chain_save $SOTF_QA_DIR/permanent-reloaded.json
+screenshot permanent-controls-reloaded

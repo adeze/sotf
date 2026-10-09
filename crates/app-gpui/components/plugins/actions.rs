@@ -148,6 +148,30 @@ impl gpui::Action for OpenSofaFile {
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct OpenHrtfDatabase {
+    pub plugin_idx: usize,
+    pub param_idx: usize,
+}
+
+impl gpui::Action for OpenHrtfDatabase {
+    fn boxed_clone(&self) -> Box<dyn gpui::Action> {
+        Box::new(self.clone())
+    }
+    fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
+        other.as_any().downcast_ref::<Self>() == Some(self)
+    }
+    fn name(&self) -> &'static str {
+        "OpenHrtfDatabase"
+    }
+    fn name_for_type() -> &'static str {
+        "OpenHrtfDatabase"
+    }
+    fn build(_: serde_json::Value) -> anyhow::Result<Box<dyn gpui::Action>> {
+        Err(anyhow::anyhow!("Not supported via keymaps"))
+    }
+}
+
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct OpenIrFile {
     pub plugin_idx: usize,
     pub param_idx: usize,

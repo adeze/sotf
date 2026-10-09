@@ -198,6 +198,7 @@ fn assert_maximum_true_peak_layout(
     let label = tracked_meter_element(window_id, "meters.lufs.maximum-true-peak-label").bounds;
     let value = tracked_meter_element(window_id, "meters.lufs.maximum-true-peak-value").bounds;
     let bar = tracked_meter_element(window_id, "meters.lufs.true-peak-bar.0").bounds;
+    let integrated = tracked_meter_element(window_id, "meters.lufs.integrated-bar").bounds;
 
     let right = |bounds: Bounds<Pixels>| f32::from(bounds.origin.x) + f32::from(bounds.size.width);
     let bottom =
@@ -228,8 +229,16 @@ fn assert_maximum_true_peak_layout(
         "the Max TP value should fit inside its summary row: {value:?}, summary {summary:?}"
     );
     assert!(
-        bottom(label) <= f32::from(value.origin.y),
-        "the stacked Max TP label and value should not overlap: {label:?}, {value:?}"
+        right(label) <= f32::from(value.origin.x),
+        "the inline Max TP label and value should not overlap: {label:?}, {value:?}"
+    );
+    assert!(
+        (f32::from(label.origin.y) - f32::from(value.origin.y)).abs() <= 1.0,
+        "Max TP label and value must share a row"
+    );
+    assert!(
+        bottom(integrated) <= f32::from(summary.origin.y),
+        "Programme loudness must precede the channel peak list"
     );
     assert!(
         bottom(summary) <= f32::from(bar.origin.y),
@@ -488,8 +497,12 @@ fn assert_maximum_lufs_layout(
         assert!(label.origin.y >= summary.origin.y && bottom(label) <= bottom(summary));
         assert!(value.origin.y >= summary.origin.y && bottom(value) <= bottom(summary));
         assert!(
-            bottom(label) <= f32::from(value.origin.y),
+            right(label) <= f32::from(value.origin.x),
             "{name} label/value overlap: {label:?}, {value:?}"
+        );
+        assert!(
+            (f32::from(label.origin.y) - f32::from(value.origin.y)).abs() <= 1.0,
+            "{name} label and value must share a row"
         );
     }
     assert!(
@@ -540,8 +553,12 @@ fn assert_lra_layout(
         );
     }
     assert!(
-        bottom(lra_label) <= f32::from(lra_value.origin.y),
+        right(lra_label) <= f32::from(lra_value.origin.x),
         "LRA label and value overlap: {lra_label:?}, {lra_value:?}"
+    );
+    assert!(
+        (f32::from(lra_label.origin.y) - f32::from(lra_value.origin.y)).abs() <= 1.0,
+        "LRA label and value must share a row"
     );
     assert!(
         bottom(momentary) <= f32::from(lra.origin.y),

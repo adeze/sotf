@@ -1,0 +1,21 @@
+resize 1000 700
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add Denoiser
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/profile-before.json
+scroll_into_view rack.params plugin.action.2.20
+click plugin.action.2.20
+wait_idle 500ms
+assert toast.type == "Error"
+assert toast.message == "Audio command failed (set_plugin_action): No engine running"
+assert plugins.plugin.2.param.20.value == 0
+scroll_into_view rack.params plugin.action.2.22
+click plugin.action.2.22
+wait_idle 500ms
+assert toast.type == "Error"
+assert toast.message == "Audio command failed (set_plugin_action): No engine running"
+assert plugins.plugin.2.param.22.value == 0
+plugin_chain_save $SOTF_QA_DIR/profile-after.json
+screenshot denoiser-profile-rejection

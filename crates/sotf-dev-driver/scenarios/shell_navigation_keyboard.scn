@@ -1,89 +1,111 @@
-# Desktop shell navigation must be exercised through rendered sidebar controls.
-# This is deliberately independent of feature-workflow scenarios: it proves the
-# user can reach each primary destination, every destination renders a named,
-# focusable control, and the sidebar remains usable after repeated navigation.
-
-# 2026-08-26: `Tab` was consumed by the PlayerView meter-group shortcut, so
-# focus stayed on Home instead of moving through the rendered sidebar. Player
-# was also a non-interactive heading and Studio navigation overloaded the rack
-# route, preventing explicit mode restoration. Fixed in app keybindings,
-# `App::{enter_player_mode,enter_studio_mode}`, and the sidebar mode controls.
-# Reproduce: `cargo build -p sotf-gpui --features dev-api --bin sotf-desktop`
-# then `target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/shell_navigation_ui.toml -v`.
-focus       library
-assert      screen.focused == "Library"
-assert_visible sidebar.nav-player
-assert_visible sidebar.nav-home
-assert_visible sidebar.nav-library
-assert_visible sidebar.nav-playing
-assert_visible sidebar.nav-queue
-assert_visible sidebar.nav-playlists
-assert_visible sidebar.nav-streams
-assert_visible sidebar.nav-studio
-assert_visible sidebar.nav-studio-rack
-assert_visible sidebar.nav-recording
-assert_visible sidebar.nav-room-eq
-assert_visible sidebar.nav-headphone-eq
-assert_visible sidebar.nav-spinorama
-assert_visible sidebar.nav-learning
-assert_visible sidebar.nav-preferences-button
-accessibility
-screenshot  shell-navigation-library
-
-click       sidebar.nav-home
-assert      screen.focused == "Home"
+# Exercise the real grouped sidebar and output menu without starting audio.
+assert settings.release_channel == "Prod"
+focus Home
+resize 1440 900
+wait_idle 1s
+assert navigation.collapsed == false
+assert_in_viewport sidebar.section-home
+assert_in_viewport sidebar.section-dsp
+assert_in_viewport sidebar.section-room-eq
+assert_in_viewport sidebar.section-tools
+assert_in_viewport sidebar.nav-preferences-button
+assert_accessible button Preferences
+click sidebar.nav-home
+wait_idle 1s
 assert_focused nav-home
-
-# Keyboard-only route change: focus moves through real sidebar controls and
-# Enter activates the focused destination without another pointer event.
-key         tab
+key tab
 assert_focused nav-library
-key         enter
-assert      screen.focused == "Library"
-click       sidebar.nav-playing
-assert      screen.focused == "NowPlaying"
-click       sidebar.nav-queue
-assert      screen.focused == "Queue"
-click       sidebar.nav-playlists
-assert      screen.focused == "Playlists"
-click       sidebar.nav-streams
-assert      screen.focused == "Streams"
-click       sidebar.nav-studio
-assert      screen.focused == "Studio"
-click       sidebar.nav-recording
-assert      screen.focused == "Recording"
-click       sidebar.nav-room-eq
-assert      screen.focused == "RoomEq"
-click       sidebar.nav-headphone-eq
-assert      screen.focused == "HeadphoneEq"
-click       sidebar.nav-spinorama
-assert      screen.focused == "Spinorama"
-click       sidebar.nav-learning
-assert      screen.focused == "ListeningTest"
-click       sidebar.nav-preferences-button
-assert      screen.focused == "Settings"
-
-# Each explicit mode entry restores the last destination in that mode, while
-# the rack remains a distinct Studio destination.
-click       sidebar.nav-queue
-assert      screen.focused == "Queue"
-click       sidebar.nav-room-eq
-assert      screen.focused == "RoomEq"
-click       sidebar.nav-player
-assert      screen.focused == "Queue"
-click       sidebar.nav-studio
-assert      screen.focused == "RoomEq"
-click       sidebar.nav-studio-rack
-assert      screen.focused == "Studio"
-
-# Re-check the a11y tree after all selected-state transitions and at compact
-# width. The driver rejects unnamed focusables and pointer-only primary actions.
-resize      700 600
-wait_idle   2s
+key enter
+wait_idle 1s
+assert screen.focused == "Library"
+click sidebar.nav-playing
+wait_idle 1s
+assert screen.focused == "NowPlaying"
+click sidebar.nav-queue
+wait_idle 1s
+assert screen.focused == "Queue"
+click sidebar.nav-playlists
+wait_idle 1s
+assert screen.focused == "Playlists"
+click sidebar.nav-streams
+wait_idle 1s
+assert screen.focused == "Streams"
+click sidebar.nav-studio-rack
+wait_idle 1s
+assert screen.focused == "Studio"
+click sidebar.nav-plugin-graph
+wait_idle 1s
+assert screen.focused == "PluginGraph"
+click sidebar.nav-spectrum
+wait_idle 1s
+assert screen.focused == "Spectrum"
+click sidebar.nav-recording
+wait_idle 1s
+assert screen.focused == "Recording"
+click sidebar.nav-room-eq
+wait_idle 1s
+assert screen.focused == "RoomEq"
+click sidebar.nav-learning
+wait_idle 1s
+assert screen.focused == "ListeningTest"
+click sidebar.nav-ab-compare
+wait_idle 1s
+assert listening.surface == "BlindComparison"
+click sidebar.nav-home
+wait_idle 1s
+screenshot sidebar-expanded
+click sidebar.nav-devices
+wait_idle 1s
+assert navigation.output_menu_open == true
+assert_focused sidebar-output-menu
+assert_accessible dialog Output Devices
+screenshot sidebar-output-menu
+key escape
+wait_idle 1s
+assert navigation.output_menu_open == false
+click sidebar.nav-devices
+wait_idle 1s
+click sidebar.device.0
+wait_idle 1s
+assert navigation.output_menu_open == false
+assert screen.focused == "Settings"
+assert settings.active_tab == "AudioDevice"
+click settings.audio-discard
+wait_idle 1s
+click preferences.done
+wait_idle 1s
+click sidebar.toggle
+wait_idle 1s
+assert navigation.collapsed == true
 assert_in_viewport sidebar.nav-home
 assert_in_viewport sidebar.nav-preferences-button
-assert_accessible button Studio Rack
-assert_inaccessible textbox Search speakers
-assert_inaccessible button Listening guide
-accessibility
-screenshot  shell-navigation-compact-settings
+click sidebar.nav-studio-rack
+wait_idle 1s
+assert screen.focused == "Studio"
+click sidebar.nav-devices
+wait_idle 1s
+assert navigation.output_menu_open == true
+assert_in_viewport sidebar.device.0
+screenshot sidebar-collapsed-output-menu
+key escape
+wait_idle 1s
+assert navigation.output_menu_open == false
+click sidebar.nav-devices
+wait_idle 1s
+click sidebar.nav-home
+wait_idle 1s
+assert navigation.output_menu_open == false
+click sidebar.nav-preferences-button
+wait_idle 1s
+assert screen.focused == "Settings"
+click preferences.done
+wait_idle 1s
+click sidebar.toggle
+wait_idle 1s
+assert navigation.collapsed == false
+resize 1440 600
+wait_idle 1s
+assert_in_viewport sidebar.nav-devices
+assert_in_viewport sidebar.nav-preferences-button
+screenshot sidebar-short-window
+assert playback.is_playing == false

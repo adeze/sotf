@@ -1,7 +1,7 @@
 # Regression: choose plugins through the actual rendered picker, never plugin_add.
 wait_idle 1s
 action PluginClear
-click sidebar.nav-studiohub
+click sidebar.nav-studio-rack
 assert screen.focused == "Studio"
 assert plugins.user_count == 0
 assert_visible rack.add.open
@@ -22,7 +22,7 @@ wait_until plugins.user_count == 2 timeout=3s
 assert_absent rack.add.menu
 # The inserted graph must survive a screen transition.
 click sidebar.nav-library
-click sidebar.nav-studiohub
+click sidebar.nav-studio-rack
 assert plugins.user_count == 2
 screenshot studio-picker-insertion
 # Scroll to the final analysis category and activate its visible item.

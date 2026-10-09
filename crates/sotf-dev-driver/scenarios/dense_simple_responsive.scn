@@ -1,0 +1,63 @@
+# 2026-10-08: Equal Table columns cramped editing at narrow rack widths.
+# ui_simple.rs reserves a measured name column, lets values fill the space,
+# and replaces the Description column with parameter-name hover help when narrow.
+# From sotf: target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The runner launches the dev-api desktop with an isolated QA directory.
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_idle 500ms
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/responsive-before.json
+assert_visible plugin.simple.description.2.1
+assert_within plugin.param.2.1.exact rack.params
+assert_non_overlapping plugin.slider.2.1 plugin.param.2.1.exact
+screenshot simple-table-wide
+resize 1000 900
+wait_idle 500ms
+assert_absent plugin.simple.description.2.1
+assert_within plugin.simple.row.2.1 rack.params
+assert_within plugin.slider.2.1 rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_non_overlapping plugin.simple.row.2.1 plugin.param.2.1.exact
+assert_non_overlapping plugin.slider.2.1 plugin.param.2.1.exact
+hover plugin.simple.row.2.1
+wait_visible tooltip.description timeout=3s
+assert_text tooltip.description == "Direct sound to front speakers"
+screenshot simple-table-narrow-help
+hover rack.config.toggle
+action CycleLanguage
+assert settings.language == "French"
+action IncreaseFontSize
+action IncreaseFontSize
+wait_idle 500ms
+assert_absent plugin.simple.description.2.1
+assert_within plugin.simple.row.2.1 rack.params
+assert_within plugin.slider.2.1 rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_non_overlapping plugin.slider.2.1 plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "1.25"
+key enter
+assert plugins.plugin.2.param.1.value == 1.25 tolerance=0.000001
+click plugin.param.2.1.exact
+key up
+key escape
+assert plugins.plugin.2.param.1.value == 1.3 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/responsive-edited.json
+double_click plugin.slider.2.1
+assert plugins.plugin.2.param.1.value == 1 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/responsive-after-reset.json
+screenshot simple-table-narrow-french-zoom

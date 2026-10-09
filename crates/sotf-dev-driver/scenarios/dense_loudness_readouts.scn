@@ -1,0 +1,22 @@
+# Existing six-channel input-role fixture checks presentation, not live audio or acknowledgements.
+resize 1000 700
+plugin_clear
+plugin_add LoudnessMonitor
+action MetersSetFixture {"active":true}
+focus Studio
+click rack.plugin.0
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/loudness-readouts-before.json
+assert_within plugin.loudness.control.1.start rack.params
+assert_within meters.lufs.integrated-bar rack.params
+assert_within meters.lufs.shortterm-bar rack.params
+assert_within meters.lufs.momentary-bar rack.params
+assert_text meters.lufs.maximum-true-peak-value == "-1.2 dBTP"
+assert_non_overlapping meters.lufs.maximum-true-peak-label meters.lufs.maximum-true-peak-value
+assert_non_overlapping meters.lufs.maximum-momentary-label meters.lufs.maximum-momentary-value
+assert_non_overlapping meters.lufs.maximum-shortterm-label meters.lufs.maximum-shortterm-value
+screenshot loudness-primary-narrow
+scroll_into_view rack.params meters.lufs.true-peak-bar.5
+assert_within meters.lufs.true-peak-bar.5 rack.params
+screenshot loudness-six-channel-peaks
+plugin_chain_save $SOTF_QA_DIR/loudness-readouts-after.json

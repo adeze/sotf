@@ -23,13 +23,17 @@ pub(super) struct Cli {
     #[arg(long, value_delimiter = ',', default_values_t = vec![16, 24])]
     pub(super) bits: Vec<u16>,
 
-    /// Signal types to generate (comma-separated)
+    /// Signal types to generate (comma-separated, default all except full_sti)
     #[arg(long, value_delimiter = ',')]
     pub(super) signals: Vec<SignalKind>,
 
-    /// Duration in seconds (default 3.0, does not apply to sweep which is fixed at 10s)
+    /// Duration in seconds (per-segment for full_sti, fixed at 30s for sweep)
     #[arg(long, default_value_t = 10.0)]
     pub(super) duration: f32,
+
+    /// Silence gap in seconds between full_sti segments (ignored otherwise)
+    #[arg(long = "sti-gap", default_value_t = 0.0)]
+    pub(super) sti_gap: f32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -76,5 +80,19 @@ pub(super) enum SignalMetadata {
     MNoise {
         description: String,
         weighting: String,
+    },
+    Stipa {
+        bands: [f32; 7],
+        modulations: [[f32; 2]; 7],
+        target_rms: f32,
+    },
+    FullSti {
+        bands: [f32; 7],
+        modulations: [f32; 14],
+        segment_duration: f32,
+        silence_gap_s: f32,
+        segments: u16,
+        order: String,
+        target_rms: f32,
     },
 }

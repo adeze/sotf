@@ -1,5 +1,6 @@
 use crate::theme::Theme;
 use sotf_audio_player::PluginSettings;
+use sotf_audio_player::controllers::plugin::{desktop_param_indices, desktop_param_spec};
 use sotf_audio_player_midi::MidiMappingEngine;
 use sotf_audio_player_midi::auto_map;
 use sotf_audio_player_midi::layout::ControllerLayout;
@@ -41,16 +42,44 @@ pub(super) fn mapping_for_view(
     engine: &MidiMappingEngine,
 ) -> MidiMapping {
     let plugin_type_name = settings.plugin_type().name().to_string();
-    let params = settings.param_specs();
 
     if let Some(mapping) = engine.mapping()
         && mapping.controller_name == layout.name
         && mapping.plugin_type == plugin_type_name
+        && mapping
+            .bindings
+            .iter()
+            .all(|binding| binding.plugin_index == plugin_index)
     {
         return mapping.clone();
     }
 
-    auto_map::auto_map(layout, params, plugin_index, &plugin_type_name)
+    desktop_mapping(layout, settings, plugin_index, &plugin_type_name)
+}
+
+/// Adapt the MIDI allocator's dense positions to actual desktop parameter addresses.
+fn desktop_mapping(
+    layout: &ControllerLayout,
+    settings: &PluginSettings,
+    plugin_index: usize,
+    plugin_type_name: &str,
+) -> MidiMapping {
+    let parameters: Vec<_> = desktop_param_indices(settings)
+        .into_iter()
+        .filter_map(|index| desktop_param_spec(settings, index).map(|spec| (index, *spec)))
+        .collect();
+    let specs: Vec<_> = parameters.iter().map(|(_, spec)| *spec).collect();
+    let mut mapping = auto_map::auto_map(layout, &specs, plugin_index, plugin_type_name);
+    // The allocator indexes the slice it receives. Persisted/live mappings already
+    // use their own addresses and are deliberately not reinterpreted here.
+    mapping.bindings.retain_mut(|binding| {
+        let Some((index, _)) = parameters.get(binding.param_index) else {
+            return false;
+        };
+        binding.param_index = *index;
+        true
+    });
+    mapping
 }
 
 pub(super) fn continuous_range(spec: &ParamSpec) -> Option<(f64, f64)> {
@@ -62,5 +91,50 @@ pub(super) fn continuous_range(spec: &ParamSpec) -> Option<(f64, f64)> {
             Some((0.0, labels.len().saturating_sub(1).max(1) as f64))
         }
         ParamType::FilePath => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sotf_audio_player::PluginType;
+
+    #[test]
+    fn synthesized_controller_mapping_keeps_sparse_desktop_addresses() {
+        let layout = lcxl_layout();
+        for kind in [
+            PluginType::EQ,
+            PluginType::LinearPhaseEq,
+            PluginType::DynamicEq,
+            PluginType::MultibandCompressor,
+            PluginType::MultibandExpander,
+        ] {
+            let settings = PluginSettings::default_for(&kind).unwrap();
+            let mapping = desktop_mapping(&layout, &settings, 3, kind.name());
+            assert!(!mapping.bindings.is_empty(), "{kind:?}");
+            for binding in &mapping.bindings {
+                assert_eq!(binding.plugin_index, 3);
+                assert!(
+                    desktop_param_spec(&settings, binding.param_index).is_some(),
+                    "{kind:?}: {}",
+                    binding.param_index
+                );
+            }
+            if matches!(
+                kind,
+                PluginType::LinearPhaseEq
+                    | PluginType::DynamicEq
+                    | PluginType::MultibandCompressor
+                    | PluginType::MultibandExpander
+            ) {
+                assert!(
+                    mapping
+                        .bindings
+                        .iter()
+                        .any(|binding| binding.param_index >= 100),
+                    "{kind:?}: missing sparse band/global addresses"
+                );
+            }
+        }
     }
 }

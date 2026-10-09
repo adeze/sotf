@@ -157,6 +157,47 @@ pub fn get_keybindings(preset: KeymapPreset) -> Vec<KeyBinding> {
     bindings.extend(eq_chart_bindings());
     bindings.extend(listening_test_bindings());
 
+    // GPUI resolves action bindings before raw key handlers, with later
+    // matches taking precedence. Keep the selector's keys after all presets.
+    // Focused sliders own their value keys before player and rack navigation.
+    for key in [
+        "left", "right", "up", "down", "home", "end", "pageup", "pagedown",
+    ] {
+        for modifier in ["", "shift-", "ctrl-", "cmd-"] {
+            bindings.push(KeyBinding::new(
+                &format!("{modifier}{key}"),
+                gpui::NoAction,
+                Some("SliderControl"),
+            ));
+        }
+    }
+    bindings.extend(
+        ["enter", "space", "escape", "up", "down"]
+            .map(|key| KeyBinding::new(key, gpui::NoAction, Some("SpatialReferenceSelect"))),
+    );
+    bindings.extend(
+        ["enter", "space", "escape", "up", "down"]
+            .map(|key| KeyBinding::new(key, gpui::NoAction, Some("InterfaceModelSelect"))),
+    );
+    bindings.extend(
+        ["enter", "space", "escape", "up", "down"]
+            .map(|key| KeyBinding::new(key, gpui::NoAction, Some("UpmixerOutputSelect"))),
+    );
+    bindings.extend(
+        ["enter", "space", "escape", "up", "down"]
+            .map(|key| KeyBinding::new(key, gpui::NoAction, Some("EqHeaderSelect"))),
+    );
+    bindings.extend(
+        ["enter", "space", "escape", "up", "down"]
+            .map(|key| KeyBinding::new(key, gpui::NoAction, Some("PluginLayoutChoiceSelect"))),
+    );
+
+    bindings.extend(
+        ["enter", "space", "escape"]
+            .into_iter()
+            .map(|key| KeyBinding::new(key, gpui::NoAction, Some("SidebarOutputMenu"))),
+    );
+
     bindings
 }
 

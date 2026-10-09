@@ -1,5 +1,10 @@
 use super::misc::ensure_below_nyquist;
-use sotf_audio::signals::{gen_log_sweep, gen_tone, gen_two_tone};
+use super::misc::ensure_sti_sample_rate;
+use sotf_audio::signals::gen_full_sti_signal;
+use sotf_audio::signals::gen_log_sweep;
+use sotf_audio::signals::gen_stipa_signal;
+use sotf_audio::signals::gen_tone;
+use sotf_audio::signals::gen_two_tone;
 
 pub(super) fn gen_tone_checked(
     freq: f32,
@@ -33,4 +38,18 @@ pub(super) fn gen_log_sweep_checked(
 ) -> Result<Vec<f32>, String> {
     ensure_below_nyquist(f_end, sr, "sweep end")?;
     Ok(gen_log_sweep(f_start, f_end, amp, sr, duration))
+}
+
+pub(super) fn gen_stipa_checked(sr: u32, duration: f32) -> Result<Vec<f32>, String> {
+    ensure_sti_sample_rate(sr)?;
+    Ok(gen_stipa_signal(sr, duration))
+}
+
+pub(super) fn gen_full_sti_checked(
+    sr: u32,
+    segment_duration: f32,
+    silence_gap: f32,
+) -> Result<Vec<f32>, String> {
+    ensure_sti_sample_rate(sr)?;
+    Ok(gen_full_sti_signal(sr, segment_duration, silence_gap))
 }

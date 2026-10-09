@@ -1,0 +1,46 @@
+# Sliders and exact values stay mounted while the selected parameter changes.
+resize 1440 900
+focus Studio
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_idle 1s
+scroll_into_view rack.params plugin.control.2.1
+click plugin.control.2.1
+wait_visible plugin.param.2.1.exact timeout=3s
+click plugin.param.2.1.exact
+key cmd-a
+type "3"
+screenshot knob-edit-before-commit
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 3 tolerance=0.001
+assert_in_viewport plugin.control.2.1
+assert_accessible slider Ratio
+screenshot knob-inline-exact-value
+# Drag the slider right toward its exact-value field.
+drag plugin.slider.2.1 plugin.param.2.1.exact
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value > 3
+click plugin.control.2.3
+wait_idle 500ms
+assert_accessible slider Attack
+screenshot knob-selection-retains-dials
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_idle 1s
+assert_in_viewport plugin.shell.2.spatial
+assert_in_viewport plugin.shell.2.output
+screenshot main-menu-new-icons-expanded
+click sidebar.toggle
+wait_idle 500ms
+screenshot main-menu-new-icons-collapsed
+click sidebar.toggle
+wait_idle 500ms
+click plugin.shell.2.spatial
+wait_idle 500ms
+assert_accessible checkbox Off
+assert_accessible checkbox 2D
+assert_accessible radio SPL
+screenshot upmixer-spatial-header-menu

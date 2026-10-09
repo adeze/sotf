@@ -1,0 +1,183 @@
+# Verify every model through the rendered select, without test-only model actions.
+focus Settings
+resize 1440 900
+wait_idle 1s
+click settings.tab.Theme
+wait_until settings.active_tab == "Theme"
+wait_idle 1s
+assert_in_viewport settings.appearance.interface-model
+assert_accessible combobox Interface model
+click settings.appearance.interface-model
+wait_idle 1s
+assert settings.interface_model_open == true
+assert_focused design-language-select
+screenshot preferences-interface-models
+key escape
+wait_idle 1s
+assert settings.interface_model_open == false
+click settings.appearance.interface-model
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+wait_idle 1s
+assert settings.design_language == "neutral"
+assert settings.effective_design_language == "neutral"
+click settings.appearance.interface-model
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+wait_idle 1s
+assert settings.design_language == "macos"
+assert settings.effective_design_language == "macos"
+screenshot preferences-interface-macos
+click settings.appearance.interface-model
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+wait_idle 1s
+assert settings.design_language == "apple_hig"
+assert settings.effective_design_language == "apple_hig"
+screenshot preferences-interface-apple_hig
+click settings.appearance.interface-model
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+wait_idle 1s
+assert settings.design_language == "material3"
+assert settings.effective_design_language == "material3"
+click settings.appearance.interface-model
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+wait_idle 1s
+assert settings.design_language == "fluent"
+assert settings.effective_design_language == "fluent"
+click settings.appearance.interface-model
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+wait_idle 1s
+assert settings.design_language == "adwaita"
+assert settings.effective_design_language == "adwaita"
+click settings.appearance.interface-model
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+wait_idle 1s
+assert settings.design_language == "breeze"
+assert settings.effective_design_language == "breeze"
+click settings.appearance.interface-model
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+wait_idle 1s
+assert settings.design_language == "carbon"
+assert settings.effective_design_language == "carbon"
+screenshot preferences-interface-carbon
+click settings.appearance.interface-model
+wait_idle 1s
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+wait_idle 1s
+assert settings.design_language == "default"
+assert settings.effective_design_language == "macos"
+screenshot preferences-interface-system
+resize 600 800
+wait_idle 1s
+assert_in_viewport settings.appearance.interface-model
+click settings.appearance.interface-model
+wait_idle 1s
+screenshot preferences-interface-compact
+key escape
+wait_idle 1s
+assert playback.is_playing == false

@@ -721,6 +721,10 @@ fn test_plugin_file_picker_keys_have_open_targets() {
         Some(FilePickerOpenTarget::Sofa)
     );
     assert_eq!(
+        file_picker_open_target("hrtf_database_dir"),
+        Some(FilePickerOpenTarget::HrtfDatabase)
+    );
+    assert_eq!(
         file_picker_open_target("ir_file"),
         Some(FilePickerOpenTarget::Ir)
     );
@@ -908,25 +912,41 @@ fn queue_reorder_controls_are_stably_named_and_domain_backed() {
 
 #[test]
 fn sidebar_separates_player_from_studio_and_measurement_workflows() {
+    let channel = sotf_audio_player::ReleaseChannel::default();
+    for screen in [Screen::Playlists, Screen::Streams, Screen::PluginGraph] {
+        assert!(
+            channel.allows(screen.maturity()),
+            "Requested sidebar destination {screen:?} must be available by default"
+        );
+    }
     let sidebar = app_source("ui/render.rs");
-    let translations = app_source("app/i18n/translations.rs");
-
-    assert!(sidebar.contains("translations.screen_player"));
-    assert!(sidebar.contains("translations.screen_tools"));
     for id in [
         "nav-home",
         "nav-library",
-        "nav-search",
         "nav-playing",
         "nav-queue",
         "nav-playlists",
         "nav-streams",
+        "nav-studio-rack",
+        "nav-plugin-graph",
+        "nav-spectrum",
+        "nav-recording",
+        "nav-room-eq",
+        "nav-learning",
+        "nav-ab-compare",
     ] {
-        assert!(sidebar.contains(id), "Player navigation missing {id}");
+        assert!(sidebar.contains(id), "Grouped navigation missing {id}");
     }
-    assert!(sidebar.contains("\"nav-studio\""));
-    assert!(translations.contains("pub screen_player: &'static str"));
-    assert!(translations.contains("screen_tools: \"Studio & Measurement\""));
+    for language in Language::all() {
+        let labels =
+            sotf_audio_player_gpui::app::i18n::SidebarTranslations::for_language(*language);
+        for label in [labels.tools, labels.learning, labels.studio_graph] {
+            assert!(
+                !label.trim().is_empty(),
+                "Missing sidebar label for {language:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -5799,12 +5819,14 @@ fn primary_navigation_publishes_rendered_selection_state_for_dev_scenarios() {
 #[test]
 fn sidebar_output_devices_have_keyboard_and_accessibility_contracts() {
     let sidebar = app_source("ui/render.rs");
+    let normalized = sidebar.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         sidebar.contains("!device.name.trim().is_empty()"),
         "unnamed output devices must not become focusable sidebar controls"
     );
     assert!(
-        sidebar.contains("!device.name.trim().is_empty() || !device.device_type.trim().is_empty()"),
+        normalized
+            .contains("!device.name.trim().is_empty() || !device.device_type.trim().is_empty()"),
         "unnamed cast devices must not become focusable sidebar controls"
     );
     let output_device_item = sidebar
@@ -5853,14 +5875,14 @@ fn sidebar_device_actions_have_keyboard_and_accessibility_contracts() {
     assert!(action_button.contains(".theme(button_theme)"));
     assert!(action_button.contains(".dev_track(format!(\"sidebar.{id}\"))"));
 
-    let preferences_button = sidebar
-        .split_once("\"nav-preferences-button\"")
-        .expect("preferences sidebar button")
+    assert!(sidebar.contains("\"nav-preferences-button\""));
+    let navigation_row = sidebar
+        .split_once("fn render_sidebar_item_base")
+        .expect("shared full-row preferences and navigation control")
         .1;
-    assert!(preferences_button.contains(".track_focus(&preferences_focus_handle)"));
-    assert!(preferences_button.contains("AriaRole::Button"));
-    assert!(preferences_button.contains("key == \"enter\" || key == \"space\""));
-    assert!(preferences_button.contains(".dev_track(\"sidebar.nav-preferences-button\")"));
+    assert!(navigation_row.contains(".track_focus(&focus_handle)"));
+    assert!(navigation_row.contains("AriaRole::Button"));
+    assert!(navigation_row.contains("key == \"enter\" || key == \"space\""));
 }
 
 #[test]

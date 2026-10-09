@@ -15,6 +15,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/sign-macos.sh"
 ENTITLEMENTS = ROOT / "builds/macos/entitlements.plist"
+WORKER_ENTITLEMENTS = ROOT / "builds/macos/plugin-worker-entitlements.plist"
 
 
 class SigningCommandsTest(unittest.TestCase):
@@ -113,6 +114,21 @@ class SigningCommandsTest(unittest.TestCase):
         result = self.invoke("sign_file", executable)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_desktop_entitlements(self.signed_call(self.calls(), executable))
+
+    def test_au_worker_policy_is_signed_before_the_desktop_bundle(self):
+        desktop = self.macho("payload/Desktop.app/Contents/MacOS/sotf-desktop")
+        worker = self.macho("payload/Desktop.app/Contents/MacOS/sotf-external-plugin-worker")
+        helper = self.macho("payload/Desktop.app/Contents/MacOS/sotf-macos-sandbox-helper")
+        bundle = desktop.parents[2]
+        result = self.invoke("sign_payload_code", self.base / "payload")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        worker_call = self.signed_call(calls, worker)
+        self.assertEqual(worker_call[worker_call.index("--entitlements") + 1], str(WORKER_ENTITLEMENTS))
+        self.assertNotIn("--entitlements", self.signed_call(calls, helper))
+        self.assertLess(calls.index(worker_call), calls.index(self.signed_call(calls, bundle)))
+        policy = plistlib.loads(WORKER_ENTITLEMENTS.read_bytes())
+        self.assertEqual(policy, {"com.apple.security.cs.disable-library-validation": True})
 
     def test_other_bundle_preserves_existing_signing_behavior(self):
         executable = self.macho("Other.app/Contents/MacOS/other")

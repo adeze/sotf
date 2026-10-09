@@ -1,0 +1,196 @@
+resize 1440 1100
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add Denoiser
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/denoiser-before.json
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "18"
+key enter
+assert plugins.plugin.2.param.0.value == 18 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "-35"
+key enter
+assert plugins.plugin.2.param.1.value == -35 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "42"
+key enter
+assert plugins.plugin.2.param.2.value == 0.42 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "12.5"
+key enter
+assert plugins.plugin.2.param.3.value == 12.5 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.4.exact
+click plugin.param.2.4.exact
+key cmd-a
+type "125"
+key enter
+assert plugins.plugin.2.param.4.value == 125 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.11.exact
+click plugin.param.2.11.exact
+key cmd-a
+type "17"
+key enter
+assert plugins.plugin.2.param.11.value == 0.17 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.18.exact
+assert_enabled plugin.param.2.18.exact == false
+scroll_into_view rack.params plugin.param.2.19.exact
+assert_enabled plugin.param.2.19.exact == false
+scroll_into_view rack.params plugin.choice.2.17.1
+click plugin.choice.2.17.1
+assert plugins.plugin.2.param.17.value == 1
+scroll_into_view rack.params plugin.param.2.18.exact
+click plugin.param.2.18.exact
+key cmd-a
+type "1.7"
+key enter
+assert plugins.plugin.2.param.18.value == 1.7 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.19.exact
+click plugin.param.2.19.exact
+key cmd-a
+type "0.05"
+key enter
+assert plugins.plugin.2.param.19.value == 0.05 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.29.exact
+click plugin.param.2.29.exact
+key cmd-a
+type "75"
+key enter
+assert plugins.plugin.2.param.29.value == 0.75 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.30.exact
+click plugin.param.2.30.exact
+key cmd-a
+type "65"
+key enter
+assert plugins.plugin.2.param.30.value == 0.65 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.31.exact
+click plugin.param.2.31.exact
+key cmd-a
+type "85"
+key enter
+assert plugins.plugin.2.param.31.value == 0.85 tolerance=0.000001
+scroll_into_view rack.params plugin.choice.2.21.1
+click plugin.choice.2.21.1
+assert plugins.plugin.2.param.21.value == 1
+scroll_into_view rack.params plugin.choice.2.32.1
+click plugin.choice.2.32.1
+assert plugins.plugin.2.param.32.value == 1
+scroll_into_view rack.params plugin.choice.2.5.1
+click plugin.choice.2.5.1
+assert plugins.plugin.2.param.5.value == 1
+scroll_into_view rack.params plugin.layout.tab.2.0
+click plugin.layout.tab.2.0
+wait_idle 300ms
+scroll_into_view rack.params plugin.choice.2.6.1
+click plugin.choice.2.6.1
+assert plugins.plugin.2.param.6.value == 1
+scroll_into_view rack.params plugin.choice.2.12.0
+click plugin.choice.2.12.0
+assert plugins.plugin.2.param.12.value == 0
+scroll_into_view rack.params plugin.param.2.13.exact
+assert_enabled plugin.param.2.13.exact == false
+scroll_into_view rack.params plugin.choice.2.12.1
+click plugin.choice.2.12.1
+assert plugins.plugin.2.param.12.value == 1
+scroll_into_view rack.params plugin.param.2.13.exact
+click plugin.param.2.13.exact
+key cmd-a
+type "0.95"
+key enter
+assert plugins.plugin.2.param.13.value == 0.95 tolerance=0.000001
+scroll_into_view rack.params plugin.choice.2.14.0
+click plugin.choice.2.14.0
+assert plugins.plugin.2.param.14.value == 0
+scroll_into_view rack.params plugin.choice.2.15.0
+click plugin.choice.2.15.0
+assert plugins.plugin.2.param.15.value == 0
+scroll_into_view rack.params plugin.choice.2.16.0
+click plugin.choice.2.16.0
+assert plugins.plugin.2.param.16.value == 0
+scroll_into_view rack.params plugin.layout.tab.2.1
+click plugin.layout.tab.2.1
+wait_idle 300ms
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "0.85"
+key enter
+assert plugins.plugin.2.param.7.value == 0.85 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.8.exact
+click plugin.param.2.8.exact
+key cmd-a
+type "0.6"
+key enter
+assert plugins.plugin.2.param.8.value == 0.6 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.9.exact
+click plugin.param.2.9.exact
+key cmd-a
+type "64"
+key enter
+assert plugins.plugin.2.param.9.value == 64 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.10.exact
+click plugin.param.2.10.exact
+key cmd-a
+type "7.5"
+key enter
+assert plugins.plugin.2.param.10.value == 7.5 tolerance=0.000001
+click plugin.param.2.9.exact
+key up
+key escape
+assert plugins.plugin.2.param.9.value == 65
+scroll_into_view rack.params plugin.layout.tab.2.2
+click plugin.layout.tab.2.2
+wait_idle 300ms
+scroll_into_view rack.params plugin.param.2.24.exact
+assert_enabled plugin.param.2.24.exact == false
+scroll_into_view rack.params plugin.choice.2.23.1
+click plugin.choice.2.23.1
+assert plugins.plugin.2.param.23.value == 1
+scroll_into_view rack.params plugin.param.2.24.exact
+click plugin.param.2.24.exact
+key cmd-a
+type "60"
+key enter
+assert plugins.plugin.2.param.24.value == 0.6 tolerance=0.000001
+scroll_into_view rack.params plugin.layout.tab.2.3
+click plugin.layout.tab.2.3
+wait_idle 300ms
+scroll_into_view rack.params plugin.choice.2.25.1
+click plugin.choice.2.25.1
+assert plugins.plugin.2.param.25.value == 1
+scroll_into_view rack.params plugin.choice.2.26.1
+click plugin.choice.2.26.1
+assert plugins.plugin.2.param.26.value == 1
+scroll_into_view rack.params plugin.param.2.28.exact
+assert_enabled plugin.param.2.28.exact == false
+scroll_into_view rack.params plugin.choice.2.27.1
+click plugin.choice.2.27.1
+assert plugins.plugin.2.param.27.value == 1
+scroll_into_view rack.params plugin.param.2.28.exact
+click plugin.param.2.28.exact
+key cmd-a
+type "0.7"
+key enter
+assert plugins.plugin.2.param.28.value == 0.7 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/denoiser-edited.json
+plugin_chain_load $SOTF_QA_DIR/denoiser-edited.json
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/denoiser-reloaded.json
+scroll_into_view rack.params plugin.choice.2.5.0
+screenshot denoiser-wide
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.3.exact rack.params
+assert_within plugin.param.2.4.exact rack.params
+screenshot denoiser-narrow

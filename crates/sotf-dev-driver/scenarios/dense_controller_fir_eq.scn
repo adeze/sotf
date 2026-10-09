@@ -1,0 +1,54 @@
+# 2026-10-09: Controller exact fields retain readable widths and scroll position during capture.
+# Explicit view-owned controller_grid handle in ui/player_view.rs and ui_controller_view/render.rs.
+# Run from sotf: ../sotf-daw/target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+resize 1000 900
+focus Studio
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/controller-fir-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+screenshot controller-fir-left
+scroll_horizontal plugin.controller.slider.2.1 -600
+assert plugins.plugin.2.param.1.value == 1000 tolerance=0.001
+wait_idle 500ms
+scroll_into_view rack.params plugin.controller.exact.2.104
+assert_in_viewport plugin.controller.exact.2.104
+screenshot controller-fir-mix-visible
+click plugin.controller.exact.2.104
+key cmd-a
+type "37"
+key enter
+assert plugins.plugin.2.param.104.value == 0.37 tolerance=0.000001
+click plugin.controller.exact.2.104
+key up
+key escape
+assert plugins.plugin.2.param.104.value == 0.38 tolerance=0.000001
+screenshot controller-fir-mix-edited
+scroll_into_view rack.params plugin.controller.choice.2.103.1
+assert_in_viewport plugin.controller.choice.2.103.1
+click plugin.controller.choice.2.103.1
+assert plugins.plugin.2.param.103.value == 1 tolerance=0
+screenshot controller-fir-right
+scroll_horizontal plugin.controller.choice.2.103.1 600
+wait_idle 500ms
+scroll_into_view rack.params plugin.controller.exact.2.1
+assert_in_viewport plugin.controller.exact.2.1
+assert plugins.plugin.2.param.1.value == 1000 tolerance=0.001
+assert plugins.plugin.2.param.104.value == 0.38 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/controller-fir-edited.json
+plugin_chain_load $SOTF_QA_DIR/controller-fir-edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert_in_viewport plugin.select.2.0
+assert plugins.plugin.2.param.104.value == 0.38 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/controller-fir-reloaded.json
+screenshot controller-fir-eq

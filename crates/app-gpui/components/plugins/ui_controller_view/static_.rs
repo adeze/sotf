@@ -4,23 +4,23 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 
-pub(super) fn static_knob(theme: &Theme, accent: Rgba, scale: f32) -> impl IntoElement {
-    let scale = scale.clamp(0.75, 1.5);
+/// Mark an unassigned rotary hardware control with a noninteractive slider.
+pub(super) fn static_slider(theme: &Theme, accent: Rgba, scale: f32) -> impl IntoElement {
+    let scale = scale.clamp(0.01, 1.5);
     div()
-        .w(px(40.0 * scale))
-        .h(px(40.0 * scale))
-        .rounded_full()
+        .relative()
+        .w(px(60.0 * scale))
+        .h(px(4.0 * scale))
+        .rounded(px(2.0 * scale))
         .bg(theme.background_secondary)
-        .border_2()
-        .border_color(accent)
-        .flex()
-        .items_center()
-        .justify_center()
         .child(
             div()
-                .w(px(18.0 * scale))
-                .h(px(18.0 * scale))
-                .rounded_full()
+                .absolute()
+                .left(px(26.0 * scale))
+                .top(px(-4.0 * scale))
+                .w(px(8.0 * scale))
+                .h(px(12.0 * scale))
+                .rounded(px(2.0 * scale))
                 .bg(accent),
         )
 }

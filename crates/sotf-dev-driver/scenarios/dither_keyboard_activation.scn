@@ -7,7 +7,7 @@ wait_idle
 scroll_into_view rack.params plugin.choice.2.0.1
 click plugin.choice.2.0.1
 wait_idle
-assert_focused btn-set-2-0-1
+assert_focused NamedInteger(\"plugin-layout-buttons\", 2000)-option-1
 # Change the value independently, keeping keyboard focus on the 20-bit choice.
 plugin_param_set 2 0 0
 wait_idle

@@ -1,0 +1,32 @@
+# 2026-10-08: Compact EQ repeated All/Per Channel below the shell header.
+# Fix: ui_eq/layout_compact.rs uses the channel-only row in Per Channel mode.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The suite starts its own isolated --qa desktop; no user settings are changed.
+resize 1000 700
+focus Studio
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_idle 500ms
+assert_visible eq.header.mode
+assert_absent eq.channels
+click eq.header.mode.option.per
+wait_idle 250ms
+assert_visible eq.channels
+assert_within eq.channels rack.params
+assert_visible eq.band.0.select
+screenshot eq-compact-per-channel
+click eq.header.mode.option.all
+wait_idle 250ms
+assert_absent eq.channels
+resize 700 700
+wait_idle 250ms
+assert_visible eq.header.mode
+assert_absent eq.channels
+click eq.header.mode.option.per
+wait_idle 250ms
+assert_within eq.channels rack.params
+screenshot eq-narrow-per-channel
+click eq.header.mode.option.all
+wait_idle 250ms
+assert_absent eq.channels

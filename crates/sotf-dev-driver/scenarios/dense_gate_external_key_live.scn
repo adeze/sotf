@@ -1,0 +1,124 @@
+# 2026-10-09: The inline graph inspector could extend below the viewport,
+# leaving Gate's Advanced detector controls unreachable. The fix in
+# app-gpui/components/plugins/ui_graph/player_view.rs bounds the inline modal
+# and scrolls its flex body. Exercise the real external-key toggle and both
+# key ports before starting playback, then require live stereo Gate telemetry.
+# Run from sotf: ../sotf-daw/target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml -v
+# Inspect acknowledged graph JSON as well: a positive GR value alone can also
+# come from internal detection, so it does not prove external-key activation.
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Gain
+plugin_add Gate
+action PluginToggle {"index":1}
+action PluginSelectFirstUser
+wait_idle 500ms
+click meters.group.0.mute
+assert meters.group.0.muted == true
+plugin_chain_save $SOTF_QA_DIR/before.json
+focus PluginGraph
+wait_idle 500ms
+click routing.node.4
+action GraphEditSelectedNode
+wait_idle 500ms
+click plugin.param.3.0.exact
+key cmd-a
+type "-10"
+key enter
+scroll plugin.layout.main.3 -600
+wait_idle 300ms
+wait_visible plugin.layout.header.3.DETECTOR timeout=10s
+click plugin.layout.header.3.DETECTOR
+scroll plugin.layout.header.3.DETECTOR -500
+wait_idle 300ms
+wait_visible plugin.choice.3.10.1 timeout=10s
+click plugin.choice.3.10.1
+screenshot gate-external-key-enabled
+assert routing.dirty == true
+assert routing.active_matches_base == true
+click routing.inspector.close
+click routing.inspector.keep
+assert routing.dirty == true
+click routing-connections
+click routing.endpoint.0
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key enter
+click routing.endpoint.1
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key down
+sleep 100ms
+key enter
+click routing-connect
+assert routing.dirty == true
+click routing.endpoint.0
+key down
+sleep 100ms
+key enter
+click routing.endpoint.1
+key down
+sleep 100ms
+key enter
+click routing-connect
+query routing.endpoints
+query routing.draft_connection_count
+screenshot gate-key-connections
+click routing-apply
+wait_until plugins.update_pending == false timeout=10s
+query toast.message
+assert routing.dirty == false
+assert toast.type == null
+# A keyed graph is nonlinear: verify the acknowledged graph JSON rather than
+# using the linear-chain plugin query. The retained artifact verifier checks
+# sidechain_external and the explicit stereo Sidechain route.
+query plugins.acknowledged_processing_graph
+screenshot gate-key-applied
+plugin_chain_save $SOTF_QA_DIR/keyed-edited.json
+# Replace the keyed graph with the saved baseline before reloading it.
+# Linear-only rack clearing cannot reset a genuinely branched sidechain graph.
+plugin_chain_load $SOTF_QA_DIR/before.json
+wait_idle 500ms
+wait_until plugins.update_pending == false timeout=10s
+plugin_chain_save $SOTF_QA_DIR/reset-baseline.json
+plugin_chain_load $SOTF_QA_DIR/keyed-edited.json
+wait_idle 500ms
+wait_until plugins.update_pending == false timeout=10s
+plugin_chain_save $SOTF_QA_DIR/keyed-reloaded.json
+query plugins.acknowledged_processing_graph
+assert meters.group.0.muted == true
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"analysis-muted"}
+wait_until playback.is_playing == true timeout=12s
+wait_until playback.position_secs > 1 timeout=15s
+click sidebar.nav-plugin-graph
+wait_idle 500ms
+click routing.node.4
+action GraphEditSelectedNode
+wait_until plugins.gain_reduction.kind == "Gate" timeout=12s
+assert plugins.gain_reduction.channels == 2
+wait_until plugins.gain_reduction.maximum_db > 1 timeout=12s
+query plugins.gain_reduction
+screenshot gate-key-live-meter
+click transport.play
+wait_until playback.is_playing == false timeout=5s

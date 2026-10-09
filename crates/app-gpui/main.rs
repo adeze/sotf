@@ -358,12 +358,23 @@ fn main() {
                     items: vec![
                         MenuItem::submenu(Menu {
                             name: "Design".into(),
-                            items: vec![
-                                MenuItem::action("Neutral", SetDesignNeutral),
-                                MenuItem::action("Apple HIG", SetDesignAppleHig),
-                                MenuItem::action("Material 3", SetDesignMaterial3),
-                                MenuItem::action("Fluent", SetDesignFluent),
-                            ],
+                            items: std::iter::once(MenuItem::action(
+                                "System",
+                                SelectDesign { language: None },
+                            ))
+                            .chain(gpui_design::DesignLanguage::all().iter().map(|&language| {
+                                MenuItem::action(
+                                    if language == gpui_design::DesignLanguage::AppleHig {
+                                        "iOS / iPadOS"
+                                    } else {
+                                        language.label()
+                                    },
+                                    SelectDesign {
+                                        language: Some(language),
+                                    },
+                                )
+                            }))
+                            .collect(),
                             disabled: false,
                         }),
                         MenuItem::submenu(Menu {

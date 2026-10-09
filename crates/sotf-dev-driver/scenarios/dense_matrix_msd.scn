@@ -1,0 +1,47 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add Matrix
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+assert_selected matrix.output.2.0.M == false
+assert_selected matrix.output.2.0.S == false
+assert_selected matrix.output.2.0.D == false
+click matrix.output.2.0.M
+wait_idle 500ms
+assert_selected matrix.output.2.0.M == true
+plugin_chain_save $SOTF_QA_DIR/muted.json
+click matrix.output.2.0.S
+wait_idle 500ms
+assert_selected matrix.output.2.0.S == true
+assert_selected matrix.output.2.0.M == true
+plugin_chain_save $SOTF_QA_DIR/soloed.json
+click matrix.output.2.0.D
+wait_idle 500ms
+assert_selected matrix.output.2.0.D == true
+assert_selected matrix.output.2.0.S == true
+assert_selected matrix.output.2.0.M == true
+plugin_chain_save $SOTF_QA_DIR/edited.json
+screenshot matrix-msd-wide
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert_selected matrix.output.2.0.M == true
+assert_selected matrix.output.2.0.S == true
+assert_selected matrix.output.2.0.D == true
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+resize 1000 700
+wait_idle 500ms
+assert_within matrix.output.2.0.M rack.params
+assert_within matrix.output.2.0.S rack.params
+assert_within matrix.output.2.0.D rack.params
+screenshot matrix-msd-narrow
+click matrix.output.2.0.M
+click matrix.output.2.0.S
+click matrix.output.2.0.D
+wait_idle 500ms
+assert_selected matrix.output.2.0.M == false
+assert_selected matrix.output.2.0.S == false
+assert_selected matrix.output.2.0.D == false
+plugin_chain_save $SOTF_QA_DIR/restored.json

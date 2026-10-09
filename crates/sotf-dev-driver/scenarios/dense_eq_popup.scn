@@ -1,0 +1,37 @@
+resize 1000 700
+focus Studio
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_idle 500ms
+assert_absent eq.config.toggle
+assert_visible eq.header.mode
+assert_visible eq.header.topology
+click eq.band.0.select
+wait_visible eq.band.0.type.select timeout=3s
+assert_within eq.band.0.type.select rack.params
+assert_within eq.exact.0 rack.params
+assert_within eq.exact.1 rack.params
+assert_within eq.exact.2 rack.params
+plugin_chain_save $SOTF_QA_DIR/eq-before.json
+click eq.exact.0
+key cmd-a
+type "450"
+key enter
+assert plugins.plugin.2.param.0.value == 450 tolerance=0.01
+click eq.exact.1
+key cmd-a
+type "2.5"
+key enter
+assert plugins.plugin.2.param.1.value == 2.5 tolerance=0.01
+click eq.exact.2
+key cmd-a
+type "4"
+key enter
+assert plugins.plugin.2.param.2.value == 4 tolerance=0.01
+plugin_chain_save $SOTF_QA_DIR/eq-edited.json
+snapshot $SOTF_QA_DIR/eq-edited-snapshot.json
+screenshot eq-edited
+key escape
+wait_idle 250ms
+snapshot $SOTF_QA_DIR/eq-escape.json

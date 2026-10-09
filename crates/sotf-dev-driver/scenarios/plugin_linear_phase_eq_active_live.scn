@@ -1,0 +1,45 @@
+# FIR band active is structural; its index must never dispatch global mix.
+resize 1000 700
+focus Studio
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_param_set 2 1 500
+assert plugins.plugin.2.param.1.value == 500 tolerance=0.01
+scroll_into_view rack.params plugin.choice.2.4.0
+assert plugins.plugin.2.param.4.value == 1 tolerance=0.001
+click plugin.choice.2.4.0
+assert plugins.plugin.2.param.4.value == 0 tolerance=0.001
+click plugin.choice.2.4.1
+assert plugins.plugin.2.param.4.value == 1 tolerance=0.001
+wait_until plugins.update_pending == false timeout=10s
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"first"}
+wait_until playback.is_playing == true timeout=12s
+click sidebar.nav-studio-rack
+wait_idle 500ms
+action PluginSelectFirstUser
+wait_until plugins.update_pending == false timeout=10s
+scroll_into_view rack.params plugin.choice.2.4.0
+assert_within plugin.choice.2.4.0 rack.params
+assert plugins.plugin.2.param.4.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.9.value == 1 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/LinearPhaseEqActiveLive-before.json
+click plugin.choice.2.4.0
+wait_until plugins.parameter_receipt.status == "structural_ack" timeout=10s
+assert plugins.plugin.2.param.4.value == 0 tolerance=0.001
+assert plugins.plugin.2.param.9.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.1.value == 500 tolerance=0.01
+assert plugins.parameter_receipt.instance_id > 0
+query plugins.acknowledged_processing_graph
+snapshot $SOTF_QA_DIR/LinearPhaseEqActiveLive.json
+plugin_chain_save $SOTF_QA_DIR/LinearPhaseEqActiveLive-chain.json
+plugin_clear
+plugin_chain_load $SOTF_QA_DIR/LinearPhaseEqActiveLive-chain.json
+assert plugins.plugin.2.param.4.value == 0 tolerance=0.001
+assert plugins.plugin.2.param.9.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.1.value == 500 tolerance=0.01
+resize 1440 700
+wait_idle 300ms
+assert_within plugin.choice.2.4.0 rack.params

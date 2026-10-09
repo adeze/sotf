@@ -30,6 +30,11 @@ scroll_into_view headphone.content headphone.target
 click headphone.target
 ```
 
+For asynchronous status text, use `wait_text <selector> == "<text>" timeout=5s`.
+This polls the actual rendered text until the comparison matches and fails
+with the last observed value on timeout. It does not substitute engine state
+for the visible UI or modify the application.
+
 ```bash
 # Terminal 1: launch SotF with the debug-only dev API + an isolated QA config dir.
 QA_DIR=$(mktemp -d)
@@ -329,3 +334,5 @@ All seven phases of the original plan are wired:
 - Line-based DSL with `action / query / assert / assert_snapshot / assert_accessible / assert_inaccessible / wait_until / wait_idle / timing_start / timing_end / sleep /
   focus / key / type / click / hover / drag / scroll / resize / screenshot / elements /
   accessibility`.
+
+`scroll_horizontal <selector> <delta_x>` sends horizontal wheel input at the tracked control’s measured center, using the current viewport revision. Use it to reach later items in horizontal band strips.

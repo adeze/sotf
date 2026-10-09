@@ -1,0 +1,160 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add LoudnessCompensation
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+assert_absent plugin.choice.2.8.1
+scroll_into_view rack.params plugin.param.2.13.exact
+click plugin.param.2.13.exact
+key cmd-a
+type "85"
+key enter
+assert plugins.plugin.2.param.13.value == 85 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "4"
+key enter
+assert plugins.plugin.2.param.1.value == 4 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "3"
+key enter
+assert plugins.plugin.2.param.3.value == 3 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.6.exact
+click plugin.param.2.6.exact
+key cmd-a
+type "2"
+key enter
+assert plugins.plugin.2.param.6.value == 2 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.4.0
+click plugin.choice.2.4.0
+assert plugins.plugin.2.param.4.value == 0
+assert_enabled plugin.param.2.6.exact == false
+scroll_into_view rack.params plugin.choice.2.4.1
+click plugin.choice.2.4.1
+assert plugins.plugin.2.param.4.value == 1
+assert_enabled plugin.param.2.6.exact == true
+scroll_into_view rack.params plugin.layout.header.2.TONE FREQUENCIES
+click plugin.layout.header.2.TONE FREQUENCIES
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "150"
+key enter
+assert plugins.plugin.2.param.0.value == 150 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "9000"
+key enter
+assert plugins.plugin.2.param.2.value == 9000 tolerance=0.001
+scroll_into_view rack.params plugin.layout.header.2.MID
+click plugin.layout.header.2.MID
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.5.exact
+click plugin.param.2.5.exact
+key cmd-a
+type "3000"
+key enter
+assert plugins.plugin.2.param.5.value == 3000 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "0.8"
+key enter
+assert plugins.plugin.2.param.7.value == 0.8 tolerance=0.001
+scroll_into_view rack.params plugin.layout.header.2.AUTO GAIN
+click plugin.layout.header.2.AUTO GAIN
+wait_idle 500ms
+assert_enabled plugin.param.2.9.exact == false
+assert_enabled plugin.param.2.10.exact == false
+scroll_into_view rack.params plugin.choice.2.15.1
+click plugin.choice.2.15.1
+assert plugins.plugin.2.param.15.value == 1
+assert plugins.plugin.2.param.8.value == 1
+scroll_into_view rack.params plugin.choice.2.15.2
+click plugin.choice.2.15.2
+assert plugins.plugin.2.param.15.value == 2
+assert plugins.plugin.2.param.8.value == 1
+scroll_into_view rack.params plugin.choice.2.15.0
+click plugin.choice.2.15.0
+assert plugins.plugin.2.param.15.value == 0
+assert plugins.plugin.2.param.8.value == 0
+scroll_into_view rack.params plugin.choice.2.15.2
+click plugin.choice.2.15.2
+assert plugins.plugin.2.param.15.value == 2
+assert plugins.plugin.2.param.8.value == 1
+assert_enabled plugin.param.2.9.exact == true
+assert_enabled plugin.param.2.10.exact == true
+scroll_into_view rack.params plugin.param.2.9.exact
+click plugin.param.2.9.exact
+key cmd-a
+type "10"
+key enter
+assert plugins.plugin.2.param.9.value == 10 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.10.exact
+click plugin.param.2.10.exact
+key cmd-a
+type "150"
+key enter
+assert plugins.plugin.2.param.10.value == 150 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.16.1
+click plugin.choice.2.16.1
+assert plugins.plugin.2.param.16.value == 1
+scroll_into_view rack.params plugin.choice.2.16.0
+click plugin.choice.2.16.0
+assert plugins.plugin.2.param.16.value == 0
+scroll_into_view rack.params plugin.choice.2.11.1
+click plugin.choice.2.11.1
+assert plugins.plugin.2.param.11.value == 1
+scroll_into_view rack.params plugin.param.2.12.exact
+click plugin.param.2.12.exact
+key cmd-a
+type "65"
+key enter
+assert plugins.plugin.2.param.12.value == 65 tolerance=0.001
+assert_enabled plugin.choice.2.4.1 == false
+scroll_into_view rack.params plugin.choice.2.11.2
+click plugin.choice.2.11.2
+assert plugins.plugin.2.param.11.value == 1
+assert toast.type == "Error"
+scroll_into_view rack.params plugin.choice.2.17.1
+click plugin.choice.2.17.1
+assert plugins.plugin.2.param.17.value == 1
+scroll_into_view rack.params plugin.choice.2.11.2
+click plugin.choice.2.11.2
+assert plugins.plugin.2.param.11.value == 2
+assert plugins.plugin.2.param.14.value == 0
+assert_absent plugin.param.2.14.exact
+screenshot loudness-auto
+scroll_into_view rack.params plugin.choice.2.17.0
+click plugin.choice.2.17.0
+assert plugins.plugin.2.param.17.value == 1
+assert toast.message == "Auto mode needs an SPL calibration. Choose Manual or ISO 226 before removing it."
+scroll_into_view rack.params plugin.choice.2.11.0
+click plugin.choice.2.11.0
+assert plugins.plugin.2.param.11.value == 0
+plugin_chain_save $SOTF_QA_DIR/edited.json
+screenshot loudness_compensation-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.setup.2.header
+assert_within plugin.param.2.13.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.3.exact rack.params
+assert_within plugin.param.2.6.exact rack.params
+assert_within plugin.choice.2.11.0 plugin.setup.2.header
+assert_within plugin.choice.2.15.2 plugin.setup.2.header
+assert_within plugin.choice.2.17.1 plugin.setup.2.header
+assert_within plugin.choice.2.16.0 plugin.setup.2.header
+assert_within plugin.choice.2.4.1 plugin.setup.2.header
+screenshot loudness_compensation-narrow
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

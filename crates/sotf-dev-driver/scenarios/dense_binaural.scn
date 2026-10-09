@@ -1,0 +1,117 @@
+resize 1440 1100
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add BinauralDecoder
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/binaural-before.json
+assert_visible plugin.file_picker.2.sofa_file
+assert_text plugin.file_status.2.sofa_file == "None"
+assert_selected plugin.file_status.2.sofa_file == false
+assert_within plugin.choice.2.4.0 plugin.setup.2.header
+assert_within plugin.choice.2.4.1 plugin.setup.2.header
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "0.4"
+key enter
+assert plugins.plugin.2.param.2.value == 0.4 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "0.25"
+key enter
+assert plugins.plugin.2.param.3.value == 0.25 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.9.exact
+click plugin.param.2.9.exact
+key cmd-a
+type "75"
+key enter
+assert plugins.plugin.2.param.9.value == 75 tolerance=0.000001
+scroll_into_view rack.params plugin.choice.2.4.1
+click plugin.choice.2.4.1
+assert plugins.plugin.2.param.4.value == 1
+scroll_into_view rack.params plugin.layout.tab.2.0
+click plugin.layout.tab.2.0
+wait_idle 300ms
+scroll_into_view rack.params plugin.param.2.6.exact
+assert_enabled plugin.param.2.6.exact == false
+scroll_into_view rack.params plugin.param.2.7.exact
+assert_enabled plugin.param.2.7.exact == false
+scroll_into_view rack.params plugin.param.2.8.exact
+assert_enabled plugin.param.2.8.exact == false
+scroll_into_view rack.params plugin.choice.2.5.1
+click plugin.choice.2.5.1
+assert plugins.plugin.2.param.5.value == 1
+scroll_into_view rack.params plugin.param.2.6.exact
+click plugin.param.2.6.exact
+key cmd-a
+type "35"
+key enter
+assert plugins.plugin.2.param.6.value == 0.35 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "1.7"
+key enter
+assert plugins.plugin.2.param.7.value == 1.7 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.8.exact
+click plugin.param.2.8.exact
+key cmd-a
+type "0.45"
+key enter
+assert plugins.plugin.2.param.8.value == 0.45 tolerance=0.000001
+scroll_into_view rack.params plugin.layout.tab.2.1
+click plugin.layout.tab.2.1
+wait_idle 300ms
+scroll_into_view rack.params plugin.param.2.10.exact
+click plugin.param.2.10.exact
+key cmd-a
+type "-25"
+key enter
+assert plugins.plugin.2.param.10.value == -25 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.11.exact
+click plugin.param.2.11.exact
+key cmd-a
+type "15"
+key enter
+assert plugins.plugin.2.param.11.value == 15 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.12.exact
+click plugin.param.2.12.exact
+key cmd-a
+type "10"
+key enter
+assert plugins.plugin.2.param.12.value == 10 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.14.exact
+click plugin.param.2.14.exact
+key cmd-a
+type "16.5"
+key enter
+assert plugins.plugin.2.param.14.value == 16.5 tolerance=0.000001
+scroll_into_view rack.params plugin.param.2.15.exact
+click plugin.param.2.15.exact
+key cmd-a
+type "11.5"
+key enter
+assert plugins.plugin.2.param.15.value == 11.5 tolerance=0.000001
+click plugin.param.2.14.exact
+key up
+key escape
+assert plugins.plugin.2.param.14.value == 17
+plugin_chain_save $SOTF_QA_DIR/binaural-edited.json
+plugin_chain_load $SOTF_QA_DIR/binaural-edited.json
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/binaural-reloaded.json
+scroll_into_view rack.params plugin.shell.2.bypass
+screenshot binaural-wide
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.file_picker.2.sofa_file rack.params
+assert_within plugin.param.2.2.exact rack.params
+assert_within plugin.param.2.3.exact rack.params
+assert_within plugin.param.2.9.exact rack.params
+assert_within plugin.choice.2.4.0 plugin.setup.2.header
+assert_within plugin.choice.2.4.1 rack.params
+assert_within plugin.file_status.2.sofa_file rack.params
+assert_text plugin.file_status.2.sofa_file == "None"
+screenshot binaural-narrow

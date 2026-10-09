@@ -20,6 +20,13 @@ pub struct SelectCommunityTheme {
     pub theme_id: CommunityThemeId,
 }
 
+/// Select a platform interface model, or follow the system default.
+#[derive(Debug, Clone, PartialEq, Action)]
+#[action(namespace = player_ui, no_json)]
+pub struct SelectDesign {
+    pub language: Option<gpui_design::DesignLanguage>,
+}
+
 // Actions for keyboard shortcuts
 actions!(
     player_ui,

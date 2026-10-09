@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Studio Rack">
+  <rect x="3" y="4" width="18" height="4" rx="1.2"/>
+  <rect x="3" y="10" width="18" height="4" rx="1.2"/>
+  <rect x="3" y="16" width="18" height="4" rx="1.2"/>
+  <path d="M6.5 6h.01M6.5 12h.01M6.5 18h.01M11 6h6.5M11 12h6.5M11 18h6.5"/>
+</svg>

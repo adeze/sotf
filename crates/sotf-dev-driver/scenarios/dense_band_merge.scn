@@ -1,0 +1,34 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+action PluginSetInputChannels {"channels":8}
+plugin_add BandMerge
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params plugin.layout.band_merge.channel_status.2
+wait_text plugin.layout.band_merge.channel_status.2 == "8 input channels → 4 output channels · 2 bands" timeout=5s
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "4"
+key enter
+assert plugins.plugin.2.param.0.value == 4 tolerance=0.001
+scroll_into_view rack.params plugin.layout.band_merge.channel_status.2
+wait_text plugin.layout.band_merge.channel_status.2 == "8 input channels → 2 output channels · 4 bands" timeout=5s
+screenshot band-merge-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.0.exact
+assert_within plugin.param.2.0.exact rack.params
+scroll_into_view rack.params plugin.layout.band_merge.channel_status.2
+assert_within plugin.layout.band_merge.channel_status.2 rack.params
+assert_text plugin.layout.band_merge.channel_status.2 == "8 input channels → 2 output channels · 4 bands"
+screenshot band-merge-narrow
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+scroll_into_view rack.params plugin.layout.band_merge.channel_status.2
+wait_text plugin.layout.band_merge.channel_status.2 == "8 input channels → 2 output channels · 4 bands" timeout=5s

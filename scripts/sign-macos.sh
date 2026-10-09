@@ -26,6 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$PROJECT_ROOT/dist"
 DESKTOP_ENTITLEMENTS="$PROJECT_ROOT/builds/macos/entitlements.plist"
+PLUGIN_WORKER_ENTITLEMENTS="$PROJECT_ROOT/builds/macos/plugin-worker-entitlements.plist"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
@@ -129,6 +130,8 @@ sign_macho_file() {
     local -a sign_args=(--force --sign "$DEVELOPER_ID" --options runtime --timestamp)
     if is_desktop_code "$file_path"; then
         sign_args+=(--entitlements "$DESKTOP_ENTITLEMENTS")
+    elif [ "${file_path##*/}" = sotf-external-plugin-worker ]; then
+        sign_args+=(--entitlements "$PLUGIN_WORKER_ENTITLEMENTS")
     fi
 
     codesign "${sign_args[@]}" "$file_path"

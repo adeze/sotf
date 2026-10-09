@@ -1,0 +1,57 @@
+resize 1440 900
+focus Studio
+plugin_clear
+plugin_add LoudnessMonitor
+action PluginSelectFirstUser
+wait_idle 500ms
+wait_until meters.group_count == 1 timeout=5s
+click meters.group.0.mute
+wait_until meters.group.0.muted == true timeout=5s
+plugin_chain_save $SOTF_QA_DIR/before.json
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"analysis-muted"}
+wait_until playback.is_playing == true timeout=12s
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+wait_until plugins.loudness.instance_id > 0 timeout=10s
+wait_text plugin.loudness.control-status.5 == "I/LRA running" timeout=10s
+wait_visible plugin.loudness.control.5.start timeout=10s
+click plugin.loudness.control.5.start
+wait_until plugins.loudness.request_id == 1 timeout=10s
+wait_until plugins.loudness.momentary_valid == true timeout=10s
+wait_until plugins.loudness.shortterm_valid == true timeout=10s
+wait_until plugins.loudness.integrated_valid == true timeout=10s
+assert plugins.loudness.momentary_lufs > -40
+assert plugins.loudness.momentary_lufs < -5
+assert plugins.loudness.shortterm_lufs > -40
+assert plugins.loudness.integrated_lufs > -40
+assert plugins.loudness.maximum_true_peak_dbtp > -40
+assert meters.input.integrated_request_id == 0
+assert meters.output.integrated_request_id == 0
+assert_within meters.lufs.integrated-bar rack.params
+assert_within meters.lufs.shortterm-bar rack.params
+assert_within meters.lufs.momentary-bar rack.params
+wait_text meters.lufs.integrated-bar == "-26.0" timeout=5s
+wait_text meters.lufs.shortterm-bar == "-26.0" timeout=5s
+wait_text meters.lufs.momentary-bar == "-26.0" timeout=5s
+wait_text meters.lufs.maximum-true-peak-value == "-24.1 dBTP" timeout=5s
+snapshot $SOTF_QA_DIR/live-values-wide.json
+query plugins.loudness
+screenshot loudness-live-values-wide
+resize 1000 900
+wait_idle 500ms
+assert_within meters.lufs.integrated-bar rack.params
+assert_within meters.lufs.shortterm-bar rack.params
+assert_within meters.lufs.momentary-bar rack.params
+wait_text meters.lufs.integrated-bar == "-26.0" timeout=5s
+wait_text meters.lufs.shortterm-bar == "-26.0" timeout=5s
+wait_text meters.lufs.momentary-bar == "-26.0" timeout=5s
+wait_text meters.lufs.maximum-true-peak-value == "-24.1 dBTP" timeout=5s
+snapshot $SOTF_QA_DIR/live-values-narrow.json
+screenshot loudness-live-values-narrow
+click plugin.loudness.control.5.pause
+wait_until plugins.loudness.request_id == 2 timeout=10s
+assert plugins.loudness.running == false
+click transport.play
+wait_until playback.is_playing == false timeout=5s
+plugin_chain_save $SOTF_QA_DIR/after.json

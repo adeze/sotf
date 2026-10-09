@@ -23,6 +23,15 @@ pub enum PluginUpdateEffect {
         node_id: crate::plugin_graph::GraphNodeId,
         param_index: usize,
     },
+    /// Named momentary host command. The value is carried outside saved settings
+    /// so Start/Cancel/Clear never latch in a preset or replay on reload.
+    Action {
+        plugin_index: usize,
+        node_id: Option<crate::plugin_graph::GraphNodeId>,
+        param_index: usize,
+        key: &'static str,
+        value: bool,
+    },
     /// Structural change (add/remove/reorder/toggle) — full chain rebuild
     Structural,
 }

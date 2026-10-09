@@ -1,0 +1,72 @@
+resize 1440 1000
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add SpectrumAnalyzer
+action PluginSelectFirstUser
+wait_idle 500ms
+click meters.group.0.mute
+assert meters.group.0.muted == true
+plugin_chain_save $SOTF_QA_DIR/before.json
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"analysis-muted"}
+wait_until playback.is_playing == true timeout=12s
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+wait_until plugins.spectrum.bins == 30 timeout=12s
+wait_until plugins.spectrum.peak_db > -70 timeout=12s
+assert meters.group.0.muted == true
+assert_visible spectrum.chart
+screenshot spectrum-live-wide
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "64"
+key enter
+wait_until plugins.spectrum.bins == 64 timeout=12s
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "80"
+key enter
+wait_until plugins.spectrum.minimum_frequency >= 80 timeout=12s
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "12000"
+key enter
+wait_until plugins.spectrum.maximum_frequency <= 12000 timeout=12s
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "0.2"
+key enter
+assert plugins.plugin.2.param.3.value == 0.2 tolerance=0.001
+wait_until plugins.spectrum.peak_db > -70 timeout=12s
+click spectrum.header.tilt
+key down
+key down
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.4.value == 2
+screenshot spectrum-live-edited
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_until plugins.spectrum.bins == 64 timeout=12s
+wait_until plugins.spectrum.minimum_frequency >= 80 timeout=12s
+wait_until plugins.spectrum.maximum_frequency <= 12000 timeout=12s
+wait_until plugins.spectrum.peak_db > -70 timeout=12s
+assert meters.group.0.muted == true
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+assert_within plugin.param.2.3.exact rack.params
+screenshot spectrum-live-narrow
+click sidebar.nav-spectrum
+wait_until spectrum.has_data == true timeout=12s
+screenshot spectrum-live-screen
+click transport.play
+wait_until playback.is_playing == false timeout=5s

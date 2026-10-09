@@ -6,8 +6,7 @@ use crate::components::icons::{Icon, IconName};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Select,
-    SelectOption, TabItem, TabVariant, Tabs, Text,
+    Button, ButtonSize, ButtonVariant, Select, SelectOption, TabItem, TabVariant, Tabs, Text,
 };
 
 fn studio_tab(id: String, label: &str, icon: IconName, selector: String) -> TabItem {
@@ -311,93 +310,7 @@ impl PlayerView {
     }
 
     pub(super) fn render_app_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let state = self.state.read(cx);
-        if state.app.ui_state.primary_nav_collapsed {
-            return self.render_legacy_app_sidebar(cx);
-        }
-        let d = Ds::from_cx(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let current = state.app.ui_state.current_screen;
-        let text = DesktopTranslations::for_language(state.app.ui_state.language);
-        let mut sidebar = div()
-            .id("desktop-navigation")
-            .min_h_0()
-            .overflow_y_scroll()
-            .track_focus(&self.window_state.navigation_focus)
-            .w(rems(12.0))
-            .h_full()
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .gap(d.grid)
-            .p(d.pad_y)
-            .bg(theme.surface)
-            .border_r_1()
-            .border_color(theme.border);
-        let toggle_state = self.state.clone();
-        let sidebar_text =
-            crate::app::i18n::SidebarTranslations::for_language(state.app.ui_state.language);
-        sidebar = sidebar.child(
-            IconButton::with_child(
-                "desktop-navigation-collapse",
-                Icon::new(IconName::ChevronLeft)
-                    .small()
-                    .color(theme.text_secondary),
-            )
-            .variant(IconButtonVariant::Outline)
-            .size(IconButtonSize::Sm)
-            .theme(theme.to_icon_button_theme())
-            .aria_label(sidebar_text.collapse)
-            .on_click_event(move |_, _, cx| {
-                toggle_state.update(cx, |state, cx| {
-                    state.app.ui_state.primary_nav_collapsed = true;
-                    cx.notify();
-                });
-            }),
-        );
-        let mut destinations = self.desktop_destinations(cx);
-        destinations.push((Screen::Settings, text.preferences, IconName::Settings));
-        for (screen, label, icon) in destinations {
-            if screen == Screen::Settings {
-                sidebar = sidebar.child(div().flex_1());
-            }
-            let entity = self.state.clone();
-            let selected =
-                current == screen || screen == Screen::StudioHub && current.is_studio_tool();
-            let button = Button::new(SharedString::from(format!("desktop-nav-{screen:?}")), label)
-                .custom_icon_left(Icon::new(icon).small().color(theme.text_primary))
-                .size(ButtonSize::Md)
-                .full_width(true)
-                .variant(ButtonVariant::Outline)
-                .selected(selected)
-                .theme(theme.to_button_theme())
-                .aria_label(label)
-                .on_click_event(move |_, _, cx| {
-                    entity.update(cx, |state, cx| {
-                        if screen == Screen::StudioHub {
-                            state.app.enter_studio_mode("DesktopNavigation");
-                        } else {
-                            state.app.set_screen(screen, "DesktopNavigation");
-                        }
-                        cx.notify();
-                    });
-                });
-            #[cfg(feature = "dev-api")]
-            let button = {
-                use crate::app::dev_api::DevTrackExt;
-                let button = button.dev_track(format!(
-                    "sidebar.nav-{}",
-                    format!("{screen:?}").to_lowercase()
-                ));
-                if screen == Screen::NowPlaying {
-                    button.dev_track("sidebar.nav-playing").into_any_element()
-                } else {
-                    button.into_any_element()
-                }
-            };
-            sidebar = sidebar.child(button);
-        }
-        sidebar.into_any_element()
+        self.render_legacy_app_sidebar(cx)
     }
 
     pub(super) fn render_compact_navigation(&self, cx: &mut Context<Self>) -> AnyElement {

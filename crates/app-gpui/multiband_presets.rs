@@ -1,17 +1,3 @@
-const CROSSOVER_PRESET_KEYS: [&str; 3] = ["balanced", "wide-mids", "high-detail"];
-
-pub(crate) fn crossover_preset_key(preset: i32) -> Option<&'static str> {
-    let index = usize::try_from(preset.checked_sub(1)?).ok()?;
-    CROSSOVER_PRESET_KEYS.get(index).copied()
-}
-
-pub(crate) fn crossover_preset_from_key(key: &str) -> Option<i32> {
-    CROSSOVER_PRESET_KEYS
-        .iter()
-        .position(|candidate| *candidate == key)
-        .map(|index| index as i32 + 1)
-}
-
 pub(crate) fn preset_frequencies(preset: i32) -> Option<[f64; 4]> {
     let index = usize::try_from(preset.checked_sub(1)?).ok()?;
     let &(a, b, c, d) = sotf_plugins::plugin_multiband_compressor::CROSSOVER_PRESETS.get(index)?;
@@ -62,7 +48,5 @@ mod tests {
             matching_crossover_preset([210.0, 2_000.0, 8_000.0, 12_000.0]),
             0
         );
-        assert_eq!(crossover_preset_key(0), None);
-        assert_eq!(crossover_preset_from_key("custom"), None);
     }
 }

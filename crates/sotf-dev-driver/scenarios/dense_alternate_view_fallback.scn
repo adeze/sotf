@@ -1,0 +1,121 @@
+# 2026-10-08: A retained Table/controller choice hid zero-schema custom panels.
+# ui_rack/plugin.rs resolves the effective view and its choices from real
+# desktop parameter addresses; ui_simple.rs supplies the shared capability.
+# From sotf: target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The suite launches sotf-desktop --features dev-api in an isolated QA directory.
+resize 1000 900
+wait_idle 500ms
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+plugin_clear
+plugin_add Matrix
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/table-matrix-before.json
+assert_within matrix.cell.2.0.0 rack.params
+assert_visible matrix.preset
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+assert_visible matrix.preset
+plugin_chain_save $SOTF_QA_DIR/table-matrix-after.json
+screenshot table-matrix-fallback
+plugin_clear
+plugin_add LoudnessMonitor
+action MetersSetFixture {"active":true}
+wait_idle 500ms
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/table-loudness-before.json
+assert_visible plugin.loudness.control.7.start
+assert_visible plugin.loudness.no-data
+assert_enabled plugin.loudness.control.7.start == false
+assert_absent meters.lufs.integrated-bar
+click rack.plugin.0
+wait_idle 500ms
+assert_visible plugin.loudness.control.1.start
+assert_within meters.lufs.integrated-bar rack.params
+assert_text meters.lufs.maximum-true-peak-value == "-1.2 dBTP"
+plugin_chain_save $SOTF_QA_DIR/table-loudness-after.json
+screenshot table-loudness-fallback
+action MetersSetFixture {"active":false}
+wait_idle 500ms
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.104.exact
+assert_within plugin.param.2.104.exact rack.params
+screenshot table-fir-preference-retained
+click rack.config.toggle
+click rack.config.view
+key up
+key enter
+wait_idle 500ms
+click rack.config.toggle
+plugin_clear
+plugin_add Matrix
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/controller-matrix-before.json
+assert_within matrix.cell.2.0.0 rack.params
+assert_visible matrix.preset
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+assert_visible matrix.preset
+plugin_chain_save $SOTF_QA_DIR/controller-matrix-after.json
+screenshot controller-matrix-fallback
+plugin_clear
+plugin_add LoudnessMonitor
+action MetersSetFixture {"active":true}
+wait_idle 500ms
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/controller-loudness-before.json
+assert_visible plugin.loudness.control.10.start
+assert_visible plugin.loudness.no-data
+assert_enabled plugin.loudness.control.10.start == false
+assert_absent meters.lufs.integrated-bar
+click rack.plugin.0
+wait_idle 500ms
+assert_visible plugin.loudness.control.1.start
+assert_within meters.lufs.integrated-bar rack.params
+assert_text meters.lufs.maximum-true-peak-value == "-1.2 dBTP"
+plugin_chain_save $SOTF_QA_DIR/controller-loudness-after.json
+screenshot controller-loudness-fallback
+action MetersSetFixture {"active":false}
+wait_idle 500ms
+click sidebar.nav-studio-rack
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+scroll_horizontal plugin.controller.slider.2.1 -600
+wait_idle 500ms
+scroll_into_view rack.params plugin.controller.exact.2.104
+assert_within plugin.controller.exact.2.104 rack.params
+screenshot controller-fir-preference-retained

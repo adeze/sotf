@@ -22,6 +22,15 @@ Signals:
 - `white_noise` — white noise (flat spectrum)
 - `pink_noise` — pink noise (1/f spectrum)
 - `m_noise` — M-weighted noise (ITU-R 468 weighting)
+- `stipa` — STIPA direct-method intelligibility signal (IEC 60268-16)
+- `stipa` — STIPA direct-method intelligibility signal (IEC 60268-16)
+- `full-sti` — 98-segment full-STI signal; opt-in only via
+  `--signals full-sti` (`--duration` sets the per-segment length,
+  `--sti-gap` the inter-segment silence)
+
+Signal names on the command line use kebab-case (`pink-noise`,
+`full-sti`); output directories and file stems use snake_case
+(`pink_noise`, `full_sti`).
 
 ```bash
 cargo run --bin generate-audio-tests -- --help

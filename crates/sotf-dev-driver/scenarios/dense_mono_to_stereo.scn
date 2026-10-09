@@ -1,0 +1,63 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"first"}
+wait_until playback.is_playing == true timeout=12s
+assert playback.current_filename == "practice-source-mono.wav"
+click sidebar.nav-studio-rack
+plugin_add MonoToStereo
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params plugin.choice.2.4.0
+click plugin.choice.2.4.0
+assert plugins.plugin.2.param.4.value == 0
+scroll_into_view rack.params plugin.choice.2.4.1
+click plugin.choice.2.4.1
+assert plugins.plugin.2.param.4.value == 1
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "0.7"
+key enter
+assert plugins.plugin.2.param.0.value == 0.7 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "2.5"
+key enter
+assert plugins.plugin.2.param.1.value == 2.5 tolerance=0.001
+scroll_into_view rack.params plugin.layout.header.2.DECORRELATION
+click plugin.layout.header.2.DECORRELATION
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "400"
+key enter
+assert plugins.plugin.2.param.2.value == 400 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "3000"
+key enter
+assert plugins.plugin.2.param.3.value == 3000 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key up
+key escape
+assert plugins.plugin.2.param.0.value == 0.75 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/edited.json
+screenshot mono-to-stereo-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.setup.2.header
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.choice.2.4.0 plugin.setup.2.header
+screenshot mono-to-stereo-narrow
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

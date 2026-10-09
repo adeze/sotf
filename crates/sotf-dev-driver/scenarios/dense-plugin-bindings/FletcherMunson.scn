@@ -1,0 +1,29 @@
+# Exercise an actual display-space edit and reload the saved chain.
+resize 1440 900
+focus Studio
+plugin_clear
+plugin_add FletcherMunson
+action PluginSelectFirstUser
+wait_idle 300ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+click plugin.choice.2.15.2
+assert plugins.plugin.2.param.15.value == 2
+assert plugins.plugin.2.param.8.value == 1
+click plugin.layout.header.2.AUTO GAIN
+wait_idle 300ms
+assert_enabled plugin.param.2.10.exact == true
+scroll_into_view rack.params plugin.param.2.10.exact
+assert_within plugin.param.2.10.exact rack.params
+click plugin.param.2.10.exact
+key cmd-a
+type "370.63"
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.10.value == 370.63 tolerance=0.001
+assert plugins.plugin.2.enabled == true
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 300ms
+assert plugins.plugin.2.param.10.value == 370.63 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+screenshot edited

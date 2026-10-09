@@ -31,7 +31,7 @@ pub use library::{LibraryController, LibraryResultOrder};
 pub use playback::PlaybackController;
 pub use playlist::PlaylistController;
 pub use plugin::{EqEditTarget, PluginController, PluginUpdateEffect, get_param_count};
-pub use plugin_param_map::param_index_to_engine_param;
+pub use plugin_param_map::{momentary_action_param, param_index_to_engine_param};
 pub use queue::{
     PlaylistQueueAppend, QueueController, QueuePlaybackEffect, QueueTrackPosition,
     UpcomingTrackRemoval,

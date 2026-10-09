@@ -1,0 +1,21 @@
+resize 1000 700
+focus Studio
+plugin_clear
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"first"}
+wait_until playback.is_playing == true timeout=12s
+focus Studio
+plugin_add Gain
+action PluginSelectFirstUser
+wait_until plugins.update_pending == false timeout=12s
+wait_idle 1s
+assert_within plugin.param.2.0.exact rack.params
+click plugin.param.2.0.exact
+key cmd-a
+type "-6.5"
+key enter
+wait_until plugins.parameter_receipt.status == "applied" timeout=10s
+assert plugins.parameter_receipt.instance_id == 5
+assert plugins.parameter_receipt.key == "gain_db"
+assert plugins.plugin.2.param.0.value == -6.5 tolerance=0.01
+plugin_chain_save $SOTF_QA_DIR/GainLiveInsert-chain.json

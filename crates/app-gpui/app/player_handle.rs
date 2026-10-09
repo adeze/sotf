@@ -73,6 +73,8 @@ pub struct PlayerSnapshotRequest {
     pub compressor_idx: Option<usize>,
     /// Currently visible rack plugin, used by generic live visualizations.
     pub rack_plugin_idx: Option<usize>,
+    /// Stable node identity and UI/engine revision at the time of the request.
+    pub rack_plugin_identity: Option<(usize, u64, u64)>,
     pub include_external_diagnostics: bool,
 }
 
@@ -93,6 +95,7 @@ pub struct PlayerSnapshot {
     pub spectrum_info: Option<Arc<SpectrumData>>,
     pub compressor_info: Option<Arc<CompressorData>>,
     pub rack_plugin_data: Option<(usize, Arc<dyn std::any::Any + Send + Sync>)>,
+    pub rack_plugin_identity: Option<(usize, u64, u64)>,
     pub external_engine_state: Option<AudioEngineState>,
 }
 
@@ -100,6 +103,16 @@ pub struct PlayerSnapshot {
 pub struct PlayerSnapshotRead {
     pub snapshot: Arc<PlayerSnapshot>,
     pub playback_state: PlaybackState,
+}
+
+/// Reconcile engine-owned profile changes only from the current rack request.
+/// A queued command or graph replacement invalidates older actor snapshots.
+pub fn profile_request_matches(
+    snapshot_identity: Option<(usize, u64, u64)>,
+    current_identity: Option<(usize, u64, u64)>,
+    updates_idle: bool,
+) -> bool {
+    updates_idle && current_identity.is_some() && snapshot_identity == current_identity
 }
 
 #[derive(Default)]
@@ -172,6 +185,17 @@ impl TransportSnapshotEpoch {
 }
 
 impl PlayerHandle {
+    #[cfg(feature = "dev-api")]
+    pub fn qa_transport_epoch(&self) -> u64 {
+        self.transport_epoch.requested.load(Ordering::Acquire)
+    }
+
+    #[cfg(feature = "dev-api")]
+    pub fn qa_disconnect_worker_for_test(&mut self) {
+        let (sender, receiver) = mpsc::channel();
+        drop(receiver);
+        self.sender = sender;
+    }
     pub fn new(player: Player) -> Self {
         let (sender, receiver) = mpsc::channel::<PlayerCommand>();
 
@@ -266,6 +290,7 @@ impl PlayerHandle {
                 rack_plugin_data: request
                     .rack_plugin_idx
                     .and_then(|idx| player.get_cached_plugin_data(idx).map(|data| (idx, data))),
+                rack_plugin_identity: request.rack_plugin_identity,
                 external_engine_state,
             };
             *latest_snapshot.write() = Some(Arc::new(snapshot));
@@ -316,6 +341,70 @@ impl PlayerHandle {
         })
     }
 
+    #[cfg(feature = "dev-api")]
+    pub(crate) fn profile_action_diagnostics(&self) -> serde_json::Value {
+        let latest = self.latest_snapshot.read().clone();
+        let Some(snapshot) = latest.as_ref() else {
+            return serde_json::Value::Null;
+        };
+        let Some((engine_index, data)) = snapshot.rack_plugin_data.as_ref() else {
+            return serde_json::Value::Null;
+        };
+        Self::qa_profile_action_status_from_data(
+            self.transport_epoch.requested.load(Ordering::Acquire),
+            snapshot.transport_epoch,
+            snapshot.sequence,
+            *engine_index,
+            data,
+        )
+    }
+
+    /// QA status from an already published actor snapshot. It has no access to
+    /// pending playback events, so inspection cannot consume UI-owned events.
+    #[cfg(feature = "dev-api")]
+    pub fn qa_profile_action_status_from_data(
+        requested_epoch: u64,
+        snapshot_epoch: u64,
+        sequence: u64,
+        engine_index: usize,
+        data: &Arc<dyn std::any::Any + Send + Sync>,
+    ) -> serde_json::Value {
+        if requested_epoch != snapshot_epoch {
+            return serde_json::Value::Null;
+        }
+        if let Some(hiss) =
+            data.downcast_ref::<sotf_plugins::plugin_hiss_reducer::snapshot::ProfileSnapshot>()
+        {
+            let (capturing, progress) = hiss.capture_state();
+            let status = hiss.try_status().ok();
+            return serde_json::json!({
+                "engine_index": engine_index,
+                "snapshot_sequence": sequence,
+                "transport_epoch": snapshot_epoch,
+                "kind": "hiss_reducer",
+                "capturing": capturing,
+                "progress": progress,
+                "profile_present": status.as_ref().map(|s| s.present),
+                "using_profile": status.as_ref().map(|s| s.use_flag),
+                "generation": status.as_ref().map(|s| s.generation),
+            });
+        }
+        if let Some(denoiser) = data.downcast_ref::<sotf_plugins::DenoiserData>() {
+            return serde_json::json!({
+                "engine_index": engine_index,
+                "snapshot_sequence": sequence,
+                "transport_epoch": snapshot_epoch,
+                "kind": "denoiser",
+                "capturing": denoiser.is_learning_noise,
+                "progress": denoiser.learning_progress,
+                "profile_present": denoiser.has_captured_profile,
+                "using_profile": denoiser.using_captured_profile,
+                "requested_use_profile": denoiser.requested_use_profile,
+            });
+        }
+        serde_json::Value::Null
+    }
+
     fn enqueue_result<F>(&self, label: &'static str, f: F) -> Result<(), PlayerCommandError>
     where
         F: FnOnce(&mut Player) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
@@ -359,6 +448,42 @@ impl PlayerHandle {
                         }),
                 );
             result
+        })?;
+        Ok(receipt)
+    }
+
+    /// Preserve an expected offline result in the QA receipt without routing
+    /// it to the application's error toast. Other failures still use the
+    /// normal command-failure drain.
+    #[cfg(feature = "dev-api")]
+    fn enqueue_qa_receipt<F>(
+        &self,
+        label: &'static str,
+        f: F,
+    ) -> Result<PlayerCommandReceipt, PlayerCommandError>
+    where
+        F: FnOnce(&mut Player) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
+    {
+        let receipt = PlayerCommandReceipt {
+            result: Arc::new(parking_lot::Mutex::new(None)),
+        };
+        let completion = Arc::clone(&receipt.result);
+        self.enqueue_result(label, move |player| {
+            let result = f(player);
+            let deferred = result
+                .as_ref()
+                .is_err_and(|error| error.to_string() == "No engine running");
+            *completion.lock() =
+                Some(
+                    result
+                        .as_ref()
+                        .map(|_| ())
+                        .map_err(|error| PlayerCommandFailure {
+                            label,
+                            error: error.to_string(),
+                        }),
+                );
+            if deferred { Ok(()) } else { result }
         })?;
         Ok(receipt)
     }
@@ -520,6 +645,66 @@ impl PlayerHandle {
         })
     }
 
+    /// Momentary actions have no saved setting to defer to the next engine.
+    /// Report an absent engine as a real command failure in release builds.
+    pub fn set_plugin_action(
+        &self,
+        engine_index: usize,
+        key: String,
+        value: String,
+    ) -> Result<(), PlayerCommandError> {
+        self.enqueue_result("set_plugin_action", move |player| {
+            player.set_plugin_parameter_strict(engine_index, key, value)
+        })
+    }
+
+    /// QA observes the same strict action and user-visible failure path.
+    #[cfg(feature = "dev-api")]
+    pub fn set_plugin_action_with_receipt(
+        &self,
+        engine_index: usize,
+        key: String,
+        value: String,
+    ) -> Result<PlayerCommandReceipt, PlayerCommandError> {
+        self.enqueue_with_receipt("set_plugin_action", move |player| {
+            player.set_plugin_parameter_strict(engine_index, key, value)
+        })
+    }
+
+    /// Dev-only acknowledgement of the worker/processing result for one
+    /// parameter command. The realtime callback is unchanged.
+    #[cfg(feature = "dev-api")]
+    pub fn set_plugin_parameter_with_receipt(
+        &self,
+        engine_index: usize,
+        param_id: String,
+        value: String,
+    ) -> Result<PlayerCommandReceipt, PlayerCommandError> {
+        self.enqueue_qa_receipt("set_plugin_parameter_qa", move |player| {
+            player.set_plugin_parameter_strict(engine_index, param_id, value)
+        })
+    }
+
+    #[cfg(feature = "dev-api")]
+    pub fn update_plugins_qa_receipt(
+        &self,
+        plugins: Vec<PluginConfig>,
+    ) -> Result<PlayerCommandReceipt, PlayerCommandError> {
+        self.enqueue_qa_receipt("update_plugins_qa", move |player| {
+            player.update_plugins_strict(plugins)
+        })
+    }
+
+    #[cfg(feature = "dev-api")]
+    pub fn update_plugin_graph_qa_receipt(
+        &self,
+        graph_config: PluginGraphConfig,
+    ) -> Result<PlayerCommandReceipt, PlayerCommandError> {
+        self.enqueue_qa_receipt("update_plugin_graph_qa", move |player| {
+            player.update_plugin_graph_strict(graph_config)
+        })
+    }
+
     pub fn load_and_play_source(
         &self,
         source: AudioSource,
@@ -548,6 +733,7 @@ impl PlayerHandle {
             output_device,
             position,
             prefer_smooth_switch,
+            None,
         )
         .map(|_| ())
     }
@@ -560,8 +746,10 @@ impl PlayerHandle {
         output_device: Option<String>,
         position: Option<f64>,
         prefer_smooth_switch: bool,
+        graph: Option<PluginGraphConfig>,
     ) -> Result<TransportReceipt, PlayerCommandError> {
         self.enqueue_transport_with_receipt("load_or_switch_source_at", move |player| {
+            player.set_playback_graph(graph);
             if prefer_smooth_switch && position.is_none() {
                 match player.switch_to_source_at(
                     source.clone(),
@@ -676,6 +864,32 @@ mod tests {
         flush(&handle);
         assert!(handle.read_snapshot().is_some());
         handle
+    }
+
+    #[cfg(feature = "dev-api")]
+    #[test]
+    fn profile_diagnostics_reject_stale_transport_and_do_not_consume_events() {
+        let handle = initial_handle();
+        {
+            let mut slot = handle.latest_snapshot.write();
+            let snapshot = Arc::get_mut(slot.as_mut().unwrap()).unwrap();
+            snapshot.rack_plugin_data = Some((
+                3,
+                Arc::new(sotf_plugins::plugin_hiss_reducer::snapshot::ProfileSnapshot::new(2)),
+            ));
+        }
+        handle.pending_events.lock().track_ended = true;
+        let current = handle.profile_action_diagnostics();
+        assert_eq!(current["kind"], "hiss_reducer");
+        assert_eq!(current["engine_index"], 3);
+        assert_eq!(current["profile_present"], false);
+        assert!(handle.pending_events.lock().track_ended);
+        handle
+            .enqueue_transport("profile-status-epoch", |_| Ok(()))
+            .unwrap();
+        flush(&handle);
+        assert!(handle.profile_action_diagnostics().is_null());
+        assert!(handle.pending_events.lock().track_ended);
     }
 
     #[test]

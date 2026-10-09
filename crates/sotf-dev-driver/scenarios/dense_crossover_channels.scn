@@ -1,0 +1,88 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+action PluginSetInputChannels {"channels":4}
+plugin_add Crossover
+action PluginSelectFirstUser
+wait_idle 500ms
+scroll_into_view rack.params plugin.choice.2.4.1
+click plugin.choice.2.4.1
+wait_idle 500ms
+assert plugins.plugin.2.param.4.value == 1
+assert_absent plugin.param.2.1.exact
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params plugin.param.2.100.exact
+click plugin.param.2.100.exact
+key cmd-a
+type "200"
+key enter
+assert plugins.plugin.2.param.100.value == 200 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.101.0
+click plugin.choice.2.101.0
+wait_idle 500ms
+assert plugins.plugin.2.param.101.value == 0
+scroll_into_view rack.params plugin.param.2.102.exact
+click plugin.param.2.102.exact
+key cmd-a
+type "1200"
+key enter
+assert plugins.plugin.2.param.102.value == 1200 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.103.1
+click plugin.choice.2.103.1
+wait_idle 500ms
+assert plugins.plugin.2.param.103.value == 1
+scroll_into_view rack.params plugin.param.2.104.exact
+click plugin.param.2.104.exact
+key cmd-a
+type "3000"
+key enter
+assert plugins.plugin.2.param.104.value == 3000 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.105.2
+click plugin.choice.2.105.2
+wait_idle 500ms
+assert plugins.plugin.2.param.105.value == 2
+scroll_into_view rack.params plugin.param.2.106.exact
+click plugin.param.2.106.exact
+key cmd-a
+type "8000"
+key enter
+assert plugins.plugin.2.param.106.value == 8000 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.107.3
+click plugin.choice.2.107.3
+wait_idle 500ms
+assert plugins.plugin.2.param.107.value == 3
+screenshot crossover-channels-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.crossover.channel.2.0
+assert_within plugin.param.2.100.exact rack.params
+assert_within plugin.choice.2.101.0 rack.params
+screenshot crossover-channels-narrow
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.100.value == 200 tolerance=0.001
+assert plugins.plugin.2.param.101.value == 0
+assert plugins.plugin.2.param.102.value == 1200 tolerance=0.001
+assert plugins.plugin.2.param.103.value == 1
+assert plugins.plugin.2.param.104.value == 3000 tolerance=0.001
+assert plugins.plugin.2.param.105.value == 2
+assert plugins.plugin.2.param.106.value == 8000 tolerance=0.001
+assert plugins.plugin.2.param.107.value == 3
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+action PluginSetInputChannels {"channels":16}
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.130.exact
+click plugin.param.2.130.exact
+key cmd-a
+type "1600"
+key enter
+assert plugins.plugin.2.param.130.value == 1600 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.131.2
+click plugin.choice.2.131.2
+wait_idle 500ms
+assert plugins.plugin.2.param.131.value == 2
+assert plugins.plugin.2.param.100.value == 200 tolerance=0.001
+screenshot crossover-channel-sixteen
+plugin_chain_save $SOTF_QA_DIR/expanded.json

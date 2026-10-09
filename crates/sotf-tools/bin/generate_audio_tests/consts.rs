@@ -1,6 +1,9 @@
+use super::gen_::gen_full_sti_checked;
 use super::gen_::gen_log_sweep_checked;
+use super::gen_::gen_stipa_checked;
 use super::gen_::gen_tone_checked;
 use super::gen_::gen_two_tone_checked;
+use super::misc::ensure_sti_sample_rate;
 use super::signal_kind::SignalKind;
 use super::types::Sidecar;
 use super::types::SignalMetadata;
@@ -39,6 +42,7 @@ pub(super) fn generate_one(
     sr: u32,
     bits: u16,
     duration: f32,
+    sti_gap: f32,
 ) -> Result<PathBuf, String> {
     let nyquist = sr as f32 / 2.0;
 
@@ -83,7 +87,18 @@ pub(super) fn generate_one(
                 ));
             }
         }
-        _ => {}
+        SignalKind::Stipa | SignalKind::FullSti => {
+            ensure_sti_sample_rate(sr)?;
+        }
+        // Guarded tone/sweep arms above fall through here when in band.
+        SignalKind::Thd1k
+        | SignalKind::Thd100
+        | SignalKind::ImdSmpte
+        | SignalKind::ImdCcif
+        | SignalKind::Sweep
+        | SignalKind::WhiteNoise
+        | SignalKind::PinkNoise
+        | SignalKind::MNoise => {}
     }
 
     // Generate signal data
@@ -174,6 +189,34 @@ pub(super) fn generate_one(
                 },
             )
         }
+        SignalKind::Stipa => {
+            let mono = gen_stipa_checked(sr, duration)?;
+            let data = replicate_mono(&mono, channels);
+            (
+                data,
+                SignalMetadata::Stipa {
+                    bands: STI_OCTAVE_CENTERS_HZ.map(|f| f as f32),
+                    modulations: STIPA_MODULATION_FREQUENCIES_HZ.map(|pair| pair.map(|f| f as f32)),
+                    target_rms: STI_TARGET_RMS,
+                },
+            )
+        }
+        SignalKind::FullSti => {
+            let mono = gen_full_sti_checked(sr, duration, sti_gap)?;
+            let data = replicate_mono(&mono, channels);
+            (
+                data,
+                SignalMetadata::FullSti {
+                    bands: STI_OCTAVE_CENTERS_HZ.map(|f| f as f32),
+                    modulations: STI_FULL_MODULATION_FREQUENCIES_HZ.map(|f| f as f32),
+                    segment_duration: duration,
+                    silence_gap_s: sti_gap,
+                    segments: STI_FULL_SEGMENT_COUNT as u16,
+                    order: "fm-major".to_string(),
+                    target_rms: STI_TARGET_RMS,
+                },
+            )
+        }
     };
 
     // Create output directory structure
@@ -188,13 +231,19 @@ pub(super) fn generate_one(
     let tags: &[(&[u8; 4], &str)] = &[(b"IART", "SotF"), (b"IPRD", "SotF")];
     write_wav(&wav_path, &audio_data, sr, channels, bits, tags)?;
 
-    // Write sidecar JSON
+    // Write sidecar JSON. Full STI reports the whole-file duration;
+    // per-segment timing lives in the signal metadata instead.
+    let file_duration = if signal == SignalKind::FullSti {
+        STI_FULL_SEGMENT_COUNT as f32 * duration + (STI_FULL_SEGMENT_COUNT as f32 - 1.0) * sti_gap
+    } else {
+        duration
+    };
     let sidecar = Sidecar {
         format: "wav".to_string(),
         channels,
         sample_rate: sr,
         bits,
-        duration,
+        duration: file_duration,
         signal: metadata,
     };
 

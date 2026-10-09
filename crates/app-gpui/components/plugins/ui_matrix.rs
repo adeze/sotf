@@ -7,10 +7,12 @@
 //! - Preset buttons (Identity, Swap L/R, Mono Mix)
 
 mod consts;
+mod header;
 mod misc;
 mod render;
 mod types;
 
+pub(crate) use header::render_header;
 #[doc(hidden)]
 pub use misc::{checked_matrix_cell_index, matrix_settings_mut_by_instance_id};
 pub use render::*;

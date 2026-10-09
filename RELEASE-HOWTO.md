@@ -24,19 +24,9 @@ just doc
 
 ## QA
 
-Full qa is very slow (hours).
+Run QA
 ```
 just qa
-
-```
- You can run a minimal subset (minutes):
-```
-just qa-math
-just qa-autoeq
-just qa-roomeq-quick
-just qa-roomeq-multi-measurement
-just qa-plugin
-```
 
 ## Building with the magic script
 
@@ -94,7 +84,7 @@ In a powershell terminal:
 .\build\build-windows.bat
 ```
 
-## Building for iOS is experimental
+## Building for iOS
 
 To build the SOTF and GPUI showcase apps for the Apple simulator or a connected
 device, add the Rust targets first, then run the corresponding recipe:
@@ -105,7 +95,7 @@ just ios-sim
 just ios-device
 ```
 
-## Building for tvOS is very experimental
+## Building for tvOS is experimental
 
 tvOS support remains experimental and uses patched crates. The Rust target
 needs nightly and `rust-src` because the recipes build the standard library

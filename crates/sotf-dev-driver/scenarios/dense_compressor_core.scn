@@ -1,0 +1,31 @@
+resize 1000 700
+focus Studio
+plugin_clear
+plugin_add Compressor
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/compressor-before.json
+assert_within compressor.advanced rack.params
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.4.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+assert_within plugin.param.2.3.exact rack.params
+assert_within plugin.param.2.5.exact rack.params
+assert_within plugin.param.2.6.exact rack.params
+click plugin.param.2.0.exact
+key cmd-a
+type "-30"
+key enter
+assert plugins.plugin.2.param.0.value == -30 tolerance=0.01
+click plugin.param.2.6.exact
+key cmd-a
+type "60"
+key enter
+assert plugins.plugin.2.param.6.value == 0.6 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/compressor-edited.json
+screenshot compressor-edited
+click compressor.advanced
+wait_idle 250ms
+snapshot $SOTF_QA_DIR/compressor-advanced.json
+screenshot compressor-advanced

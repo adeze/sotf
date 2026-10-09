@@ -11,6 +11,8 @@ pub(super) enum SignalKind {
     WhiteNoise,
     PinkNoise,
     MNoise,
+    Stipa,
+    FullSti,
 }
 
 impl SignalKind {
@@ -25,10 +27,14 @@ impl SignalKind {
             Self::WhiteNoise => "white_noise",
             Self::PinkNoise => "pink_noise",
             Self::MNoise => "m_noise",
+            Self::Stipa => "stipa",
+            Self::FullSti => "full_sti",
         }
     }
 
     pub(super) fn all() -> Vec<Self> {
+        // FullSti stays opt-in: 98 segments per file would dwarf a default
+        // run (at 10 s per segment, one mono file already holds 980 s).
         vec![
             Self::Id,
             Self::Thd1k,
@@ -39,6 +45,7 @@ impl SignalKind {
             Self::WhiteNoise,
             Self::PinkNoise,
             Self::MNoise,
+            Self::Stipa,
         ]
     }
 }

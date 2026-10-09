@@ -11,6 +11,8 @@
 //! - white_noise: white noise (flat spectrum)
 //! - pink_noise: pink noise (1/f spectrum, -3dB/octave)
 //! - m_noise: M-weighted noise (ITU-R 468 weighting for acoustic measurements)
+//! - stipa: STIPA direct-method intelligibility signal (IEC 60268-16)
+//! - full_sti: 98-segment full-STI signal, opt-in only (duration is per segment)
 
 use clap::Parser;
 use std::fs;
@@ -51,6 +53,14 @@ fn main() {
         }
     }
 
+    if !cli.sti_gap.is_finite() || cli.sti_gap < 0.0 {
+        eprintln!(
+            "Error: STI gap must be finite and non-negative, got {}",
+            cli.sti_gap
+        );
+        std::process::exit(1);
+    }
+
     // If no signals specified, use all
     let signals = if cli.signals.is_empty() {
         SignalKind::all()
@@ -87,7 +97,15 @@ fn main() {
                         cli.duration
                     };
 
-                    match generate_one(&cli.out_dir, signal, channels, sr, bits, duration) {
+                    match generate_one(
+                        &cli.out_dir,
+                        signal,
+                        channels,
+                        sr,
+                        bits,
+                        duration,
+                        cli.sti_gap,
+                    ) {
                         Ok(path) => {
                             manifest_files.push(path.to_string_lossy().to_string());
                             stats.generated += 1;

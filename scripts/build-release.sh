@@ -37,6 +37,7 @@ DIST_DIR="$PROJECT_ROOT/dist"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/macos_plugin_helpers.sh"
 
 # Extract version from root Cargo.toml
 VERSION=$(sotf_version "$PROJECT_ROOT")
@@ -160,6 +161,7 @@ build_all() {
     mkdir -p "$DIST_DIR"
 
     if should_build "macos"; then
+        export MACOSX_DEPLOYMENT_TARGET=15.0
         # We deliberately do not invoke `just cross-macos-{arm64,x86}` here.
         # Those recipes historically rebuilt the GPUI binary statically before
         # wrapping it in a DMG. That static binary cannot be signed/notarized
@@ -172,7 +174,8 @@ build_all() {
             # See [profile.dist] in root Cargo.toml. Artifacts land in
             # target/<triple>/dist/ instead of target/<triple>/release/.
             cargo build --profile dist --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
-            cargo build --profile dist --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
+            cargo build --profile dist --target aarch64-apple-darwin -p sotf-gpui --features shipping,hal,onnx
+            build_macos_plugin_helpers "$PROJECT_ROOT/../sotf-daw" "$PROJECT_ROOT/target" aarch64-apple-darwin
             cp "target/aarch64-apple-darwin/dist/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-arm64"
             cp "target/aarch64-apple-darwin/dist/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-arm64"
             ./scripts/build-dmg-sotf.sh --arch arm64 --binary "target/aarch64-apple-darwin/dist/sotf-desktop"
@@ -181,7 +184,8 @@ build_all() {
             log_info "=== macOS x86_64 (dynamic) ==="
             rustup target add x86_64-apple-darwin 2>/dev/null || true
             cargo build --profile dist --target x86_64-apple-darwin -p sotf-tui --features hal
-            cargo build --profile dist --target x86_64-apple-darwin -p sotf-gpui --features hal
+            cargo build --profile dist --target x86_64-apple-darwin -p sotf-gpui --features shipping,hal
+            build_macos_plugin_helpers "$PROJECT_ROOT/../sotf-daw" "$PROJECT_ROOT/target" x86_64-apple-darwin
             cp "target/x86_64-apple-darwin/dist/sotf-tui"     "$DIST_DIR/sotf-tui-${VERSION}-macos-x86_64"
             cp "target/x86_64-apple-darwin/dist/sotf-desktop" "$DIST_DIR/sotf-desktop-${VERSION}-macos-x86_64"
             ./scripts/build-dmg-sotf.sh --arch x86_64 --binary "target/x86_64-apple-darwin/dist/sotf-desktop"

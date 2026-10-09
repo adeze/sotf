@@ -23,6 +23,8 @@ targets:
       - name: Build Rust static library
         script: ./build-rust.sh
         basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/rust/libsotf_ios.a
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.sotf

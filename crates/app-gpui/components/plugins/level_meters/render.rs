@@ -113,24 +113,21 @@ fn render_lufs_maximum_summary(
     #[cfg(not(feature = "dev-api"))]
     let _ = (label_selector, value_selector, summary_selector);
     let label_text = label.to_string();
-    let label = div().w_full().min_w_0().child(label_text.clone());
+    let label = div().flex_1().min_w_0().child(label_text.clone());
     #[cfg(feature = "dev-api")]
     let label =
         label.dev_track_with_state(label_selector, DevElementState::default().text(label_text));
 
     let value_text = value;
-    let value = div().w_full().min_w_0().child(value_text.clone());
+    let value = div().flex_shrink_0().child(value_text.clone());
     #[cfg(feature = "dev-api")]
     let value =
         value.dev_track_with_state(value_selector, DevElementState::default().text(value_text));
 
     let summary = div()
         .flex()
-        .flex_col()
-        // The label and its value form one compact summary. Keep this gap
-        // below the section gap so the extra maximum rows fit in a short
-        // Loudness Monitor panel without pushing the bars off-screen.
-        .gap(d.half_grid)
+        .items_center()
+        .gap(d.grid)
         .w_full()
         .min_w_0()
         .text_size(d.text_xs)
@@ -151,7 +148,7 @@ fn render_lra_summary(
     theme: &Theme,
 ) -> impl IntoElement {
     let label_text = label.to_string();
-    let label = div().w_full().min_w_0().child(label_text.clone());
+    let label = div().flex_1().min_w_0().child(label_text.clone());
     #[cfg(feature = "dev-api")]
     let label = label.dev_track_with_state(
         "meters.lufs.lra-label",
@@ -159,7 +156,7 @@ fn render_lra_summary(
     );
 
     let value_text = value;
-    let value = div().w_full().min_w_0().child(value_text.clone());
+    let value = div().flex_shrink_0().child(value_text.clone());
     #[cfg(feature = "dev-api")]
     let value = value.dev_track_with_state(
         "meters.lufs.lra-value",
@@ -174,8 +171,16 @@ fn render_lra_summary(
         .min_w_0()
         .text_size(d.text_xs)
         .text_color(theme.text_muted)
-        .child(label)
-        .child(value);
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(d.grid)
+                .w_full()
+                .min_w_0()
+                .child(label)
+                .child(value),
+        );
 
     if not_stable {
         let status_text = not_stable_label;
@@ -398,7 +403,7 @@ pub fn render_gradient_meter(
         )
 }
 
-/// Render LUFS display with True Peak bars at top (standalone function)
+/// Render programme loudness before channel peaks with compact summary readouts.
 pub fn render_lufs_with_true_peak(
     d: &Ds,
     loudness: Option<&sotf_audio_player::LoudnessData>,
@@ -500,104 +505,7 @@ pub fn render_lufs_with_true_peak(
         // keeps the full stack inside the mounted plugin's available height.
         .gap(d.gap_md)
         .p(d.pad_x)
-        // True Peak section (on top)
-        .child({
-            // Use TickConfig preset for True Peak (quadratic scale from -60 to +6)
-            let tick_config = TickConfig::true_peak();
-
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .child(
-                    div()
-                        .text_size(d.text_sm)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_primary)
-                        .mb(d.grid)
-                        .child(peak_label),
-                )
-                .child({
-                    let label_text = text.max_true_peak.to_string();
-                    let value_text = maximum_true_peak_value.clone();
-                    let summary = div()
-                        .flex()
-                        .flex_col()
-                        .gap(d.gap)
-                        .w_full()
-                        .min_w_0()
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_muted)
-                        .child({
-                            let label = div().w_full().min_w_0().child(label_text.clone());
-                            #[cfg(feature = "dev-api")]
-                            let label = label.dev_track_with_state(
-                                "meters.lufs.maximum-true-peak-label",
-                                DevElementState::default().text(label_text),
-                            );
-                            label
-                        })
-                        .child({
-                            let value = div().w_full().min_w_0().child(value_text.clone());
-                            #[cfg(feature = "dev-api")]
-                            let value = value.dev_track_with_state(
-                                "meters.lufs.maximum-true-peak-value",
-                                DevElementState::default().text(value_text),
-                            );
-                            value
-                        });
-                    #[cfg(feature = "dev-api")]
-                    let summary = summary.dev_track("meters.lufs.maximum-true-peak-summary");
-                    summary
-                })
-                .children(true_peaks.iter().enumerate().map(|(index, true_peak)| {
-                    let bar = PlayerView::render_meter_bar(
-                        d,
-                        sotf_audio_player::get_channel_label(index, true_peaks.len()),
-                        *true_peak,
-                        &tick_config,
-                        &meter_theme,
-                    );
-                    #[cfg(feature = "dev-api")]
-                    let bar = bar.dev_track(format!("meters.lufs.true-peak-bar.{index}"));
-                    bar
-                }))
-                // Tick marks (aligned with bar using same flex layout)
-                .child(render_tick_row(
-                    &tick_config,
-                    meter_theme.label_width,
-                    meter_theme.value_width,
-                ))
-                // True Peak legend (same flex layout as bar and ticks)
-                .child(
-                    div()
-                        .flex()
-                        // intentional: pixel-exact meter divider — do not scale
-                        .gap(px(1.0))
-                        // Label spacer
-                        .child(div().w(px(meter_theme.label_width)))
-                        // Legend area (flex-1, justify_between for labels)
-                        .child(
-                            div()
-                                .flex_1()
-                                .flex()
-                                .justify_between()
-                                .text_size(d.text_xs)
-                                .text_color(meter_theme.color_text_muted)
-                                .children(tick_config.major_values.iter().map(|db| {
-                                    let label = if *db > 0.0 {
-                                        format!("+{}", *db as i32)
-                                    } else {
-                                        format!("{}", *db as i32)
-                                    };
-                                    div().child(label)
-                                })),
-                        )
-                        // Value spacer
-                        .child(div().w(px(meter_theme.value_width))),
-                )
-        })
-        // LUFS section (below)
+        // Programme loudness stays visible before the potentially long channel list.
         .child({
             // Use TickConfig preset for LUFS (quadratic scale from -60 to 0)
             let tick_config = TickConfig::lufs();
@@ -609,7 +517,10 @@ pub fn render_lufs_with_true_peak(
                 &meter_theme,
             );
             #[cfg(feature = "dev-api")]
-            let integrated_bar = integrated_bar.dev_track("meters.lufs.integrated-bar");
+            let integrated_bar = integrated_bar.dev_track_with_state(
+                "meters.lufs.integrated-bar",
+                DevElementState::default().text(format!("{integrated_lufs:.1}")),
+            );
             let shortterm_bar = PlayerView::render_meter_bar(
                 d,
                 "S".to_string(),
@@ -618,7 +529,10 @@ pub fn render_lufs_with_true_peak(
                 &meter_theme,
             );
             #[cfg(feature = "dev-api")]
-            let shortterm_bar = shortterm_bar.dev_track("meters.lufs.shortterm-bar");
+            let shortterm_bar = shortterm_bar.dev_track_with_state(
+                "meters.lufs.shortterm-bar",
+                DevElementState::default().text(format!("{shortterm_lufs:.1}")),
+            );
             let momentary_bar = PlayerView::render_meter_bar(
                 d,
                 "M".to_string(),
@@ -627,7 +541,10 @@ pub fn render_lufs_with_true_peak(
                 &meter_theme,
             );
             #[cfg(feature = "dev-api")]
-            let momentary_bar = momentary_bar.dev_track("meters.lufs.momentary-bar");
+            let momentary_bar = momentary_bar.dev_track_with_state(
+                "meters.lufs.momentary-bar",
+                DevElementState::default().text(format!("{momentary_lufs:.1}")),
+            );
 
             div()
                 .flex()
@@ -700,6 +617,79 @@ pub fn render_lufs_with_true_peak(
                                 .child(div().child("-30"))
                                 .child(div().child("-10"))
                                 .child(div().child("0")),
+                        )
+                        // Value spacer
+                        .child(div().w(px(meter_theme.value_width))),
+                )
+        })
+        // Channel peaks follow programme loudness, including multichannel instances.
+        .child({
+            // Use TickConfig preset for True Peak (quadratic scale from -60 to +6)
+            let tick_config = TickConfig::true_peak();
+
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .child(
+                    div()
+                        .text_size(d.text_sm)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_primary)
+                        .mb(d.grid)
+                        .child(peak_label),
+                )
+                .child(render_lufs_maximum_summary(
+                    d,
+                    text.max_true_peak,
+                    maximum_true_peak_value,
+                    "meters.lufs.maximum-true-peak-label",
+                    "meters.lufs.maximum-true-peak-value",
+                    "meters.lufs.maximum-true-peak-summary",
+                    theme,
+                ))
+                .children(true_peaks.iter().enumerate().map(|(index, true_peak)| {
+                    let bar = PlayerView::render_meter_bar(
+                        d,
+                        sotf_audio_player::get_channel_label(index, true_peaks.len()),
+                        *true_peak,
+                        &tick_config,
+                        &meter_theme,
+                    );
+                    #[cfg(feature = "dev-api")]
+                    let bar = bar.dev_track(format!("meters.lufs.true-peak-bar.{index}"));
+                    bar
+                }))
+                // Tick marks (aligned with bar using same flex layout)
+                .child(render_tick_row(
+                    &tick_config,
+                    meter_theme.label_width,
+                    meter_theme.value_width,
+                ))
+                // True Peak legend (same flex layout as bar and ticks)
+                .child(
+                    div()
+                        .flex()
+                        // intentional: pixel-exact meter divider — do not scale
+                        .gap(px(1.0))
+                        // Label spacer
+                        .child(div().w(px(meter_theme.label_width)))
+                        // Legend area (flex-1, justify_between for labels)
+                        .child(
+                            div()
+                                .flex_1()
+                                .flex()
+                                .justify_between()
+                                .text_size(d.text_xs)
+                                .text_color(meter_theme.color_text_muted)
+                                .children(tick_config.major_values.iter().map(|db| {
+                                    let label = if *db > 0.0 {
+                                        format!("+{}", *db as i32)
+                                    } else {
+                                        format!("{}", *db as i32)
+                                    };
+                                    div().child(label)
+                                })),
                         )
                         // Value spacer
                         .child(div().w(px(meter_theme.value_width))),
@@ -1344,7 +1334,7 @@ impl PlayerView {
         )
     }
 
-    /// Render LUFS display with True Peak bars at top (wrapper method)
+    /// Render compact programme loudness and channel peaks.
     pub fn render_lufs_with_true_peak(
         &self,
         d: &Ds,

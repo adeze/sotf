@@ -3,23 +3,23 @@
 import argparse
 import os
 import requests
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCENARIOS_DIR = ROOT / "crates" / "sotf-dev-driver" / "scenarios" / "plugins"
+SUITE_PATH = ROOT / "crates" / "sotf-dev-driver" / "suites" / "plugins.toml"
 
-PLUGIN_TYPES = [
-    "Gain", "Dither", "EQ", "Compressor", "Limiter", "Gate", "Expander",
-    "MultibandCompressor", "MultibandExpander", "LoudnessCompensation",
-    "FletcherMunson", "Upmixer", "AAE", "BinauralDecoder", "Convolution",
-    "LoudnessMonitor", "SpectrumAnalyzer", "ChannelMuteSolo", "Matrix",
-    "XTC", "Denoiser", "Declick", "HissReducer", "SpeechDenoiser", "Pnd",
-    "ABCompare", "Crossover", "BandSplit", "BandMerge", "Downmix",
-    "MonoToStereo", "Crossfeed", "Delay", "Aec", "Beamformer",
-    "AmbisonicsDecoder", "StereoImager", "DeEsser", "TransientShaper",
-    "Saturation", "DynamicEq", "FirDesigner", "LinearPhaseEq", "SpectralCompressor",
-]
 
+def verify_suite_membership(catalog: list[str]) -> None:
+    """Fail if the checked-in lifecycle suite silently omits a factory plugin."""
+    suite = tomllib.loads(SUITE_PATH.read_text())
+    paths = [entry["path"] for entry in suite["scenario"]]
+    expected = {f"crates/sotf-dev-driver/scenarios/plugins/{name}.scn" for name in catalog}
+    if len(paths) != len(set(paths)) or set(paths) != expected:
+        missing = sorted(expected - set(paths))
+        extra = sorted(set(paths) - expected)
+        raise RuntimeError(f"plugins.toml membership mismatch: missing={missing}, extra={extra}")
 
 def query(base: str, path: str):
     r = requests.get(f"{base}/query?path={path}", timeout=5)
@@ -28,14 +28,6 @@ def query(base: str, path: str):
     if not j.get("ok"):
         raise RuntimeError(j.get("error"))
     return j["value"]
-
-
-def query_or_none(base: str, path: str):
-    """Query the dev API and return None if the path is invalid/out of range."""
-    try:
-        return query(base, path)
-    except (requests.exceptions.HTTPError, RuntimeError):
-        return None
 
 
 def action(base: str, name: str, payload: dict):
@@ -93,7 +85,11 @@ def generate_for_type(base: str, plugin_type: str, insert_idx: int) -> str:
     action(base, "PluginSetInputChannels", {"channels": input_channels})
     action(base, "PluginAdd", {"plugin_type": plugin_type})
     display_name = query(base, f"plugins.plugin.{insert_idx}.type")
-    param_count = int(query(base, f"plugins.plugin.{insert_idx}.param_count"))
+    param_indices = query(base, f"plugins.plugin.{insert_idx}.param_indices")
+    if not isinstance(param_indices, list) or not all(type(i) is int and i >= 0 for i in param_indices):
+        raise RuntimeError(f"invalid param_indices for {plugin_type}: {param_indices!r}")
+    if param_indices != sorted(set(param_indices)):
+        raise RuntimeError(f"duplicate or unordered param_indices for {plugin_type}: {param_indices!r}")
 
     lines = [
         f"# {plugin_type} plugin lifecycle scenario",
@@ -111,7 +107,7 @@ def generate_for_type(base: str, plugin_type: str, insert_idx: int) -> str:
         "assert_visible rack.params",
         f"screenshot editor-{plugin_type}",
         "",
-        f"# {param_count} parameter(s)",
+        f"# {len(param_indices)} queryable parameter ID(s): {param_indices}",
     ]
 
     if plugin_type in ("BandMerge", "Beamformer"):
@@ -120,11 +116,8 @@ def generate_for_type(base: str, plugin_type: str, insert_idx: int) -> str:
             'action PluginSetInputChannels {"channels":4}',
         ])
 
-    for i in range(param_count):
-        name = query_or_none(base, f"plugins.plugin.{insert_idx}.param.{i}.name")
-        if name is None:
-            lines.append(f"# stopping at parameter {i}: query out of range")
-            break
+    for i in param_indices:
+        name = query(base, f"plugins.plugin.{insert_idx}.param.{i}.name")
         typ = query(base, f"plugins.plugin.{insert_idx}.param.{i}.type")
         meta = {"type": typ, "name": name}
         if typ == "file":
@@ -164,7 +157,9 @@ def main():
     SCENARIOS_DIR.mkdir(parents=True, exist_ok=True)
     insert_idx = find_insert_index(args.url)
     print(f"# user-plugin insert index: {insert_idx}")
-    for pt in PLUGIN_TYPES:
+    catalog = query(args.url, "plugins.catalog")
+    verify_suite_membership(catalog)
+    for pt in catalog:
         content = generate_for_type(args.url, pt, insert_idx)
         (SCENARIOS_DIR / f"{pt}.scn").write_text(content)
         print(f"generated {pt}.scn")

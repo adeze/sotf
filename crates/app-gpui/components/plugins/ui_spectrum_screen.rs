@@ -59,6 +59,8 @@ impl PlayerView {
                             .clone()
                             .unwrap_or_else(|| frame.magnitudes.clone()),
                     )
+                    .peak_hold(!spectrum.hold)
+                    .peak_color(theme.text_primary.into())
                     .height(px(chart_height))
                     .frequency_range(min_frequency, max_frequency)
                     .colors(spectrum_colors_from_theme(

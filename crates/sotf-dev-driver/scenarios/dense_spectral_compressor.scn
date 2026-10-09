@@ -1,0 +1,119 @@
+resize 1600 1000
+focus Studio
+plugin_clear
+plugin_add SpectralCompressor
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params plugin.choice.2.0.0
+click plugin.choice.2.0.0
+assert plugins.plugin.2.param.0.value == 0
+scroll_into_view rack.params plugin.choice.2.0.2
+click plugin.choice.2.0.2
+assert plugins.plugin.2.param.0.value == 2
+scroll_into_view rack.params plugin.choice.2.0.1
+click plugin.choice.2.0.1
+assert plugins.plugin.2.param.0.value == 1
+scroll_into_view rack.params plugin.choice.2.8.1
+click plugin.choice.2.8.1
+assert plugins.plugin.2.param.8.value == 1
+scroll_into_view rack.params plugin.choice.2.8.2
+click plugin.choice.2.8.2
+assert plugins.plugin.2.param.8.value == 2
+scroll_into_view rack.params plugin.choice.2.8.0
+click plugin.choice.2.8.0
+assert plugins.plugin.2.param.8.value == 0
+scroll_into_view rack.params plugin.choice.2.9.1
+click plugin.choice.2.9.1
+assert plugins.plugin.2.param.9.value == 1
+scroll_into_view rack.params plugin.choice.2.9.0
+click plugin.choice.2.9.0
+assert plugins.plugin.2.param.9.value == 0
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "-24"
+key enter
+assert plugins.plugin.2.param.1.value == -24 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "3.5"
+key enter
+assert plugins.plugin.2.param.2.value == 3.5 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.5.exact
+click plugin.param.2.5.exact
+key cmd-a
+type "8"
+key enter
+assert plugins.plugin.2.param.5.value == 8 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "8.1"
+key enter
+assert plugins.plugin.2.param.3.value == 8.1 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.4.exact
+click plugin.param.2.4.exact
+key cmd-a
+type "120"
+key enter
+assert plugins.plugin.2.param.4.value == 120 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "85"
+key enter
+assert plugins.plugin.2.param.7.value == 0.85 tolerance=0.001
+scroll_into_view rack.params plugin.layout.header.2.ANALYSIS
+click plugin.layout.header.2.ANALYSIS
+wait_idle 500ms
+assert_enabled plugin.param.2.11.exact == false
+scroll_into_view rack.params plugin.choice.2.10.1
+click plugin.choice.2.10.1
+assert plugins.plugin.2.param.10.value == 1
+assert_enabled plugin.param.2.11.exact == true
+assert_enabled plugin.param.2.1.exact == false
+scroll_into_view rack.params plugin.param.2.6.exact
+click plugin.param.2.6.exact
+key cmd-a
+type "45"
+key enter
+assert plugins.plugin.2.param.6.value == 0.45 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.11.exact
+click plugin.param.2.11.exact
+key cmd-a
+type "3"
+key enter
+assert plugins.plugin.2.param.11.value == 3 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.12.exact
+click plugin.param.2.12.exact
+key cmd-a
+type "75"
+key enter
+assert plugins.plugin.2.param.12.value == 0.75 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.10.0
+click plugin.choice.2.10.0
+assert plugins.plugin.2.param.10.value == 0
+assert_enabled plugin.param.2.11.exact == false
+assert_enabled plugin.param.2.1.exact == true
+plugin_chain_save $SOTF_QA_DIR/edited.json
+screenshot spectral_compressor-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.setup.2.header
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+assert_within plugin.param.2.5.exact rack.params
+assert_within plugin.param.2.3.exact rack.params
+assert_within plugin.param.2.4.exact rack.params
+assert_within plugin.param.2.7.exact rack.params
+assert_within plugin.choice.2.0.1 plugin.setup.2.header
+assert_within plugin.choice.2.8.0 plugin.setup.2.header
+assert_within plugin.choice.2.9.0 plugin.setup.2.header
+assert_within plugin.choice.2.10.0 plugin.setup.2.header
+screenshot spectral_compressor-narrow
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

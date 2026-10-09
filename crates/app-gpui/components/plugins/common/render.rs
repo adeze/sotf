@@ -1,5 +1,4 @@
 use super::TransferCurveElement;
-use super::misc::theme_to_vertical_slider_theme;
 use super::param_section_style::ParamSectionStyle;
 use crate::app::AppState;
 use crate::app::state::app::KnobDragState;
@@ -8,10 +7,10 @@ use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_audio_kit::{
-    Potentiometer, PotentiometerScale, PotentiometerSize, VerticalSlider, VerticalSliderSize,
+use gpui_audio_kit::PotentiometerSize;
+use gpui_ui_kit::{
+    ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize, Slider, SliderSize,
 };
-use gpui_ui_kit::{Input, InputSize, NumberInput, NumberInputSize, Toggle, ToggleStyle};
 use sotf_audio_player_midi::PhysicalControlKind;
 use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -62,17 +61,6 @@ fn sanitize_audio_control_range(
         value: normalized_value,
         min: normalized_min,
         max: normalized_max,
-    }
-}
-
-/// VerticalSlider formats its value after each range endpoint setter. Its
-/// initial range is 0..100, so setting a minimum above 100 before the matching
-/// maximum temporarily creates an invalid range and panics inside f64::clamp.
-fn configure_vertical_slider_range(slider: VerticalSlider, min: f64, max: f64) -> VerticalSlider {
-    if min > 100.0 {
-        slider.max(max).min(min)
-    } else {
-        slider.min(min).max(max)
     }
 }
 
@@ -412,29 +400,44 @@ pub fn render_toggle_enabled(
     is_editing: bool,
     theme: &Theme,
 ) -> impl IntoElement {
-    let is_selected = selected_param == idx && is_editing;
-
-    Toggle::new(("toggle", plugin_idx * 1000 + idx))
-        .checked(checked)
+    let _ = (selected_param, is_editing);
+    let toggle = ButtonSet::new(("plugin-toggle", plugin_idx * 1000 + idx))
+        .options(vec![
+            ButtonSetOption::new("0", "Off"),
+            ButtonSetOption::new("1", "On"),
+        ])
+        .selected(if checked { "1" } else { "0" })
+        .size(ButtonSetSize::Xs)
         .disabled(!interactive)
-        .label(label.to_string())
-        .style(ToggleStyle::Segmented)
-        .selected(is_selected)
-        .theme(theme.to_toggle_theme())
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state
-                        .app
-                        .set_plugin_param(plugin_idx, idx, if new_value { 1.0 } else { 0.0 });
+        .theme(theme.to_button_set_theme())
+        .on_change(move |value, _, cx| {
+            if let Ok(value) = value.parse::<f64>() {
+                entity.update(cx, |state, cx| {
+                    state.app.set_plugin_param(plugin_idx, idx, value);
+                    cx.notify();
                 });
             }
-        })
+        });
+    #[cfg(feature = "dev-api")]
+    let toggle = {
+        use crate::app::dev_api::{DevElementState, DevTrackExt};
+        toggle.dev_track_with_state(
+            format!("plugin.toggle.{plugin_idx}.{idx}"),
+            DevElementState::default()
+                .enabled(interactive)
+                .selected(checked),
+        )
+    };
+    div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap_1()
+        .child(gpui_ui_kit::Text::label(label.to_string()))
+        .child(toggle)
 }
 
-/// Render a toggle button without label (just the switch)
-/// Uses `Entity<AppState>` for direct state updates
+/// Render an unlabeled compact exclusive Off/On control.
 pub fn render_toggle_button(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -444,23 +447,17 @@ pub fn render_toggle_button(
     is_editing: bool,
     theme: &Theme,
 ) -> impl IntoElement {
-    let is_selected = selected_param == idx && is_editing;
-
-    Toggle::new(("toggle-btn", plugin_idx * 1000 + idx))
-        .checked(enabled)
-        .style(ToggleStyle::Segmented)
-        .selected(is_selected)
-        .theme(theme.to_toggle_theme())
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state
-                        .app
-                        .set_plugin_param(plugin_idx, idx, if new_value { 1.0 } else { 0.0 });
-                });
-            }
-        })
+    render_toggle_enabled(
+        entity,
+        plugin_idx,
+        "",
+        enabled,
+        true,
+        idx,
+        selected_param,
+        is_editing,
+        theme,
+    )
 }
 
 /// Render a value with unit and color coding
@@ -541,104 +538,24 @@ pub fn render_vertical_slider_sized(
     height: Option<f32>,
     theme: &Theme,
 ) -> AnyElement {
-    let is_selected = selected_param == idx && is_editing;
-    let control_range = sanitize_audio_control_range(label, value, min, max);
-    let value = control_range.value;
-    let min = control_range.min;
-    let max = control_range.max;
-
-    // Keep the slider mounted while selected so mouse-down cannot discard
-    // its pending drag or double-click reset event.
-    let number_input = if is_selected {
-        Some(
-            NumberInput::new(SharedString::from(format!(
-                "plugin-number-input-{plugin_idx}-{idx}"
-            )))
-            .value(value)
-            .min(min)
-            .max(max)
-            .step(((max - min) / 1000.0).max(0.0001))
-            .decimals(3)
-            .unit(unit)
-            .size(NumberInputSize::Xs)
-            .width(104.0)
-            .aria_label(format!("{label} value"))
-            .on_change({
-                let entity = entity.clone();
-                move |new_value, _window, cx| {
-                    entity.update(cx, |state, _| {
-                        state.app.set_plugin_param(plugin_idx, idx, new_value);
-                    });
-                }
-            })
-            .into_any_element(),
-        )
-    } else {
-        None
-    };
-
-    let slider = VerticalSlider::new(("slider", plugin_idx * 1000 + idx));
-    let mut slider = configure_vertical_slider_range(slider, min, max)
-        .scroll_requires_alt(true)
-        .value(value)
-        .unit(unit.to_string())
-        .label(label.to_string())
-        .selected(is_selected)
-        .theme(theme_to_vertical_slider_theme(theme))
-        .design_tokens(theme.layout.design_tokens.clone())
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value);
-                });
-            }
-        })
-        .on_drag_start({
-            let entity = entity.clone();
-            move |start_y, start_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.drag.knob_drag = Some(KnobDragState {
-                        plugin_idx,
-                        param_idx: idx,
-                        start_y,
-                        start_value,
-                        min,
-                        max,
-                    });
-                });
-            }
-        })
-        .on_select({
-            let entity = entity.clone();
-            move |_, cx| {
-                entity.update(cx, |state, cx| {
-                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                    state.app.plugin_state.plugin_param_selection = idx;
-                    cx.notify();
-                });
-            }
-        })
-        .on_reset({
-            let entity = entity.clone();
-            move |_, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.reset_plugin_param(plugin_idx, idx);
-                });
-            }
-        });
-
-    if let Some(height) = height {
-        slider = slider.height(height);
-    }
-    if let Some(key) = shortcut_key {
-        slider = slider.shortcut_key(key);
-    }
-
-    div()
-        .child(div().key_context("plugin-control").child(slider))
-        .children(number_input.map(|input| div().child(input)))
-        .into_any_element()
+    let _ = height;
+    render_knob_sized_enabled_with_focus(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        PotentiometerSize::Xs,
+        true,
+        None,
+        theme,
+    )
 }
 
 /// Render a vertical slider with tick marks, custom height, and enhanced visual feedback
@@ -695,104 +612,24 @@ pub fn render_vertical_slider_with_ticks_enabled(
     interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
-    let is_selected = selected_param == idx && is_editing;
-    let control_range = sanitize_audio_control_range(label, value, min, max);
-    let value = control_range.value;
-    let min = control_range.min;
-    let max = control_range.max;
-
-    // Keep the slider mounted while selected so mouse-down cannot discard
-    // its pending drag or double-click reset event.
-    let number_input = if interactive && is_selected {
-        Some(
-            NumberInput::new(SharedString::from(format!(
-                "plugin-number-input-{plugin_idx}-{idx}"
-            )))
-            .value(value)
-            .min(min)
-            .max(max)
-            .step(((max - min) / 1000.0).max(0.0001))
-            .decimals(3)
-            .unit(unit)
-            .label(label)
-            .size(NumberInputSize::Xs)
-            .aria_label(format!("{label} value"))
-            .on_change({
-                let entity = entity.clone();
-                move |new_value, _window, cx| {
-                    entity.update(cx, |state, _| {
-                        state.app.set_plugin_param(plugin_idx, idx, new_value);
-                    });
-                }
-            })
-            .into_any_element(),
-        )
-    } else {
-        None
-    };
-
-    let slider = VerticalSlider::new(("slider-ticks", plugin_idx * 1000 + idx));
-    let mut slider = configure_vertical_slider_range(slider, min, max)
-        .scroll_requires_alt(true)
-        .value(value)
-        .unit(unit.to_string())
-        .label(label.to_string())
-        .height(height)
-        .with_ticks()
-        .size(VerticalSliderSize::Md)
-        .selected(is_selected)
-        .disabled(!interactive)
-        .theme(theme_to_vertical_slider_theme(theme))
-        .design_tokens(theme.layout.design_tokens.clone())
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value);
-                });
-            }
-        })
-        .on_drag_start({
-            let entity = entity.clone();
-            move |start_y, start_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.drag.knob_drag = Some(KnobDragState {
-                        plugin_idx,
-                        param_idx: idx,
-                        start_y,
-                        start_value,
-                        min,
-                        max,
-                    });
-                });
-            }
-        })
-        .on_select({
-            let entity = entity.clone();
-            move |_, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                    state.app.plugin_state.plugin_param_selection = idx;
-                });
-            }
-        })
-        .on_reset({
-            let entity = entity.clone();
-            move |_, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.reset_plugin_param(plugin_idx, idx);
-                });
-            }
-        });
-
-    if let Some(key) = shortcut_key {
-        slider = slider.shortcut_key(key);
-    }
-
-    div()
-        .child(div().key_context("plugin-control").child(slider))
-        .children(number_input.map(|input| div().child(input)))
-        .into_any_element()
+    let _ = height;
+    render_knob_sized_enabled_with_focus(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        PotentiometerSize::Xs,
+        interactive,
+        None,
+        theme,
+    )
 }
 
 /// Render a simple transfer curve visualization (input vs output)
@@ -1294,149 +1131,109 @@ fn render_knob_sized_enabled_with_focus(
     let value = control_range.value;
     let min = control_range.min;
     let max = control_range.max;
-
-    // Selected knobs support exact entry as well as drag adjustment. Keep the
-    // editor in the shared renderer so custom views and the declarative
-    // fallback expose the same interaction contract.
-    if interactive && is_selected {
-        let input = Input::new(SharedString::from(format!(
-            "plugin-number-input-{plugin_idx}-{idx}"
-        )))
-        .value(format!("{value:.3}"))
-        .size(InputSize::Xs)
-        .aria_label(format!("{label} value"))
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _window, cx| {
-                if let Ok(new_value) = new_value.trim().parse::<f64>() {
-                    entity.update(cx, |state, _| {
-                        state
-                            .app
-                            .set_plugin_param(plugin_idx, idx, new_value.clamp(min, max));
-                    });
-                }
-            }
-        });
-
-        let input = if let Some(focus_handle) = exact_entry_focus_handle.clone() {
-            input.focus_handle(focus_handle)
-        } else {
-            input
-        };
-
-        #[cfg(feature = "dev-api")]
-        let input = {
-            use crate::app::dev_api::DevTrackExt;
-            input.dev_track(format!("plugin.param.{plugin_idx}.{idx}.exact"))
-        };
-
-        return div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.text_secondary)
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(label.to_owned()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .child(div().w(rems(6.5)).child(input))
-                    .when(!unit.is_empty(), |row| {
-                        row.child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_secondary)
-                                .child(unit.to_owned()),
-                        )
-                    }),
-            )
-            .into_any_element();
-    }
-
-    // Determine scale type based on unit (Hz parameters use logarithmic scale)
-    let scale = if unit == "Hz" {
-        PotentiometerScale::Logarithmic
-    } else {
-        PotentiometerScale::Linear
-    };
-
-    let knob = Potentiometer::new(("knob", plugin_idx * 1000 + idx))
-        .value(value)
-        .scroll_requires_alt(true);
-    // Potentiometer reformats after every range setter and starts at 0..100.
-    // Set the bound that keeps the intermediate range valid first.
-    let knob = if min > 100.0 {
-        knob.max(max).min(min)
-    } else {
-        knob.min(min).max(max)
-    };
-    let mut knob = knob
-        .unit(unit.to_string())
-        .label(label.to_string())
-        .size(size)
-        .scale(scale)
-        .selected(is_selected)
+    let logarithmic = min > 0.0 && matches!(unit, "Hz" | "ms");
+    let slider = Slider::new(("plugin-custom-slider", plugin_idx * 1000 + idx))
+        .value(value as f32)
+        .range(min as f32, max as f32)
+        .logarithmic(logarithmic)
+        .width(120.0)
+        .size(SliderSize::Sm)
         .disabled(!interactive)
-        .theme(theme.to_potentiometer_theme())
-        .design_tokens(theme.layout.design_tokens.clone())
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value);
-                });
-            }
-        })
+        .theme(theme.to_slider_theme())
+        .aria_label(format!("{label}: {value} {unit}"))
         .on_drag_start({
             let entity = entity.clone();
-            move |start_y, start_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.drag.knob_drag = Some(KnobDragState {
-                        plugin_idx,
-                        param_idx: idx,
-                        start_y,
-                        start_value,
-                        min,
-                        max,
-                    });
-                });
-            }
-        })
-        .on_select({
-            let entity = entity.clone();
-            let exact_entry_focus_handle = exact_entry_focus_handle.clone();
-            move |window, cx| {
+            move |_, _, _, cx| {
                 entity.update(cx, |state, cx| {
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                     state.app.plugin_state.plugin_param_selection = idx;
                     cx.notify();
                 });
-                if let Some(focus_handle) = exact_entry_focus_handle.as_ref() {
-                    focus_handle.focus(window, cx);
-                }
+            }
+        })
+        .on_change({
+            let entity = entity.clone();
+            move |value, _, cx| {
+                let value = value as f64;
+                entity.update(cx, |state, cx| {
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, idx, value.clamp(min, max));
+                    cx.notify();
+                });
             }
         })
         .on_reset({
             let entity = entity.clone();
             move |_, cx| {
-                entity.update(cx, |state, _| {
+                entity.update(cx, |state, cx| {
                     state.app.reset_plugin_param(plugin_idx, idx);
+                    cx.notify();
                 });
             }
         });
-
-    if let Some(key) = shortcut_key {
-        knob = knob.shortcut_key(key);
-    }
-
+    #[cfg(feature = "dev-api")]
+    let slider = {
+        use crate::app::dev_api::DevTrackExt;
+        slider.dev_track(format!("plugin.slider.{plugin_idx}.{idx}"))
+    };
+    // Custom band editors supply display-space bounds rather than ParamSpec.
+    // Preserve their existing range and use a fine, bounded exact-entry increment.
+    let exact = NumberInput::new(SharedString::from(format!(
+        "plugin-custom-number-{plugin_idx}-{idx}"
+    )))
+    .value(value)
+    .min(min)
+    .max(max)
+    .step(((max - min) / 1000.0).max(0.0001))
+    .decimals(if unit == "Hz" { 1 } else { 3 })
+    .unit(unit.to_string())
+    .size(NumberInputSize::Xs)
+    .disabled(!interactive)
+    .theme(theme.to_number_input_theme())
+    .aria_label(format!("{label} value"))
+    .on_change(move |value, _, cx| {
+        entity.update(cx, |state, cx| {
+            state.app.set_plugin_param(plugin_idx, idx, value);
+            cx.notify();
+        });
+    });
+    let exact = if is_selected {
+        if let Some(handle) = exact_entry_focus_handle {
+            exact.focus_handle(handle)
+        } else {
+            exact
+        }
+    } else {
+        exact
+    };
+    #[cfg(feature = "dev-api")]
+    let exact = {
+        use crate::app::dev_api::DevTrackExt;
+        exact.dev_track(format!("plugin.param.{plugin_idx}.{idx}.exact"))
+    };
+    let label = if let Some(key) = shortcut_key {
+        format!("{label} ({key})")
+    } else {
+        label.to_string()
+    };
+    // Legacy callers retain their size argument while every plugin adopts the same row height.
+    let _ = size;
     div()
-        .key_context("plugin-control")
-        .child(knob)
+        .flex()
+        .flex_col()
+        .gap_1()
+        .w(rems(16.0))
+        .max_w_full()
+        .child(gpui_ui_kit::Text::label(label))
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_1()
+                .child(slider)
+                .child(exact),
+        )
         .into_any_element()
 }

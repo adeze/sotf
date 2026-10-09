@@ -54,6 +54,7 @@ CONFIG_FILE="${HOME}/.sotf-release.conf"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/macos_plugin_helpers.sh"
 
 # Extract version from root Cargo.toml
 VERSION=$(sotf_version "$PROJECT_ROOT")
@@ -830,6 +831,8 @@ preflight() {
 # -----------------------------------------------------------------------
 
 build_macos_target() {
+    local MACOSX_DEPLOYMENT_TARGET=15.0
+    export MACOSX_DEPLOYMENT_TARGET
     local arch="$1"
     local target="$2"
     local features="$3"
@@ -843,7 +846,8 @@ build_macos_target() {
         log_warning "Rust target $target is already installed or could not be added; Cargo will report whether it is usable"
     fi
     if ! cargo build --profile dist --target "$target" -p sotf-tui --features "$features" ||
-       ! cargo build --profile dist --target "$target" -p sotf-gpui --features "$features"; then
+       ! cargo build --profile dist --target "$target" -p sotf-gpui --features "shipping,$features" ||
+       ! build_macos_plugin_helpers "$PROJECT_ROOT/../sotf-daw" "$PROJECT_ROOT/target" "$target"; then
         log_error "${label} Cargo build failed"
         record_result "${label}: FAILED (cargo build)"
         return 1

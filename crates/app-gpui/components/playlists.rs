@@ -832,94 +832,100 @@ impl PlayerView {
     }
 
     fn import_playlist(&mut self, cx: &mut Context<Self>) {
-        let text = self.playlist_translations(cx);
-        #[cfg(feature = "dev-api")]
-        if let Some(path) = Self::qa_playlist_io_path() {
-            self.import_playlist_from_path(&path, text, cx);
-            return;
-        }
-        cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
-            let Some(file) = rfd::AsyncFileDialog::new()
-                .add_filter("M3U playlists", &["m3u", "m3u8"])
-                .set_title(text.import_m3u8)
-                .pick_file()
-                .await
-            else {
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            let text = self.playlist_translations(cx);
+            #[cfg(feature = "dev-api")]
+            if let Some(path) = Self::qa_playlist_io_path() {
+                self.import_playlist_from_path(&path, text, cx);
                 return;
-            };
-            let path = file.path().to_path_buf();
-            let _ = view.update(cx, |this, cx| {
-                this.state.update(cx, |state, _| {
-                    let app = &mut state.app;
-                    let result = app
-                        .library_state
-                        .library
-                        .get_database()
-                        .ok_or_else(|| text.library_database_unavailable().to_string())
-                        .and_then(|db| app.playlist.controller.import_playlist(db, &path));
-                    match result {
-                        Ok(()) => {
-                            app.playlist.error = None;
-                            app.ui_state.toast_message =
-                                Some(crate::app::ToastMessage::success(text.imported()));
+            }
+            cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
+                let Some(file) = rfd::AsyncFileDialog::new()
+                    .add_filter("M3U playlists", &["m3u", "m3u8"])
+                    .set_title(text.import_m3u8)
+                    .pick_file()
+                    .await
+                else {
+                    return;
+                };
+                let path = file.path().to_path_buf();
+                let _ = view.update(cx, |this, cx| {
+                    this.state.update(cx, |state, _| {
+                        let app = &mut state.app;
+                        let result = app
+                            .library_state
+                            .library
+                            .get_database()
+                            .ok_or_else(|| text.library_database_unavailable().to_string())
+                            .and_then(|db| app.playlist.controller.import_playlist(db, &path));
+                        match result {
+                            Ok(()) => {
+                                app.playlist.error = None;
+                                app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::success(text.imported()));
+                            }
+                            Err(error) => app.playlist.error = Some(error),
                         }
-                        Err(error) => app.playlist.error = Some(error),
-                    }
+                    });
+                    cx.notify();
                 });
-                cx.notify();
-            });
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 
     fn export_active_playlist(&mut self, cx: &mut Context<Self>) {
-        let text = self.playlist_translations(cx);
-        #[cfg(feature = "dev-api")]
-        if let Some(path) = Self::qa_playlist_io_path() {
-            self.export_playlist_to_path(&path, text, cx);
-            return;
-        }
-        let name = self
-            .state
-            .read(cx)
-            .app
-            .playlist
-            .controller
-            .active_playlist()
-            .map(|playlist| playlist.name.clone())
-            .unwrap_or_else(|| "playlist".to_string());
-        let file_name = format!("{name}.m3u8");
-        cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
-            let Some(file) = rfd::AsyncFileDialog::new()
-                .add_filter("M3U8 playlist", &["m3u8"])
-                .set_file_name(&file_name)
-                .set_title(text.export_m3u8)
-                .save_file()
-                .await
-            else {
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            let text = self.playlist_translations(cx);
+            #[cfg(feature = "dev-api")]
+            if let Some(path) = Self::qa_playlist_io_path() {
+                self.export_playlist_to_path(&path, text, cx);
                 return;
-            };
-            let path = file.path().to_path_buf();
-            let _ = view.update(cx, |this, cx| {
-                this.state.update(cx, |state, _| {
-                    let app = &mut state.app;
-                    let result = app
-                        .playlist
-                        .controller
-                        .export_playlist(&app.library_state.library, &path);
-                    match result {
-                        Ok(()) => {
-                            app.playlist.error = None;
-                            app.ui_state.toast_message =
-                                Some(crate::app::ToastMessage::success(text.exported()));
+            }
+            let name = self
+                .state
+                .read(cx)
+                .app
+                .playlist
+                .controller
+                .active_playlist()
+                .map(|playlist| playlist.name.clone())
+                .unwrap_or_else(|| "playlist".to_string());
+            let file_name = format!("{name}.m3u8");
+            cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
+                let Some(file) = rfd::AsyncFileDialog::new()
+                    .add_filter("M3U8 playlist", &["m3u8"])
+                    .set_file_name(&file_name)
+                    .set_title(text.export_m3u8)
+                    .save_file()
+                    .await
+                else {
+                    return;
+                };
+                let path = file.path().to_path_buf();
+                let _ = view.update(cx, |this, cx| {
+                    this.state.update(cx, |state, _| {
+                        let app = &mut state.app;
+                        let result = app
+                            .playlist
+                            .controller
+                            .export_playlist(&app.library_state.library, &path);
+                        match result {
+                            Ok(()) => {
+                                app.playlist.error = None;
+                                app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::success(text.exported()));
+                            }
+                            Err(error) => app.playlist.error = Some(error),
                         }
-                        Err(error) => app.playlist.error = Some(error),
-                    }
+                    });
+                    cx.notify();
                 });
-                cx.notify();
-            });
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 
     #[cfg(feature = "dev-api")]

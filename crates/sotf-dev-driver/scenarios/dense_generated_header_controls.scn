@@ -1,0 +1,66 @@
+# Header choices and secondary setup each have one editor owner.
+resize 1440 1000
+focus Studio
+plugin_clear
+plugin_add Gate
+action PluginSelectFirstUser
+wait_idle 1s
+assert_within plugin.choice.2.6.0 plugin.setup.2.header
+click plugin.choice.2.6.0
+assert plugins.plugin.2.param.6.value == 0
+click plugin.choice.2.6.1
+assert plugins.plugin.2.param.6.value == 1
+click plugin.select.2.15
+wait_idle 1s
+snapshot $SOTF_QA_DIR/dropdown-open.json
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.15.value == 1
+plugin_chain_save $SOTF_QA_DIR/gate-header.json
+screenshot gate-header
+plugin_clear
+plugin_add Crossfeed
+action PluginSelectFirstUser
+wait_idle 1s
+assert_within plugin.select.2.1 plugin.setup.2.header
+click plugin.select.2.1
+wait_idle 1s
+snapshot $SOTF_QA_DIR/dropdown-open.json
+key down
+wait_idle 1s
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.1.value == 1
+assert plugins.plugin.2.param.0.value == 1
+assert plugins.plugin.2.param.4.value == 700
+assert plugins.plugin.2.param.5.value == 6
+plugin_chain_save $SOTF_QA_DIR/crossfeed-preset.json
+screenshot crossfeed-preset
+plugin_clear
+plugin_add Limiter
+action PluginSelectFirstUser
+wait_idle 1s
+assert_within plugin.choice.2.3.1 plugin.setup.2.header
+click plugin.choice.2.3.1
+assert plugins.plugin.2.param.3.value == 1
+click plugin.choice.2.5.1
+assert plugins.plugin.2.param.5.value == 1
+plugin_chain_save $SOTF_QA_DIR/limiter-header.json
+screenshot limiter-header
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_idle 1s
+scroll_into_view rack.params plugin.layout.header.2.DETECTOR
+click plugin.layout.header.2.DETECTOR
+wait_idle 1s
+scroll_into_view rack.params plugin.param.2.11.exact
+click plugin.param.2.11.exact
+key cmd-a
+type "120"
+key enter
+assert plugins.plugin.2.param.11.value == 120 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/expander-advanced.json
+screenshot expander-advanced

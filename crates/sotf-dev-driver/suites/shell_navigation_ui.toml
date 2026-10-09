@@ -8,4 +8,12 @@ size = "1440x900"
 name = "shell-navigation-keyboard-a11y"
 path = "crates/sotf-dev-driver/scenarios/shell_navigation_keyboard.scn"
 timeout = "45s"
+release_channel = "Prod"
 tags = ["gpui", "ui", "accessibility", "navigation"]
+
+[[scenario]]
+name = "studio-graph-stable-keyboard"
+path = "crates/sotf-dev-driver/scenarios/studio_graph_stable.scn"
+timeout = "30s"
+release_channel = "Prod"
+tags = ["gpui", "ui", "navigation", "plugins", "graph"]

@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilePickerOpenTarget {
     Sofa,
+    HrtfDatabase,
     Ir,
     AbConfig(&'static str),
 }
@@ -8,6 +9,7 @@ pub enum FilePickerOpenTarget {
 pub fn file_picker_open_target(engine_key: &str) -> Option<FilePickerOpenTarget> {
     match engine_key {
         "sofa_file" => Some(FilePickerOpenTarget::Sofa),
+        "hrtf_database_dir" => Some(FilePickerOpenTarget::HrtfDatabase),
         "ir_file" | "room_ir_file" => Some(FilePickerOpenTarget::Ir),
         "path_a_config" => Some(FilePickerOpenTarget::AbConfig("a")),
         "path_b_config" => Some(FilePickerOpenTarget::AbConfig("b")),

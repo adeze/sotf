@@ -14,7 +14,6 @@
 
 mod misc;
 mod mode_selector_info;
-mod pot;
 mod render;
 mod types;
 

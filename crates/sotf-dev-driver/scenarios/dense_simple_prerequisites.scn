@@ -1,0 +1,46 @@
+resize 1000 900
+focus Studio
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/simple-prerequisites-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.8.exact
+assert_enabled plugin.param.2.8.exact == false
+click plugin.param.2.8.exact
+assert plugins.plugin.2.param.8.value == 0.5 tolerance=0.000001
+scroll_into_view rack.params plugin.simple.choice.2.7.1
+click plugin.simple.choice.2.7.1
+assert plugins.plugin.2.param.7.value == 1
+scroll_into_view rack.params plugin.param.2.8.exact
+assert_enabled plugin.param.2.8.exact == true
+click plugin.param.2.8.exact
+key cmd-a
+type "0.6"
+key enter
+click plugin.param.2.8.exact
+key up
+key escape
+assert plugins.plugin.2.param.8.value == 0.65 tolerance=0.000001
+scroll_into_view rack.params plugin.simple.choice.2.7.0
+click plugin.simple.choice.2.7.0
+assert plugins.plugin.2.param.7.value == 0
+scroll_into_view rack.params plugin.param.2.8.exact
+assert_enabled plugin.param.2.8.exact == false
+assert plugins.plugin.2.param.8.value == 0.65 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/simple-prerequisites-edited.json
+plugin_chain_load $SOTF_QA_DIR/simple-prerequisites-edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.8.value == 0.65 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/simple-prerequisites-reloaded.json
+screenshot simple-prerequisites

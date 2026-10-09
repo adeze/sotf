@@ -1,7 +1,7 @@
 # Keep native tooltip timing independent of the critical insertion regression.
 wait_idle 1s
 action PluginClear
-click sidebar.nav-studiohub
+click sidebar.nav-studio-rack
 assert screen.focused == "Studio"
 click rack.add.open
 assert_visible rack.add.menu

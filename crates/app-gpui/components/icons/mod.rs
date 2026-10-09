@@ -1,11 +1,11 @@
-//! Icon component for Lucide SVG icons
+//! Icon component for application and Lucide SVG icons
 //!
 //! This module provides a type-safe way to use Lucide icons in the GPUI player.
 
 use gpui::prelude::*;
 use gpui::*;
 
-/// Available icon names from the Lucide icon pack
+/// Available application and Lucide icon names
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IconName {
     // Playback controls
@@ -32,6 +32,11 @@ pub enum IconName {
     ChevronRight,
     ChevronUp,
     ChevronDown,
+    StudioRack,
+    StudioGraph,
+    Measure,
+    Calibrate,
+    Learning,
 
     // Actions
     Plus,
@@ -100,6 +105,11 @@ impl IconName {
             IconName::ChevronRight => "icons/chevron-right.svg",
             IconName::ChevronUp => "icons/chevron-up.svg",
             IconName::ChevronDown => "icons/chevron-down.svg",
+            IconName::StudioRack => "icons/studio-rack.svg",
+            IconName::StudioGraph => "icons/studio-graph.svg",
+            IconName::Measure => "icons/measure.svg",
+            IconName::Calibrate => "icons/calibrate.svg",
+            IconName::Learning => "icons/learning.svg",
             IconName::Plus => "icons/plus.svg",
             IconName::Minus => "icons/minus.svg",
             IconName::X => "icons/x.svg",

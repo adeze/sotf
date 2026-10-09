@@ -21,5 +21,19 @@ pub(super) fn effect_to_update_type(
             node_id,
             param_index,
         }),
+        sotf_audio_player::PluginUpdateEffect::Action {
+            plugin_index,
+            node_id,
+            param_index,
+            key,
+            value,
+        } => Some(PluginUpdateType::Action {
+            plugin_index,
+            node_id,
+            param_index,
+            key,
+            value,
+            request_id: 0,
+        }),
     }
 }

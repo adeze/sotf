@@ -1,9 +1,9 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::editing::PluginEditingManager;
-use super::consts::BUTTON_SIZE;
 use super::consts::CELL_H;
 use super::consts::CELL_W;
 use super::consts::FADER_CELL_H;
+use super::consts::MIN_CELL_W;
 use super::consts::empty_cell;
 use super::misc::cell_inner_theme;
 use super::misc::continuous_range;
@@ -11,16 +11,21 @@ use super::misc::layout_for_controller_id;
 use super::misc::mapping_for_view;
 use super::static_::static_button;
 use super::static_::static_fader;
-use super::static_::static_knob;
+use super::static_::static_slider;
 use super::types::ContinuousKind;
 use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_audio_kit::{PotentiometerSize, VerticalSlider, VerticalSliderSize};
-use gpui_ui_kit::{Toggle, ToggleStyle};
+use gpui_audio_kit::{VerticalSlider, VerticalSliderSize};
+use gpui_ui_kit::{
+    ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize, Slider, SliderSize,
+};
 use sotf_audio_player::PluginSettings;
+use sotf_audio_player::controllers::plugin::{
+    desktop_eq_param_value, desktop_param_enabled, desktop_param_spec, desktop_param_value,
+};
 use sotf_audio_player_midi::MidiMappingEngine;
 use sotf_audio_player_midi::layout::{ControllerLayout, PhysicalControl, PhysicalControlKind};
 use sotf_audio_player_midi::mapping::{ControlBinding, MidiMapping};
@@ -43,7 +48,7 @@ fn controller_geometry(
     let logical_width = available_width.max(CELL_W * scale) / scale;
     let logical_gap = 8.0;
     let logical_cell_width =
-        ((logical_width - logical_gap * (columns - 1.0)) / columns).clamp(72.0, CELL_W);
+        ((logical_width - logical_gap * (columns - 1.0)) / columns).clamp(MIN_CELL_W, CELL_W);
 
     ControllerGeometry {
         cell_width: logical_cell_width * scale,
@@ -64,7 +69,9 @@ pub fn render_controller_view(
     selected_param: usize,
     available_width: f32,
     layout_scale: f32,
+    scroll_handle: &ScrollHandle,
     theme: &Theme,
+    cx: &App,
 ) -> AnyElement {
     let Some(layout) = layout_for_controller_id(controller_id) else {
         return div()
@@ -75,7 +82,6 @@ pub fn render_controller_view(
     };
 
     let mapping = mapping_for_view(&layout, settings, plugin_index, engine);
-    let params = settings.param_specs();
     let current_page = mapping.current_page;
     let total_pages = mapping.total_pages.max(1);
 
@@ -92,7 +98,6 @@ pub fn render_controller_view(
         d,
         &layout,
         &mapping,
-        params,
         settings,
         entity,
         plugin_index,
@@ -101,6 +106,7 @@ pub fn render_controller_view(
         available_width,
         layout_scale,
         theme,
+        cx,
     );
     let legend = render_legend(d, theme);
 
@@ -108,15 +114,19 @@ pub fn render_controller_view(
     if let Some(h) = header {
         root = root.child(h);
     }
-    root.child(
-        div()
-            .id("controller-grid-scroll")
-            .w_full()
-            .overflow_x_scroll()
-            .child(grid),
-    )
-    .child(legend)
-    .into_any_element()
+    let scrollport = div()
+        .id("controller-grid-scroll")
+        .w_full()
+        .min_w_0()
+        .overflow_x_scroll()
+        .track_scroll(scroll_handle)
+        .child(grid);
+    #[cfg(feature = "dev-api")]
+    let scrollport = {
+        use crate::app::dev_api::DevTrackExt;
+        scrollport.dev_track(format!("plugin.controller.scroll.{plugin_index}"))
+    };
+    root.child(scrollport).child(legend).into_any_element()
 }
 
 fn render_page_indicator(
@@ -172,7 +182,6 @@ fn render_grid(
     d: &Ds,
     layout: &ControllerLayout,
     mapping: &MidiMapping,
-    params: &[ParamSpec],
     settings: &PluginSettings,
     entity: Entity<AppState>,
     plugin_index: usize,
@@ -181,10 +190,13 @@ fn render_grid(
     available_width: f32,
     layout_scale: f32,
     theme: &Theme,
+    cx: &App,
 ) -> impl IntoElement {
     let rows = layout.grid_rows.max(1);
     let cols = layout.grid_columns.max(1);
     let geometry = controller_geometry(available_width, layout_scale, cols as usize);
+    // Match the eight-pixel logical gap used by the responsive cell solver.
+    let column_gap = 8.0 * layout_scale.max(0.01);
 
     let mut row_elements: Vec<AnyElement> = Vec::with_capacity(rows as usize);
     for row in 0..rows {
@@ -212,7 +224,6 @@ fn render_grid(
                     ctrl,
                     layout,
                     mapping,
-                    params,
                     settings,
                     entity.clone(),
                     plugin_index,
@@ -221,6 +232,7 @@ fn render_grid(
                     theme,
                     row_height,
                     geometry.cell_width,
+                    cx,
                 ),
                 None => empty_cell(geometry.cell_width, row_height).into_any_element(),
             };
@@ -229,7 +241,7 @@ fn render_grid(
         row_elements.push(
             div()
                 .flex()
-                .gap(d.gap_md)
+                .gap(px(column_gap))
                 .h(px(row_height))
                 .flex_shrink_0()
                 .children(cells)
@@ -237,7 +249,15 @@ fn render_grid(
         );
     }
 
-    div().flex().flex_col().gap(d.gap_md).children(row_elements)
+    div()
+        .flex()
+        .flex_col()
+        .flex_shrink_0()
+        .w(px(
+            geometry.cell_width * cols as f32 + column_gap * (cols - 1) as f32
+        ))
+        .gap(d.gap_md)
+        .children(row_elements)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -246,7 +266,6 @@ fn render_cell(
     ctrl: &PhysicalControl,
     layout: &ControllerLayout,
     mapping: &MidiMapping,
-    params: &[ParamSpec],
     settings: &PluginSettings,
     entity: Entity<AppState>,
     plugin_index: usize,
@@ -255,18 +274,21 @@ fn render_cell(
     theme: &Theme,
     row_height: f32,
     cell_width: f32,
+    cx: &App,
 ) -> AnyElement {
     let is_reserved = layout.reserved_control_ids.contains(&ctrl.id);
     let binding = if is_reserved {
         None
     } else {
-        mapping.binding_for_control(&ctrl.id)
+        mapping
+            .binding_for_control(&ctrl.id)
+            .filter(|binding| binding.plugin_index == plugin_index)
     };
 
     // Inner widgets render with `LABEL_UNDERLINED` so the cell's outer card
     // is the only chassis (no double-border).
     let inner_theme = cell_inner_theme(theme);
-    let widget_scale = (cell_width / CELL_W).clamp(0.75, 1.5);
+    let widget_scale = (cell_width / CELL_W).clamp(0.01, 1.5);
 
     let (widget, header_text, header_color): (AnyElement, String, Rgba) =
         match (binding, is_reserved, ctrl.kind) {
@@ -279,9 +301,9 @@ fn render_cell(
             ),
             // Fader on a continuous param.
             (Some(b), false, PhysicalControlKind::Fader) => render_continuous_widget(
+                d,
                 ctrl,
                 b,
-                params,
                 settings,
                 entity.clone(),
                 plugin_index,
@@ -290,6 +312,7 @@ fn render_cell(
                 &inner_theme,
                 widget_scale,
                 ContinuousKind::Fader,
+                cx,
             )
             .map(|(el, label)| (el, label, theme.text_primary))
             .unwrap_or_else(|| {
@@ -303,9 +326,9 @@ fn render_cell(
             (Some(b), false, PhysicalControlKind::Pot)
             | (Some(b), false, PhysicalControlKind::Encoder)
             | (Some(b), false, PhysicalControlKind::EncoderWithButton) => render_continuous_widget(
+                d,
                 ctrl,
                 b,
-                params,
                 settings,
                 entity.clone(),
                 plugin_index,
@@ -314,11 +337,12 @@ fn render_cell(
                 &inner_theme,
                 widget_scale,
                 ContinuousKind::Knob,
+                cx,
             )
             .map(|(el, label)| (el, label, theme.text_primary))
             .unwrap_or_else(|| {
                 (
-                    static_knob(theme, theme.accent, widget_scale).into_any_element(),
+                    static_slider(theme, theme.accent, widget_scale).into_any_element(),
                     ctrl.label.clone(),
                     theme.text_muted,
                 )
@@ -328,7 +352,6 @@ fn render_cell(
                 d,
                 ctrl,
                 b,
-                params,
                 settings,
                 entity.clone(),
                 plugin_index,
@@ -336,6 +359,7 @@ fn render_cell(
                 selected_param,
                 theme,
                 widget_scale,
+                cx,
             )
             .map(|(el, label)| (el, label, theme.text_primary))
             .unwrap_or_else(|| {
@@ -352,13 +376,13 @@ fn render_cell(
                 theme.text_muted,
             ),
             (None, false, PhysicalControlKind::Pot) => (
-                static_knob(theme, theme.accent, widget_scale).into_any_element(),
+                static_slider(theme, theme.accent, widget_scale).into_any_element(),
                 ctrl.label.clone(),
                 theme.text_muted,
             ),
             (None, false, PhysicalControlKind::Encoder)
             | (None, false, PhysicalControlKind::EncoderWithButton) => (
-                static_knob(theme, theme.warning, widget_scale).into_any_element(),
+                static_slider(theme, theme.warning, widget_scale).into_any_element(),
                 ctrl.label.clone(),
                 theme.text_muted,
             ),
@@ -425,6 +449,8 @@ fn render_cell(
         .child(
             div()
                 .flex_1()
+                .w_full()
+                .min_w_0()
                 .flex()
                 .items_center()
                 .justify_center()
@@ -435,9 +461,9 @@ fn render_cell(
 
 #[allow(clippy::too_many_arguments)]
 fn render_continuous_widget(
-    _ctrl: &PhysicalControl,
+    d: &Ds,
+    ctrl: &PhysicalControl,
     binding: &ControlBinding,
-    params: &[ParamSpec],
     settings: &PluginSettings,
     entity: Entity<AppState>,
     plugin_index: usize,
@@ -446,35 +472,46 @@ fn render_continuous_widget(
     theme: &Theme,
     widget_scale: f32,
     kind: ContinuousKind,
+    cx: &App,
 ) -> Option<(AnyElement, String)> {
-    let spec = params.get(binding.param_index)?;
+    let spec = desktop_param_spec(settings, binding.param_index)?;
+    if matches!(
+        spec.param_type,
+        ParamType::Bool { .. } | ParamType::Choice { .. }
+    ) {
+        return render_button_widget(
+            d,
+            ctrl,
+            binding,
+            settings,
+            entity,
+            plugin_index,
+            is_editing,
+            selected_param,
+            theme,
+            widget_scale,
+            cx,
+        );
+    }
     let (min, max) = continuous_range(spec)?;
     if max <= min {
         return None;
     }
-    let value = settings.param_value(binding.param_index).unwrap_or(min);
+    let value = controller_param_value(&entity, settings, plugin_index, binding.param_index, cx)?;
 
     let element: AnyElement = match kind {
-        ContinuousKind::Knob => super::super::common::render_knob_sized(
+        ContinuousKind::Knob => render_controller_slider(
             entity,
             plugin_index,
-            "",
+            binding.param_index,
+            spec,
             value,
             min,
             max,
-            spec.unit,
-            binding.param_index,
-            selected_param,
-            is_editing,
-            None,
-            match widget_scale {
-                scale if scale >= 1.35 => PotentiometerSize::Md,
-                scale if scale >= 1.1 => PotentiometerSize::Sm,
-                _ => PotentiometerSize::Xs,
-            },
+            desktop_param_enabled(settings, binding.param_index),
             theme,
-        )
-        .into_any_element(),
+            widget_scale,
+        ),
         ContinuousKind::Fader => render_compact_fader(
             entity,
             plugin_index,
@@ -485,6 +522,7 @@ fn render_continuous_widget(
             binding.param_index,
             selected_param,
             is_editing,
+            desktop_param_enabled(settings, binding.param_index),
             theme,
             widget_scale,
         )
@@ -492,6 +530,139 @@ fn render_continuous_widget(
     };
 
     Some((element, spec.name.to_string()))
+}
+
+/// Render a mapped continuous control with its actual display-space metadata.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Controller cell geometry and binding are supplied by the existing renderer"
+)]
+fn render_controller_slider(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    idx: usize,
+    spec: &ParamSpec,
+    value: f64,
+    min: f64,
+    max: f64,
+    interactive: bool,
+    theme: &Theme,
+    widget_scale: f32,
+) -> AnyElement {
+    let scale = spec.display_scale;
+    let (min, max, value) = (min * scale, max * scale, value * scale);
+    let step = match spec.param_type {
+        ParamType::Float { step, .. } => step,
+        ParamType::Int { step, .. } => step as f64,
+        ParamType::Bool { .. } | ParamType::Choice { .. } => 1.0,
+        ParamType::FilePath => return Empty.into_any_element(),
+    } * scale.abs();
+    // Leave an inset inside each physical controller cell, including its narrow layout.
+    let width = (CELL_W * widget_scale - 12.0).max(60.0);
+    let slider = Slider::new(("hw-slider", plugin_idx * 1000 + idx))
+        .scroll_requires_alt(true)
+        .value(value as f32)
+        .range(min as f32, max as f32)
+        .step(step as f32)
+        .logarithmic(min > 0.0 && matches!(spec.unit, "Hz" | "ms"))
+        .width(width)
+        .size(SliderSize::Sm)
+        .disabled(!interactive)
+        .theme(theme.to_slider_theme())
+        .aria_label(spec.name)
+        .on_change({
+            let entity = entity.clone();
+            move |value, _, cx| {
+                entity.update(cx, |state, cx| {
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_state.plugin_param_selection = idx;
+                    state.app.set_plugin_param(plugin_idx, idx, value as f64);
+                    cx.notify();
+                });
+            }
+        })
+        .on_reset({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, cx| {
+                    state.app.reset_plugin_param(plugin_idx, idx);
+                    cx.notify();
+                });
+            }
+        });
+    let exact = render_controller_number(
+        entity,
+        plugin_idx,
+        idx,
+        spec,
+        value,
+        min,
+        max,
+        step,
+        width,
+        interactive,
+        theme,
+    );
+    #[cfg(feature = "dev-api")]
+    let slider = {
+        use crate::app::dev_api::DevTrackExt;
+        slider.dev_track(format!("plugin.controller.slider.{plugin_idx}.{idx}"))
+    };
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_1()
+        .child(slider)
+        .child(exact)
+        .into_any_element()
+}
+
+/// Render exact entry in display units for either controller slider orientation.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Canonical metadata and controller geometry are explicit"
+)]
+fn render_controller_number(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    idx: usize,
+    spec: &ParamSpec,
+    value: f64,
+    min: f64,
+    max: f64,
+    step: f64,
+    width: f32,
+    interactive: bool,
+    theme: &Theme,
+) -> AnyElement {
+    let exact = NumberInput::new(("hw-number", plugin_idx * 1000 + idx))
+        .scroll_requires_alt(true)
+        .value(value)
+        .min(min)
+        .max(max)
+        .step(step)
+        .decimals(spec.precision())
+        .unit(spec.unit)
+        .width(width)
+        .size(NumberInputSize::Xs)
+        .disabled(!interactive)
+        .theme(theme.to_number_input_theme())
+        .aria_label(format!("{} value", spec.name))
+        .on_change(move |value, _, cx| {
+            entity.update(cx, |state, cx| {
+                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                state.app.plugin_state.plugin_param_selection = idx;
+                state.app.set_plugin_param(plugin_idx, idx, value);
+                cx.notify();
+            });
+        });
+    #[cfg(feature = "dev-api")]
+    let exact = {
+        use crate::app::dev_api::DevTrackExt;
+        exact.dev_track(format!("plugin.controller.exact.{plugin_idx}.{idx}"))
+    };
+    exact.into_any_element()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -505,15 +676,18 @@ fn render_compact_fader(
     idx: usize,
     selected_param: usize,
     is_editing: bool,
+    interactive: bool,
     theme: &Theme,
     widget_scale: f32,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
-    VerticalSlider::new(("hw-fader", plugin_idx * 1000 + idx))
+    // The setter accepts display-space values, as do the other numeric widgets.
+    let display_scale = spec.display_scale;
+    let slider = VerticalSlider::new(("hw-fader", plugin_idx * 1000 + idx))
         .scroll_requires_alt(true)
-        .value(value)
-        .min(min)
-        .max(max)
+        .value(value * display_scale)
+        .min(min * display_scale)
+        .max(max * display_scale)
         .unit(spec.unit.to_string())
         .label("".to_string())
         .size(if widget_scale >= 1.35 {
@@ -522,141 +696,178 @@ fn render_compact_fader(
             VerticalSliderSize::Sm
         })
         .selected(is_selected)
+        .disabled(!interactive)
         .theme(super::super::common::theme_to_vertical_slider_theme(theme))
         .design_tokens(theme.layout.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
-                entity.update(cx, |state, _| {
+                entity.update(cx, |state, cx| {
                     state.app.set_plugin_param(plugin_idx, idx, new_value);
+                    cx.notify();
                 });
             }
         })
+        .on_reset({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, cx| {
+                    state.app.reset_plugin_param(plugin_idx, idx);
+                    cx.notify();
+                });
+            }
+        });
+    let step = match spec.param_type {
+        ParamType::Float { step, .. } => step,
+        ParamType::Int { step, .. } => step as f64,
+        _ => 1.0,
+    } * display_scale.abs();
+    let exact = render_controller_number(
+        entity,
+        plugin_idx,
+        idx,
+        spec,
+        value * display_scale,
+        min * display_scale,
+        max * display_scale,
+        step,
+        (CELL_W * widget_scale - 12.0).max(60.0),
+        interactive,
+        theme,
+    );
+    #[cfg(feature = "dev-api")]
+    let slider = {
+        use crate::app::dev_api::DevTrackExt;
+        slider.dev_track(format!("plugin.controller.fader.{plugin_idx}.{idx}"))
+    };
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_1()
+        .child(slider)
+        .child(exact)
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Read the same EQ bank that the desktop editing route will modify.
+fn controller_param_value(
+    entity: &Entity<AppState>,
+    settings: &PluginSettings,
+    plugin_index: usize,
+    parameter_index: usize,
+    cx: &App,
+) -> Option<f64> {
+    if matches!(settings, PluginSettings::EQ { .. }) {
+        let target =
+            super::super::editing::active_eq_edit_target(&entity.read(cx).app, plugin_index)?;
+        desktop_eq_param_value(settings, target, parameter_index)
+    } else {
+        desktop_param_value(settings, parameter_index)
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Existing controller cell supplies its binding and geometry"
+)]
 fn render_button_widget(
     d: &Ds,
     _ctrl: &PhysicalControl,
     binding: &ControlBinding,
-    params: &[ParamSpec],
     settings: &PluginSettings,
     entity: Entity<AppState>,
     plugin_index: usize,
-    is_editing: bool,
-    selected_param: usize,
+    _is_editing: bool,
+    _selected_param: usize,
     theme: &Theme,
     widget_scale: f32,
+    cx: &App,
 ) -> Option<(AnyElement, String)> {
-    let spec = params.get(binding.param_index)?;
-    let value = settings.param_value(binding.param_index).unwrap_or(0.0);
-
-    let element: AnyElement = match spec.param_type {
-        ParamType::Bool { .. } => {
-            let enabled = value > 0.5;
-            let toggle = Toggle::new(("hw-toggle", plugin_index * 1000 + binding.param_index))
-                .checked(enabled)
-                .label("".to_string())
-                .style(ToggleStyle::Segmented)
-                .selected(selected_param == binding.param_index && is_editing)
-                .theme(theme.to_toggle_theme())
-                .on_change({
-                    let entity = entity.clone();
-                    let param_idx = binding.param_index;
-                    move |new_value, _, cx| {
-                        entity.update(cx, |state, _| {
-                            state.app.set_plugin_param(
-                                plugin_index,
-                                param_idx,
-                                if new_value { 1.0 } else { 0.0 },
-                            );
-                        });
-                    }
-                });
-            div()
-                .w(px(BUTTON_SIZE * 1.6 * widget_scale))
-                .h(px(BUTTON_SIZE * widget_scale))
-                .child(toggle)
-                .into_any_element()
-        }
-        ParamType::Choice { labels, .. } => {
-            let count = labels.len().max(1);
-            let cur = (value as usize).min(count - 1);
-            let next = (cur + 1) % count;
-            let label_for_cell = labels.get(cur).copied().unwrap_or_default().to_string();
-            let next_label = labels.get(next).copied().unwrap_or_default();
-            let display = format!("{} → {}", label_for_cell, next_label);
-            let element = div()
-                .id(("hw-choice-btn", plugin_index * 1000 + binding.param_index))
-                .w(px(BUTTON_SIZE * 1.6 * widget_scale))
-                .h(px(BUTTON_SIZE * widget_scale))
-                .rounded(px(4.0))
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.accent)
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(d.text_xs)
-                .text_color(theme.text_primary)
-                .child(display)
-                .on_mouse_down(MouseButton::Left, {
-                    let entity = entity.clone();
-                    let param_idx = binding.param_index;
-                    move |_, _, cx| {
-                        entity.update(cx, |state, _| {
-                            state
-                                .app
-                                .set_plugin_param(plugin_index, param_idx, next as f64);
-                        });
-                    }
-                });
-            // Append the current choice value to the assignment label.
+    let index = binding.param_index;
+    let spec = desktop_param_spec(settings, index)?;
+    let value = controller_param_value(&entity, settings, plugin_index, index, cx)?;
+    let interactive = desktop_param_enabled(settings, index);
+    let labels = match spec.param_type {
+        ParamType::Bool { .. } => &["Off", "On"][..],
+        ParamType::Choice { labels, .. } if !labels.is_empty() => labels,
+        ParamType::Float { .. } | ParamType::Int { .. } => {
+            let (min, max) = continuous_range(spec)?;
             return Some((
-                element.into_any_element(),
-                format!("{} = {}", spec.name, label_for_cell),
-            ));
-        }
-        ParamType::Int { min, max, .. } => {
-            // Step the int value upward, wrapping at max.
-            let cur = value as i64;
-            let next = if cur >= max { min } else { cur + 1 };
-            let element = div()
-                .id(("hw-int-btn", plugin_index * 1000 + binding.param_index))
-                .w(px(BUTTON_SIZE * 1.6 * widget_scale))
-                .h(px(BUTTON_SIZE * widget_scale))
-                .rounded(px(4.0))
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.accent)
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(d.text_xs)
-                .text_color(theme.text_primary)
-                .child(format!("{cur}"))
-                .on_mouse_down(MouseButton::Left, {
-                    let entity = entity.clone();
-                    let param_idx = binding.param_index;
-                    move |_, _, cx| {
-                        entity.update(cx, |state, _| {
-                            state
-                                .app
-                                .set_plugin_param(plugin_index, param_idx, next as f64);
-                        });
-                    }
-                });
-            return Some((element.into_any_element(), format!("{} = {cur}", spec.name)));
-        }
-        // Float / FilePath bound to a button: render as a static placeholder.
-        ParamType::Float { .. } | ParamType::FilePath => {
-            return Some((
-                static_button(theme, theme.text_secondary, widget_scale).into_any_element(),
+                render_controller_slider(
+                    entity,
+                    plugin_index,
+                    index,
+                    spec,
+                    value,
+                    min,
+                    max,
+                    interactive,
+                    theme,
+                    widget_scale,
+                ),
                 spec.name.to_string(),
             ));
         }
+        ParamType::Choice { .. } | ParamType::FilePath => return None,
     };
-
+    // Long labels use a dropdown rather than widening the physical cell.
+    let element =
+        if labels.len() <= 3 && labels.iter().map(|label| label.len()).sum::<usize>() <= 12 {
+            let count = labels.len();
+            let choices = ButtonSet::new(("hw-choice", plugin_index * 1000 + index))
+                .options(
+                    labels
+                        .iter()
+                        .enumerate()
+                        .map(|(index, label)| {
+                            ButtonSetOption::new(index.to_string(), label.to_string())
+                        })
+                        .collect(),
+                )
+                .selected((value as usize).min(count - 1).to_string())
+                .size(ButtonSetSize::Xs)
+                .disabled(!interactive)
+                .theme(theme.to_button_set_theme())
+                .on_change(move |selected, _, cx| {
+                    if let Ok(selected) = selected.parse::<usize>()
+                        && selected < count
+                    {
+                        entity.update(cx, |state, cx| {
+                            state
+                                .app
+                                .set_plugin_param(plugin_index, index, selected as f64);
+                            cx.notify();
+                        });
+                    }
+                });
+            #[cfg(feature = "dev-api")]
+            let choices = {
+                use crate::app::dev_api::DevTrackExt;
+                choices
+                    .option_wrapper(move |option, button| {
+                        button
+                            .dev_track(format!(
+                                "plugin.controller.choice.{plugin_index}.{index}.{option}"
+                            ))
+                            .into_any_element()
+                    })
+                    .dev_track(format!("plugin.controller.choice.{plugin_index}.{index}"))
+            };
+            choices.into_any_element()
+        } else {
+            super::super::ui_layout_renderer::render_compact_selector_value_width(
+                d,
+                entity,
+                plugin_index,
+                index,
+                spec,
+                value,
+                interactive,
+                theme,
+                cx,
+                (CELL_W * widget_scale - 12.0).max(60.0),
+            )
+        };
     Some((element, spec.name.to_string()))
 }
 
@@ -669,12 +880,12 @@ mod tests {
         let geometry = controller_geometry(700.0, 1.0, 8);
 
         assert!(geometry.cell_width < CELL_W);
-        assert!(geometry.cell_width >= 72.0);
+        assert!(geometry.cell_width >= MIN_CELL_W);
     }
 
     #[test]
     fn controller_geometry_scales_with_zoom() {
-        let geometry = controller_geometry(1200.0, 1.5, 8);
+        let geometry = controller_geometry(2400.0, 1.5, 8);
 
         assert_eq!(geometry.cell_width, CELL_W * 1.5);
         assert_eq!(geometry.cell_height, CELL_H * 1.5);

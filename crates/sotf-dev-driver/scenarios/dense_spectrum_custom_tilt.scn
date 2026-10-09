@@ -1,0 +1,40 @@
+# 2026-10-08: Spectrum used legacy numeric adapters and separate tilt/reference rows.
+# ui_spectrum.rs now owns four schema-backed primary slider/exact fields and
+# compact shell header selectors; chart framing no longer consumes side space.
+# Run from sotf: target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The runner starts a dev-api desktop with a fresh isolated QA directory.
+resize 1440 1000
+action CycleLanguage
+assert settings.language == "French"
+focus Studio
+plugin_chain_load crates/app-gpui/tests/fixtures/spectrum-custom-tilt-chain.json
+action PluginSelectFirstUser
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/before.json
+snapshot $SOTF_QA_DIR/spectrum-custom-tilt.json
+screenshot spectrum-custom-tilt
+click plugin.param.2.3.exact
+key cmd-a
+type "0.51"
+key enter
+key escape
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/custom-retained.json
+click spectrum.header.tilt
+wait_idle 1s
+key up
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.4.value == 3
+click spectrum.header.reference
+wait_idle 1s
+key down
+key enter
+wait_idle 1s
+assert plugins.plugin.2.param.5.value == 1
+screenshot spectrum-french-dark
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

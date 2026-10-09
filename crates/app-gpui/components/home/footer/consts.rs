@@ -845,7 +845,6 @@ impl PlayerView {
 
         let bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
         let bounds_ref_clone = bounds_ref.clone();
-        let signal_path_top = rems(d.section_xl.0 + d.gap.0);
 
         div()
             .flex()
@@ -859,63 +858,6 @@ impl PlayerView {
             .flex_1()
             .min_h_0()
             .max_w(rems(37.5))
-            // Paint the centered waveform first so transport controls and
-            // signal-path text remain the foreground layer.
-            .when(show_waveform && !is_hal_mode, |el| {
-                let unavailable_theme = theme_clone.clone();
-                let waveform_bar = div()
-                    .id("waveform-bar")
-                    .absolute()
-                    .inset_0()
-                    .flex()
-                    .items_center()
-                    .opacity(if seekable { 0.5 } else { 0.3 })
-                    .when(seekable, |waveform| {
-                        waveform.cursor_pointer().on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
-                                if let Some(bounds) = *bounds_ref_clone.borrow() {
-                                    let x = event.position.x - bounds.origin.x;
-                                    let width = bounds.size.width;
-                                    let ratio = (x / width).clamp(0.0, 1.0);
-
-                                    view.state.update(cx, |state, _cx| {
-                                        if state.app.playback.duration_secs > 0.0 {
-                                            let new_pos =
-                                                state.app.playback.duration_secs * ratio as f64;
-                                            state.app.playback.position_secs = new_pos;
-                                            if let Err(e) = state.player.seek(new_pos) {
-                                                log::error!("Failed to seek from waveform: {}", e);
-                                            }
-                                        }
-                                    });
-                                    cx.notify();
-                                }
-                            }),
-                        )
-                    })
-                    .when(!seekable, |waveform| {
-                        waveform.cursor_not_allowed().tooltip(move |_window, cx| {
-                            footer_tooltip(text.seek_unavailable, &unavailable_theme, cx)
-                        })
-                    })
-                    .child(div().w_full().h(rems(2.0)).child(WaveformElement::new(
-                        waveform.clone(),
-                        progress,
-                        progress_bar_fill,
-                        progress_bar_bg,
-                        bounds_ref,
-                    )));
-                #[cfg(feature = "dev-api")]
-                let waveform_bar = {
-                    use crate::app::dev_api::DevTrackExt;
-                    waveform_bar.dev_track_with_state(
-                        "transport.waveform",
-                        crate::app::dev_api::DevElementState::default().enabled(seekable),
-                    )
-                };
-                el.child(waveform_bar)
-            })
             // Row 1: [time] [<< < ▶ > >>] [time] — timestamps at far edges
             .child(
                 div()
@@ -1295,6 +1237,63 @@ impl PlayerView {
                         wrapper
                     }),
             )
+            // Row 2: waveform occupies its own row between transport and status.
+            .when(show_waveform && !is_hal_mode, |el| {
+                let unavailable_theme = theme_clone.clone();
+                let waveform_bar = div()
+                    .id("waveform-bar")
+                    .w_full()
+                    .h(rems(2.0))
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .opacity(if seekable { 0.5 } else { 0.3 })
+                    .when(seekable, |waveform| {
+                        waveform.cursor_pointer().on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                                if let Some(bounds) = *bounds_ref_clone.borrow() {
+                                    let x = event.position.x - bounds.origin.x;
+                                    let width = bounds.size.width;
+                                    let ratio = (x / width).clamp(0.0, 1.0);
+
+                                    view.state.update(cx, |state, _cx| {
+                                        if state.app.playback.duration_secs > 0.0 {
+                                            let new_pos =
+                                                state.app.playback.duration_secs * ratio as f64;
+                                            state.app.playback.position_secs = new_pos;
+                                            if let Err(e) = state.player.seek(new_pos) {
+                                                log::error!("Failed to seek from waveform: {}", e);
+                                            }
+                                        }
+                                    });
+                                    cx.notify();
+                                }
+                            }),
+                        )
+                    })
+                    .when(!seekable, |waveform| {
+                        waveform.cursor_not_allowed().tooltip(move |_window, cx| {
+                            footer_tooltip(text.seek_unavailable, &unavailable_theme, cx)
+                        })
+                    })
+                    .child(div().w_full().h(rems(2.0)).child(WaveformElement::new(
+                        waveform.clone(),
+                        progress,
+                        progress_bar_fill,
+                        progress_bar_bg,
+                        bounds_ref,
+                    )));
+                #[cfg(feature = "dev-api")]
+                let waveform_bar = {
+                    use crate::app::dev_api::DevTrackExt;
+                    waveform_bar.dev_track_with_state(
+                        "transport.waveform",
+                        crate::app::dev_api::DevElementState::default().enabled(seekable),
+                    )
+                };
+                el.child(waveform_bar)
+            })
             // When waveform is hidden, show compact time display below transport (not in HAL mode)
             .when(!show_waveform && !is_hal_mode, |el| {
                 el.child(
@@ -1316,10 +1315,8 @@ impl PlayerView {
                 el.child(
                     div()
                         .id("footer-signal-path")
-                        .absolute()
-                        .top(signal_path_top)
-                        .left_0()
-                        .right_0()
+                        .w_full()
+                        .flex_shrink_0()
                         .flex()
                         .items_center()
                         .justify_center()

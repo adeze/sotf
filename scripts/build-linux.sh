@@ -213,22 +213,71 @@ install_linuxdeploy() {
     log_info "Downloading linuxdeploy for $arch..."
     log_info "URL: $tool_url"
 
+    # Large release assets are truncated on some networks (curl 18 / short
+    # reads), so download with resume: each pass appends to any partial file
+    # (including stale ones from previous failed runs) until the transfer is
+    # reported complete. The partial file lives in $TOOLS_DIR, so a retry in
+    # a later run resumes instead of restarting.
+    local downloader=""
     if command -v curl &> /dev/null; then
-        curl -L -o "$tool_path" "$tool_url"
+        downloader="curl"
     elif command -v wget &> /dev/null; then
-        wget -O "$tool_path" "$tool_url"
+        downloader="wget"
     else
         log_error "Neither curl nor wget found. Please install one of them."
         exit 1
     fi
 
+    local pass=1
+    local max_passes=40
+    local complete=""
+    while [ "$pass" -le "$max_passes" ]; do
+        if [ "$downloader" = "curl" ]; then
+            if curl -L -C - --retry 3 --retry-all-errors -o "$tool_path" "$tool_url"; then
+                complete="1"
+                break
+            fi
+        else
+            if wget -c -O "$tool_path" "$tool_url"; then
+                complete="1"
+                break
+            fi
+        fi
+        log_info "Download pass $pass incomplete, resuming..."
+        pass=$((pass + 1))
+        sleep 5
+    done
+    if [ -z "$complete" ]; then
+        log_error "linuxdeploy download did not complete after $max_passes passes (partial kept in $tool_path, will resume on retry)"
+        exit 1
+    fi
+
     chmod +x "$tool_path"
 
-    # Verify download
     if [ ! -f "$tool_path" ] || [ ! -s "$tool_path" ]; then
         log_error "Download failed or file is empty"
         exit 1
     fi
+
+    # Verify the download by running it: a truncated AppImage fails here
+    # instead of later at package time. Same FUSE-less handling as
+    # run_linuxdeploy below. The file is removed on failure so a later run
+    # retries cleanly instead of reusing a corrupt download.
+    local plugins
+    if [ -f /.dockerenv ] || [ ! -e /dev/fuse ]; then
+        plugins=$(APPIMAGE_EXTRACT_AND_RUN=1 "$tool_path" --list-plugins 2>&1) || {
+            log_error "Downloaded linuxdeploy is not functional (truncated download?)"
+            rm -f "$tool_path"
+            exit 1
+        }
+    else
+        plugins=$("$tool_path" --list-plugins 2>&1) || {
+            log_error "Downloaded linuxdeploy is not functional (truncated download?)"
+            rm -f "$tool_path"
+            exit 1
+        }
+    fi
+    log_info "linuxdeploy plugins: $plugins"
 
     log_success "linuxdeploy installed to $tool_path"
 }

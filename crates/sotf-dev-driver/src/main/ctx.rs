@@ -18,7 +18,9 @@ use super::verb::verb_assert_non_overlapping;
 use super::verb::verb_assert_perceptual_snapshot;
 use super::verb::verb_assert_snapshot;
 use super::verb::verb_assert_visible;
+use super::verb::verb_assert_within;
 use super::verb::verb_click;
+use super::verb::verb_double_click;
 use super::verb::verb_drag;
 use super::verb::verb_elements;
 use super::verb::verb_export_room_eq_json;
@@ -39,9 +41,11 @@ use super::verb::verb_resize;
 use super::verb::verb_screenshot;
 use super::verb::verb_scroll;
 use super::verb::verb_scroll_at;
+use super::verb::verb_scroll_horizontal;
 use super::verb::verb_scroll_into_view;
 use super::verb::verb_type;
 use super::verb::verb_wait_idle;
+use super::verb::verb_wait_text;
 use super::verb::verb_wait_until;
 use super::verb::verb_wait_visible;
 use super::verb::{verb_click_at, verb_double_click_at};
@@ -401,11 +405,13 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         "key" => verb_key(rest, ctx),
         "type" | "type_secret" => verb_type(rest, ctx),
         "click" => verb_click(rest, ctx),
+        "double_click" => verb_double_click(rest, ctx),
         "click_at" => verb_click_at(rest, ctx),
         "double_click_at" => verb_double_click_at(rest, ctx),
         "hover" => verb_hover(rest, ctx),
         "drag" => verb_drag(rest, ctx),
         "scroll" => verb_scroll(rest, ctx),
+        "scroll_horizontal" => verb_scroll_horizontal(rest, ctx),
         "scroll_at" => verb_scroll_at(rest, ctx),
         "scroll_into_view" => verb_scroll_into_view(rest, ctx),
         "resize" => verb_resize(rest, ctx),
@@ -413,12 +419,14 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         "assert_visible" => verb_assert_visible(rest, ctx),
         "assert_absent" => verb_assert_absent(rest, ctx),
         "assert_in_viewport" => verb_assert_in_viewport(rest, ctx),
+        "assert_within" => verb_assert_within(rest, ctx),
         "assert_non_overlapping" => verb_assert_non_overlapping(rest, ctx),
         "assert_h_centered" => verb_assert_h_centered(rest, ctx),
         "assert_enabled" => verb_assert_element_state(rest, "enabled", ctx),
         "assert_selected" => verb_assert_element_state(rest, "selected", ctx),
         "assert_expanded" => verb_assert_element_state(rest, "expanded", ctx),
         "assert_text" => verb_assert_element_state(rest, "text", ctx),
+        "wait_text" => verb_wait_text(rest, ctx),
         "export_room_eq_json" | "export_roomeq_json" => verb_export_room_eq_json(rest, ctx),
         "elements" => verb_elements(ctx),
         "accessibility" => verb_accessibility(ctx),

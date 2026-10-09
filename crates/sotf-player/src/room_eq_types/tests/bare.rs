@@ -23,6 +23,7 @@ pub(super) fn bare_chain(name: &str, drivers: Option<Vec<DriverDspChain>>) -> Ch
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        speech_transmission: None,
         direct_early_late_correction: None,
         joint_sub: None,
         early_late_curves: None,

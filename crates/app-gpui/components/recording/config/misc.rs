@@ -10,11 +10,14 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ScaleType, line};
 use gpui_ui_kit::{
-    Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonSize,
-    ButtonVariant, HStack, Heading, Input, InputSize, NumberInput, NumberInputSize, Select,
-    SelectOption, StackAlign, StackSpacing, Text, TextSize, VStack,
+    Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonVariant,
+    ComponentSize, HStack, Heading, Input, NumberInput, Select, SelectOption, StackAlign,
+    StackSpacing, Text, TextSize, VStack,
 };
 use sotf_audio_player::recording_helpers::clamp_num_sweeps;
+
+// Match Browse/Clear and keep every config-step control on the same size tier.
+const CONFIG_CONTROL_SIZE: ComponentSize = ComponentSize::Sm;
 
 /// Standard channel group definitions
 const CHANNEL_GROUPS: &[(&str, &str)] = &[
@@ -230,7 +233,7 @@ impl PlayerView {
                     .min(1.0)
                     .max(max_input_channels as f64)
                     .step(1.0)
-                    .size(NumberInputSize::Xs)
+                    .size(CONFIG_CONTROL_SIZE.into())
                     .on_change({
                         let view = view.clone();
                         move |value, _window, cx| {
@@ -263,7 +266,7 @@ impl PlayerView {
             .child({
                 let view = view.clone();
                 Button::new("ctc_matrix_strategy", ctc_strategy.as_str())
-                    .size(ButtonSize::Xs)
+                    .size(CONFIG_CONTROL_SIZE.into())
                     .variant(ButtonVariant::Secondary)
                     .on_click(move |_, cx| {
                         let _ = view.update(cx, |this, cx| {
@@ -302,7 +305,7 @@ impl PlayerView {
                     .min(1.0)
                     .max(max_input_channels as f64)
                     .step(1.0)
-                    .size(NumberInputSize::Xs)
+                    .size(CONFIG_CONTROL_SIZE.into())
                     .on_change(move |value, _window, cx| {
                         let _ = view.update(cx, |this, cx| {
                             this.state.update(cx, |state, _| {
@@ -340,7 +343,7 @@ impl PlayerView {
                             .min(1.0)
                             .max(8.0)
                             .step(1.0)
-                            .size(NumberInputSize::Xs)
+                            .size(CONFIG_CONTROL_SIZE.into())
                             .on_change({
                                 let view = view.clone();
                                 move |value, _window, cx| {
@@ -455,7 +458,7 @@ impl PlayerView {
                     Input::new(gpui::SharedString::from(input_id))
                         .placeholder(translations.recording_no_calibration_placeholder)
                         .value(path.clone().unwrap_or_default())
-                        .size(InputSize::Sm)
+                        .size(CONFIG_CONTROL_SIZE.into())
                         .disabled(true),
                 )
                 .child(
@@ -464,7 +467,7 @@ impl PlayerView {
                         translations.recording_browse,
                     )
                     .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Sm)
+                    .size(CONFIG_CONTROL_SIZE.into())
                     .theme(ch_theme.to_button_theme())
                     .on_click({
                         let view = ch_view.clone();
@@ -483,7 +486,7 @@ impl PlayerView {
                         translations.recording_clear,
                     )
                     .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Sm)
+                    .size(CONFIG_CONTROL_SIZE.into())
                     .theme(ch_theme.to_button_theme())
                     .on_click({
                         let view = ch_view.clone();
@@ -580,7 +583,7 @@ impl PlayerView {
                     .child(
                         Button::new("browse_output_dir", translations.recording_browse)
                             .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Sm)
+                            .size(CONFIG_CONTROL_SIZE.into())
                             .theme(theme.to_button_theme())
                             .on_click({
                                 let view = view.clone();
@@ -597,7 +600,7 @@ impl PlayerView {
                         stack.child(
                             Button::new("clear_output_dir", translations.recording_clear)
                                 .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Xs)
+                                .size(CONFIG_CONTROL_SIZE.into())
                                 .theme(theme.to_button_theme())
                                 .on_click({
                                     move |_, cx| {
@@ -689,7 +692,7 @@ impl PlayerView {
                 } else {
                     ButtonVariant::Secondary
                 })
-                .size(ButtonSize::Xs)
+                .size(CONFIG_CONTROL_SIZE.into())
                 .theme(btn_theme.to_button_theme())
                 .on_click(move |_, cx| {
                     let _ = view.update(cx, |this, cx| {
@@ -723,7 +726,7 @@ impl PlayerView {
                         .min(0.0)
                         .max(10.0)
                         .step(0.5)
-                        .size(NumberInputSize::Xs)
+                        .size(CONFIG_CONTROL_SIZE.into())
                         .on_change(move |value, _window, cx| {
                             let _ = view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
@@ -753,7 +756,7 @@ impl PlayerView {
                         .min(0.0)
                         .max(30.0)
                         .step(0.5)
-                        .size(NumberInputSize::Xs)
+                        .size(CONFIG_CONTROL_SIZE.into())
                         .on_change(move |value, _window, cx| {
                             let _ = view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
@@ -818,7 +821,7 @@ impl PlayerView {
                                 .min(1.0)
                                 .max(8.0)
                                 .step(1.0)
-                                .size(NumberInputSize::Xs)
+                                .size(CONFIG_CONTROL_SIZE.into())
                                 .on_change(move |value, _window, cx| {
                                     let _ = view.update(cx, |this, cx| {
                                         this.state.update(cx, |state, _| {
@@ -952,7 +955,7 @@ impl PlayerView {
         };
 
         Select::new("playback_device")
-            .size(gpui_ui_kit::SelectSize::Md)
+            .size(CONFIG_CONTROL_SIZE.into())
             .options(options)
             .selected(selected_value)
             .placeholder(translations.recording_select_playback_placeholder)
@@ -1096,7 +1099,7 @@ impl PlayerView {
                 div().w(px(100.0)).child(
                     // intentional: sample-rate dropdown width
                     Select::new("playback_sample_rate")
-                        .size(gpui_ui_kit::SelectSize::Md)
+                        .size(CONFIG_CONTROL_SIZE.into())
                         .options(options)
                         .selected(selected_value)
                         .placeholder(translations.recording_select_rate_placeholder)
@@ -1195,7 +1198,7 @@ impl PlayerView {
                 div().w(px(100.0)).child(
                     // intentional: speaker-config dropdown width
                     Select::new("speaker_config")
-                        .size(gpui_ui_kit::SelectSize::Md)
+                        .size(CONFIG_CONTROL_SIZE.into())
                         .options(options)
                         .selected(selected_value)
                         .placeholder(translations.recording_select_config_placeholder)
@@ -1443,7 +1446,7 @@ impl PlayerView {
                                     .min(1.0)
                                     .max(128.0)
                                     .step(1.0)
-                                    .size(NumberInputSize::Md)
+                                    .size(CONFIG_CONTROL_SIZE.into())
                                     .on_change({
                                         let view = view.clone();
                                         move |value, _window, cx| {
@@ -1492,7 +1495,7 @@ impl PlayerView {
                         .child(
                             Button::new("custom_add_speaker", recording_text.add_speaker)
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Xs)
+                                .size(CONFIG_CONTROL_SIZE.into())
                                 .theme(theme_clone.to_button_theme())
                                 .on_click(move |_, cx| {
                                     let _ = view_add.update(cx, |this, cx| {
@@ -1517,7 +1520,7 @@ impl PlayerView {
                         .child(
                             Button::new("custom_remove_speaker", recording_text.remove_speaker)
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Xs)
+                                .size(CONFIG_CONTROL_SIZE.into())
                                 .theme(theme.clone().to_button_theme())
                                 .disabled(speaker_count <= 1)
                                 .on_click(move |_, cx| {
@@ -1578,7 +1581,7 @@ impl PlayerView {
                     "{} / {}",
                     recording_text.single, recording_text.multi
                 ))
-                .size(gpui_ui_kit::SelectSize::Md)
+                .size(CONFIG_CONTROL_SIZE.into())
                 .options(options)
                 .selected(selected)
                 .is_open(is_open)
@@ -1696,7 +1699,7 @@ impl PlayerView {
                                 .min(1.0)
                                 .max(128.0)
                                 .step(1.0)
-                                .size(NumberInputSize::Xs)
+                                .size(CONFIG_CONTROL_SIZE.into())
                                 .on_change({
                                     let view = view.clone();
                                     move |value, _window, cx| {
@@ -1732,7 +1735,7 @@ impl PlayerView {
                                     "\u{2715}",
                                 )
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Xs)
+                                .size(CONFIG_CONTROL_SIZE.into())
                                 .theme(theme.to_button_theme())
                                 .disabled(!can_remove)
                                 .on_click({
@@ -1784,7 +1787,7 @@ impl PlayerView {
                             recording_text.add,
                         )
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Xs)
+                        .size(CONFIG_CONTROL_SIZE.into())
                         .theme(theme.to_button_theme())
                         .on_click({
                             move |_, cx| {
@@ -1835,7 +1838,7 @@ impl PlayerView {
             Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
                 .placeholder(translations.recording_name_placeholder)
                 .value(current_name)
-                .size(InputSize::Xs)
+                .size(CONFIG_CONTROL_SIZE.into())
                 .on_change({
                     let view = view.clone();
                     move |value, _window, cx| {
@@ -1891,7 +1894,7 @@ impl PlayerView {
         div().w(px(140.0)).child(
             // intentional: channel-name dropdown width
             Select::new(SharedString::from(format!("channel_name_{}", channel_idx)))
-                .size(gpui_ui_kit::SelectSize::Md)
+                .size(CONFIG_CONTROL_SIZE.into())
                 .options(options)
                 .selected(current_group.clone())
                 .placeholder(selected_label)
@@ -1973,7 +1976,7 @@ impl PlayerView {
         };
 
         Select::new("recording_device")
-            .size(gpui_ui_kit::SelectSize::Md)
+            .size(CONFIG_CONTROL_SIZE.into())
             .options(options)
             .selected(selected_value)
             .placeholder(translations.recording_select_recording_placeholder)
@@ -2114,7 +2117,7 @@ impl PlayerView {
                 div().w(px(100.0)).child(
                     // intentional: sample-rate dropdown width
                     Select::new("recording_sample_rate")
-                        .size(gpui_ui_kit::SelectSize::Md)
+                        .size(CONFIG_CONTROL_SIZE.into())
                         .options(options)
                         .selected(selected_value)
                         .placeholder(translations.recording_select_rate_placeholder)
@@ -2208,7 +2211,7 @@ impl PlayerView {
                                         .min(1.0)
                                         .max(128.0)
                                         .step(1.0)
-                                        .size(NumberInputSize::Xs)
+                                        .size(CONFIG_CONTROL_SIZE.into())
                                         .on_change({
                                             let view = view.clone();
                                             move |value, _window, cx| {

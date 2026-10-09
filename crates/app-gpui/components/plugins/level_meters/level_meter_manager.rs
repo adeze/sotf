@@ -1,3 +1,4 @@
+use super::matrix_channel_states::replace_matrix_channel_states;
 use crate::app::types::PluginUpdateType;
 use crate::app::{App as AppState, ChannelGroup, ChannelInfo};
 use sotf_audio_player::PluginSettings;
@@ -357,25 +358,19 @@ impl LevelMeterManager for AppState {
             return;
         }
 
-        // Build per-channel states from groups
-        let mut channel_states = vec![
-            ChannelState {
-                muted: false,
-                soloed: false,
-                dimmed: false
-            };
-            num_channels
-        ];
-
+        // Keep explicit channel indices: a transient meter layout may expose
+        // only a subset of the routed output bus, including sparse indices.
+        let mut channel_states = Vec::with_capacity(num_channels);
         for group in &self.level_meters.groups {
             for channel_info in &group.channels {
-                if channel_info.index < num_channels {
-                    channel_states[channel_info.index] = ChannelState {
+                channel_states.push((
+                    channel_info.index,
+                    ChannelState {
                         muted: group.muted,
                         soloed: group.soloed,
                         dimmed: group.dimmed,
-                    };
-                }
+                    },
+                ));
             }
         }
 
@@ -387,10 +382,17 @@ impl LevelMeterManager for AppState {
                 // Update settings in memory
                 match &mut plugin.settings {
                     PluginSettings::Matrix {
+                        output_channels,
                         channel_states: settings_states,
                         ..
                     } => {
-                        *settings_states = channel_states.clone();
+                        if !replace_matrix_channel_states(
+                            settings_states,
+                            &channel_states,
+                            *output_channels,
+                        ) {
+                            return;
+                        }
                     }
                     _ => unreachable!(),
                 }

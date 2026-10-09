@@ -37,6 +37,24 @@ timeout = "30s"
 tags = ["plugin"]
 
 [[scenario]]
+name = "plugin_analogcompressor"
+path = "crates/sotf-dev-driver/scenarios/plugins/AnalogCompressor.scn"
+timeout = "30s"
+tags = ["plugin"]
+
+[[scenario]]
+name = "plugin_analogeq"
+path = "crates/sotf-dev-driver/scenarios/plugins/AnalogEq.scn"
+timeout = "30s"
+tags = ["plugin"]
+
+[[scenario]]
+name = "plugin_analoglimiter"
+path = "crates/sotf-dev-driver/scenarios/plugins/AnalogLimiter.scn"
+timeout = "30s"
+tags = ["plugin"]
+
+[[scenario]]
 name = "plugin_bandmerge"
 path = "crates/sotf-dev-driver/scenarios/plugins/BandMerge.scn"
 timeout = "30s"
@@ -115,6 +133,12 @@ timeout = "30s"
 tags = ["plugin"]
 
 [[scenario]]
+name = "plugin_dither"
+path = "crates/sotf-dev-driver/scenarios/plugins/Dither.scn"
+timeout = "30s"
+tags = ["plugin"]
+
+[[scenario]]
 name = "plugin_downmix"
 path = "crates/sotf-dev-driver/scenarios/plugins/Downmix.scn"
 timeout = "30s"
@@ -135,11 +159,6 @@ tags = ["plugin"]
 [[scenario]]
 name = "plugin_expander"
 path = "crates/sotf-dev-driver/scenarios/plugins/Expander.scn"
-timeout = "30s"
-tags = ["plugin"]
-
-[[scenario]]
-name = "plugin_firdesigner"
 timeout = "30s"
 tags = ["plugin"]
 
@@ -268,3 +287,9 @@ name = "plugin_xtc"
 path = "crates/sotf-dev-driver/scenarios/plugins/XTC.scn"
 timeout = "30s"
 tags = ["plugin"]
+
+[[scenario]]
+name = "dense_eq_header_choices"
+path = "crates/sotf-dev-driver/scenarios/dense_eq_header_choices.scn"
+timeout = "60s"
+tags = ["plugin", "eq", "ui"]

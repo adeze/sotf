@@ -1,0 +1,123 @@
+{
+  "version": 2,
+  "plugins": [
+    {
+      "id": 1,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    },
+    {
+      "id": 2,
+      "enabled": false,
+      "settings": {
+        "Gain": {
+          "channels": 4,
+          "gain_db": 0.0,
+          "smoothing_ms": 10.0
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 5,
+      "enabled": true,
+      "settings": {
+        "AmbisonicsDecoder": {
+          "order": 1,
+          "target_layout": "custom",
+          "max_re_weighting": true,
+          "dual_band": false,
+          "algorithm": "mode_matching",
+          "custom_layout": {
+            "name": "Tetrahedral QA",
+            "speakers": [
+              {
+                "label": "FL",
+                "azimuth_deg": -45,
+                "elevation_deg": 35.264,
+                "is_lfe": false
+              },
+              {
+                "label": "FR",
+                "azimuth_deg": 45,
+                "elevation_deg": -35.264,
+                "is_lfe": false
+              },
+              {
+                "label": "RL",
+                "azimuth_deg": -135,
+                "elevation_deg": -35.264,
+                "is_lfe": false
+              },
+              {
+                "label": "RR",
+                "azimuth_deg": 135,
+                "elevation_deg": 35.264,
+                "is_lfe": false
+              }
+            ]
+          }
+        }
+      },
+      "permanent": false
+    },
+    {
+      "id": 3,
+      "enabled": true,
+      "settings": {
+        "Matrix": {
+          "input_channels": 4,
+          "output_channels": 4,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "channel_states": [
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            }
+          ]
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 4,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    }
+  ]
+}

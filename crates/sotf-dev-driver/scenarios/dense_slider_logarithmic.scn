@@ -1,0 +1,22 @@
+# Logarithmic motion retains Hz values in callbacks and accessibility.
+resize 1440 900
+focus Studio
+plugin_clear
+plugin_add Crossover
+action PluginSelectFirstUser
+wait_idle 1s
+snapshot $SOTF_QA_DIR/frequency-units.json
+scroll_into_view rack.params plugin.slider.2.1
+click plugin.slider.2.1
+key home
+wait_idle 1s
+assert plugins.plugin.2.param.1.value == 20 tolerance=0.001
+key right
+wait_idle 1s
+assert plugins.plugin.2.param.1.value > 20
+assert plugins.plugin.2.param.1.value < 40
+key end
+wait_idle 1s
+assert plugins.plugin.2.param.1.value == 20000 tolerance=0.001
+snapshot $SOTF_QA_DIR/frequency-end.json
+screenshot logarithmic-slider

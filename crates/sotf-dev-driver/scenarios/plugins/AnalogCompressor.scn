@@ -1,0 +1,13 @@
+# Analog Compressor editor and persistence smoke scenario.
+focus Studio
+plugin_clear
+plugin_add AnalogCompressor
+action PluginSelectFirstUser
+wait_idle
+assert_visible rack.params
+screenshot editor-AnalogCompressor
+plugin_chain_save $SOTF_QA_DIR/AnalogCompressor.json
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/AnalogCompressor.json
+assert plugins.user_count == 1
+plugin_remove 2

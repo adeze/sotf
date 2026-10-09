@@ -69,12 +69,6 @@ fn focus_interactive_relative(window: &mut Window, cx: &mut App, backwards: bool
     true
 }
 
-#[derive(Clone, Copy)]
-enum SidebarMode {
-    Player,
-    Studio,
-}
-
 #[derive(Debug)]
 pub(crate) struct PendingGeometrySave {
     geometry: crate::config::WindowGeometry,
@@ -468,6 +462,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::cycle_theme))
             .on_action(cx.listener(Self::select_theme))
             .on_action(cx.listener(Self::select_community_theme))
+            .on_action(cx.listener(Self::select_design))
             .on_action(cx.listener(Self::cycle_language))
             // Design system actions
             .on_action(cx.listener(Self::set_design_neutral))
@@ -571,6 +566,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quick_add_crossfeed))
             // Plugin file picker actions
             .on_action(cx.listener(Self::on_open_sofa_file))
+            .on_action(cx.listener(Self::on_open_hrtf_database))
             .on_action(cx.listener(Self::on_open_ir_file))
             .on_action(cx.listener(Self::on_open_ab_config_file))
             .on_action(cx.listener(Self::on_ab_path_add_plugin))
@@ -1053,10 +1049,10 @@ impl PlayerView {
         let language = self.state.read(cx).app.ui_state.language;
         let cast_text = CastTranslations::for_language(language);
         let sidebar_text = SidebarTranslations::for_language(language);
+        let desktop_text = crate::app::i18n::DesktopTranslations::for_language(language);
         let (
             theme,
             current_screen,
-            input_mode,
             collapsed,
             release_channel,
             translations,
@@ -1071,7 +1067,6 @@ impl PlayerView {
             (
                 state.app.ui_state.theme.clone(),
                 state.app.ui_state.current_screen,
-                state.app.ui_state.input_mode,
                 state.app.ui_state.primary_nav_collapsed,
                 state.app.ui_state.release_channel,
                 state.app.ui_state.translations.clone(),
@@ -1117,6 +1112,7 @@ impl PlayerView {
         });
         div()
             .id("app-sidebar")
+            .track_focus(&self.window_state.navigation_focus)
             .on_key_down(|event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key.as_str() == "tab"
                     && focus_interactive_relative(window, cx, event.keystroke.modifiers.shift)
@@ -1130,14 +1126,13 @@ impl PlayerView {
             .w(rail_width)
             .h_full()
             .min_h_0()
-            .overflow_y_scroll()
             .bg(theme.surface)
             .border_r_1()
             .border_color(theme.border)
             .p(d.pad_y_half)
             .gap(d.grid)
-            .child(
-                gpui_ui_kit::IconButton::with_child(
+            .child({
+                let toggle = gpui_ui_kit::IconButton::with_child(
                     "app-sidebar-toggle",
                     Icon::new(toggle_icon)
                         .size(IconSize::Sm)
@@ -1147,391 +1142,408 @@ impl PlayerView {
                 .variant(gpui_ui_kit::IconButtonVariant::Ghost)
                 .theme(theme.to_icon_button_theme())
                 .aria_label(toggle_label)
-                .on_click(move |_window, cx| toggle_action(cx)),
-            )
-            .child(self.render_sidebar_mode_item(
-                "nav-player",
-                translations.screen_player,
-                IconName::Music,
-                SidebarMode::Player,
-                current_screen.is_player_surface(),
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .child(self.render_sidebar_screen_item(
-                "nav-home",
-                translations.screen_home,
-                IconName::Home,
-                Screen::Home,
-                current_screen == Screen::Home,
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .child(self.render_sidebar_screen_item(
-                "nav-library",
-                translations.screen_library,
-                IconName::Library,
-                Screen::Library,
-                current_screen == Screen::Library,
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .child(self.render_sidebar_search_item(
-                translations.library_search,
-                input_mode == crate::app::InputMode::Search,
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .child(self.render_sidebar_screen_item(
-                "nav-playing",
-                translations.screen_now_playing,
-                IconName::Music,
-                Screen::NowPlaying,
-                current_screen == Screen::NowPlaying,
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .child(self.render_sidebar_screen_item(
-                "nav-queue",
-                translations.screen_queue,
-                IconName::ListMusic,
-                Screen::Queue,
-                current_screen == Screen::Queue,
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .child(self.render_sidebar_screen_item(
-                "nav-playlists",
-                translations.screen_playlists,
-                IconName::Album,
-                Screen::Playlists,
-                current_screen == Screen::Playlists,
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .child(self.render_sidebar_screen_item(
-                "nav-streams",
-                translations.screen_streams,
-                IconName::Radio,
-                Screen::Streams,
-                current_screen == Screen::Streams,
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .child(self.render_sidebar_separator(&d, &theme))
-            .child(self.render_sidebar_mode_item(
-                "nav-studio",
-                translations.screen_tools,
-                IconName::SlidersHorizontal,
-                SidebarMode::Studio,
-                current_screen.is_studio_surface(),
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .child(self.render_sidebar_screen_item(
-                "nav-studio-rack",
-                translations.screen_studio_rack,
-                IconName::SlidersHorizontal,
-                Screen::Studio,
-                current_screen == Screen::Studio,
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .when(
-                release_channel.allows(Screen::PluginGraph.maturity()),
-                |el| {
-                    el.child(self.render_sidebar_screen_item(
-                        "nav-plugin-graph",
-                        translations.screen_studio_full,
-                        IconName::Plug,
-                        Screen::PluginGraph,
-                        current_screen == Screen::PluginGraph,
-                        collapsed,
-                        &theme,
-                        &d,
-                        cx,
-                    ))
-                },
-            )
-            .when(release_channel.allows(Screen::Recording.maturity()), |el| {
-                el.child(self.render_sidebar_screen_item(
-                    "nav-recording",
-                    translations.screen_recording,
-                    IconName::Disc,
-                    Screen::Recording,
-                    current_screen == Screen::Recording,
-                    collapsed,
-                    &theme,
-                    &d,
-                    cx,
-                ))
+                .on_click(move |_window, cx| toggle_action(cx));
+                #[cfg(feature = "dev-api")]
+                let toggle = {
+                    use crate::app::dev_api::DevTrackExt;
+                    toggle.dev_track("sidebar.toggle")
+                };
+                toggle
             })
-            .when(release_channel.allows(Screen::RoomEq.maturity()), |el| {
-                el.child(self.render_sidebar_screen_item(
-                    "nav-room-eq",
-                    translations.screen_room_eq,
-                    IconName::Brain,
-                    Screen::RoomEq,
-                    current_screen == Screen::RoomEq,
-                    collapsed,
-                    &theme,
-                    &d,
-                    cx,
-                ))
-            })
-            .when(
-                release_channel.allows(Screen::HeadphoneEq.maturity()),
-                |el| {
-                    el.child(self.render_sidebar_screen_item(
-                        "nav-headphone-eq",
-                        translations.screen_headphone_eq,
-                        IconName::Headphones,
-                        Screen::HeadphoneEq,
-                        current_screen == Screen::HeadphoneEq,
-                        collapsed,
-                        &theme,
-                        &d,
-                        cx,
-                    ))
-                },
-            )
-            .when(release_channel.allows(Screen::Spinorama.maturity()), |el| {
-                el.child(self.render_sidebar_screen_item(
-                    "nav-spinorama",
-                    translations.screen_spinorama,
-                    IconName::Speaker,
-                    Screen::Spinorama,
-                    current_screen == Screen::Spinorama,
-                    collapsed,
-                    &theme,
-                    &d,
-                    cx,
-                ))
-            })
-            .when(
-                release_channel.allows(Screen::ListeningTest.maturity()),
-                |el| {
-                    el.child(self.render_sidebar_listening_item(
-                        "nav-learning",
-                        translations.screen_listening_test,
-                        IconName::Brain,
-                        EarTrainingSurface::EqBands,
-                        current_screen == Screen::ListeningTest
-                            && listening_surface != EarTrainingSurface::BlindComparison,
-                        collapsed,
-                        &theme,
-                        &d,
-                        cx,
-                    ))
-                    .child(self.render_sidebar_listening_item(
-                        "nav-ab-compare",
-                        translations.listening_test.eq.mode_blind,
-                        IconName::Shuffle,
-                        EarTrainingSurface::BlindComparison,
-                        current_screen == Screen::ListeningTest
-                            && listening_surface == EarTrainingSurface::BlindComparison,
-                        collapsed,
-                        &theme,
-                        &d,
-                        cx,
-                    ))
-                },
-            )
-            .child(div().flex_1())
-            .child(self.render_sidebar_separator(&d, &theme))
-            .when(collapsed, |el| {
-                el.child(self.render_sidebar_screen_item(
-                    "nav-preferences-collapsed",
-                    cast_text.preferences,
-                    IconName::Settings,
-                    Screen::Settings,
-                    current_screen == Screen::Settings,
-                    true,
-                    &theme,
-                    &d,
-                    cx,
-                ))
-            })
-            .child({
-                let state_entity = self.state.clone();
-                let preferences_id: ElementId = "nav-preferences-button".into();
-                let preferences_focus_handle = interactive_focus_handle(&preferences_id, cx);
-                let preferences_props = AriaProps::with_role(AriaRole::Button);
-                cx.register_accessible(AccessibilityNode {
-                    element_id: preferences_id.clone(),
-                    label: cast_text.preferences.into(),
-                    props: preferences_props.clone(),
-                });
+            .child(
                 div()
-                    .h(if collapsed { rems(0.25) } else { rems(1.5) })
-                    .px(d.pad_y)
+                    .id("sidebar-navigation-items")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
                     .flex()
-                    .items_center()
-                    .justify_between()
-                    .when(!collapsed, |el| {
-                        el.child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(d.grid)
-                                .child(
-                                    Icon::new(IconName::Cog)
-                                        .size(IconSize::Sm)
-                                        .color(theme.text_muted),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(d.text_xs)
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(theme.text_muted)
-                                        .child(cast_text.preferences),
-                                ),
-                        )
-                        .child({
-                            let mouse_state = state_entity.clone();
-                            let key_state = state_entity.clone();
-                            let element = div()
-                                .id(preferences_id)
-                                .track_focus(&preferences_focus_handle)
-                                .track_focus_element(&preferences_focus_handle)
-                                .cursor_pointer()
-                                .text_color(theme.text_muted)
-                                .focus_visible({
-                                    let theme = theme.clone();
-                                    move |style| style.border_2().border_color(theme.accent)
-                                })
-                                .hover({
-                                    let theme = theme.clone();
-                                    move |s| s.text_color(theme.text_primary)
-                                })
-                                .child(Icon::new(IconName::Settings).size(IconSize::Sm))
-                                .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                                    window.dispatch_action(Box::new(OpenConfig), cx);
-                                    mouse_state.update(cx, |state, _cx| {
-                                        state.app.ui_state.input_mode =
-                                            crate::app::InputMode::Normal;
-                                    });
-                                })
-                                .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                                    let key = event.keystroke.key.as_str();
-                                    if key == "enter" || key == "space" {
-                                        window.dispatch_action(Box::new(OpenConfig), cx);
-                                        key_state.update(cx, |state, _cx| {
-                                            state.app.ui_state.input_mode =
-                                                crate::app::InputMode::Normal;
-                                        });
-                                        cx.stop_propagation();
-                                    }
-                                });
-                            let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-                                element,
-                                cast_text.preferences,
-                                &preferences_props,
-                            );
-                            #[cfg(feature = "dev-api")]
-                            {
-                                use crate::app::dev_api::DevTrackExt;
-                                element
-                                    .dev_track("sidebar.nav-preferences-button")
-                                    .into_any_element()
-                            }
-                            #[cfg(not(feature = "dev-api"))]
-                            {
-                                element.into_any_element()
-                            }
-                        })
-                    })
-                    .into_any_element()
-            })
-            .child(self.render_sidebar_devices_item(
-                translations.devices_title,
-                collapsed,
-                &theme,
-                &d,
-                cx,
-            ))
-            .when(!collapsed, |el| {
-                el.child(self.render_sidebar_device_actions(
-                    cast_discovery_running,
-                    cast_text,
-                    &theme,
-                    &d,
-                    cx,
-                ))
-                .children(
-                    output_devices
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, device)| !device.name.trim().is_empty())
-                        .take(4)
-                        .map(|(idx, device)| {
-                            self.render_sidebar_output_device_item(
-                                idx,
-                                &device.name,
-                                idx == selected_output_device_index
-                                    && selected_cast_device.is_none(),
+                    .flex_col()
+                    .gap(d.grid)
+                    .child(self.render_sidebar_section(
+                        "home",
+                        translations.screen_home,
+                        IconName::Home,
+                        collapsed,
+                        &theme,
+                        &d,
+                    ))
+                    .child(self.render_sidebar_screen_item(
+                        "nav-home",
+                        translations.screen_home,
+                        IconName::Home,
+                        Screen::Home,
+                        current_screen == Screen::Home,
+                        collapsed,
+                        &theme,
+                        &d,
+                        cx,
+                    ))
+                    .child(self.render_sidebar_screen_item(
+                        "nav-library",
+                        translations.screen_library,
+                        IconName::Library,
+                        Screen::Library,
+                        current_screen == Screen::Library,
+                        collapsed,
+                        &theme,
+                        &d,
+                        cx,
+                    ))
+                    .child(self.render_sidebar_screen_item(
+                        "nav-playing",
+                        translations.screen_now_playing,
+                        IconName::Music,
+                        Screen::NowPlaying,
+                        current_screen == Screen::NowPlaying,
+                        collapsed,
+                        &theme,
+                        &d,
+                        cx,
+                    ))
+                    .child(self.render_sidebar_screen_item(
+                        "nav-queue",
+                        translations.screen_queue,
+                        IconName::ListMusic,
+                        Screen::Queue,
+                        current_screen == Screen::Queue,
+                        collapsed,
+                        &theme,
+                        &d,
+                        cx,
+                    ))
+                    .child(self.render_sidebar_screen_item(
+                        "nav-playlists",
+                        translations.screen_playlists,
+                        IconName::Album,
+                        Screen::Playlists,
+                        current_screen == Screen::Playlists,
+                        collapsed,
+                        &theme,
+                        &d,
+                        cx,
+                    ))
+                    .child(self.render_sidebar_screen_item(
+                        "nav-streams",
+                        translations.screen_streams,
+                        IconName::Radio,
+                        Screen::Streams,
+                        current_screen == Screen::Streams,
+                        collapsed,
+                        &theme,
+                        &d,
+                        cx,
+                    ))
+                    .child(self.render_sidebar_separator(&d, &theme))
+                    .child(self.render_sidebar_section(
+                        "dsp",
+                        "DSP",
+                        IconName::SlidersHorizontal,
+                        collapsed,
+                        &theme,
+                        &d,
+                    ))
+                    .child(self.render_sidebar_screen_item(
+                        "nav-studio-rack",
+                        translations.screen_studio_rack,
+                        IconName::StudioRack,
+                        Screen::Studio,
+                        current_screen == Screen::Studio,
+                        collapsed,
+                        &theme,
+                        &d,
+                        cx,
+                    ))
+                    .when(
+                        release_channel.allows(Screen::PluginGraph.maturity()),
+                        |el| {
+                            el.child(self.render_sidebar_screen_item(
+                                "nav-plugin-graph",
+                                sidebar_text.studio_graph,
+                                IconName::StudioGraph,
+                                Screen::PluginGraph,
+                                current_screen == Screen::PluginGraph,
+                                collapsed,
                                 &theme,
                                 &d,
                                 cx,
+                            ))
+                        },
+                    )
+                    .child(self.render_sidebar_screen_item(
+                        "nav-spectrum",
+                        crate::app::i18n::SpectrumTranslations::for_language(language).analyzer,
+                        IconName::AudioWaveform,
+                        Screen::Spectrum,
+                        current_screen == Screen::Spectrum,
+                        collapsed,
+                        &theme,
+                        &d,
+                        cx,
+                    ))
+                    .child(self.render_sidebar_separator(&d, &theme))
+                    .child(self.render_sidebar_section(
+                        "room-eq",
+                        translations.screen_room_eq,
+                        IconName::Speaker,
+                        collapsed,
+                        &theme,
+                        &d,
+                    ))
+                    .when(release_channel.allows(Screen::Recording.maturity()), |el| {
+                        el.child(self.render_sidebar_screen_item(
+                            "nav-recording",
+                            desktop_text.studio_sections[1],
+                            IconName::Measure,
+                            Screen::Recording,
+                            current_screen == Screen::Recording,
+                            collapsed,
+                            &theme,
+                            &d,
+                            cx,
+                        ))
+                    })
+                    .when(release_channel.allows(Screen::RoomEq.maturity()), |el| {
+                        el.child(self.render_sidebar_screen_item(
+                            "nav-room-eq",
+                            desktop_text.studio_sections[2],
+                            IconName::Calibrate,
+                            Screen::RoomEq,
+                            current_screen == Screen::RoomEq,
+                            collapsed,
+                            &theme,
+                            &d,
+                            cx,
+                        ))
+                    })
+                    .child(self.render_sidebar_separator(&d, &theme))
+                    .child(self.render_sidebar_section(
+                        "tools",
+                        sidebar_text.tools,
+                        IconName::Brain,
+                        collapsed,
+                        &theme,
+                        &d,
+                    ))
+                    .when(
+                        release_channel.allows(Screen::ListeningTest.maturity()),
+                        |el| {
+                            el.child(self.render_sidebar_listening_item(
+                                "nav-learning",
+                                sidebar_text.learning,
+                                IconName::Learning,
+                                EarTrainingSurface::EqBands,
+                                current_screen == Screen::ListeningTest
+                                    && listening_surface != EarTrainingSurface::BlindComparison,
+                                collapsed,
+                                &theme,
+                                &d,
+                                cx,
+                            ))
+                            .child(
+                                self.render_sidebar_listening_item(
+                                    "nav-ab-compare",
+                                    "A/B/X",
+                                    IconName::Shuffle,
+                                    EarTrainingSurface::BlindComparison,
+                                    current_screen == Screen::ListeningTest
+                                        && listening_surface == EarTrainingSurface::BlindComparison,
+                                    collapsed,
+                                    &theme,
+                                    &d,
+                                    cx,
+                                ),
                             )
-                        }),
+                        },
+                    ),
+            )
+            .child(self.render_sidebar_separator(&d, &theme))
+            .child({
+                let open = self.state.read(cx).app.audio_device_state.output_ui.open;
+                let menu_id: ElementId = "sidebar-output-menu".into();
+                let menu_focus = interactive_focus_handle(&menu_id, cx);
+                let toggle = self.state.clone();
+                let close = self.state.downgrade();
+                let focus = menu_focus.clone();
+                let trigger = gpui_ui_kit::Button::new(
+                    "sidebar-output-trigger",
+                    if collapsed {
+                        ""
+                    } else {
+                        crate::app::i18n::PluginGraphTranslations::for_language(language)
+                            .output_devices
+                    },
                 )
-                .child(self.render_sidebar_cast_group_label(
-                    cast_discovery_running,
-                    cast_text,
-                    &theme,
-                    &d,
-                ))
-                .when(cast_devices.is_empty() && !cast_discovery_running, |el| {
-                    el.child(
-                        div()
-                            .px(d.pad_y)
-                            .py(d.grid)
-                            .child(Text::caption(cast_text.no_devices)),
+                .custom_icon_left(
+                    Icon::new(IconName::Speaker)
+                        .size(IconSize::Sm)
+                        .color(theme.text_secondary),
+                )
+                .icon_right(if open { "⌄" } else { "⌃" })
+                .size(gpui_ui_kit::ButtonSize::Md)
+                .variant(gpui_ui_kit::ButtonVariant::Outline)
+                .full_width(true)
+                .theme(theme.to_button_theme())
+                .aria_label(
+                    crate::app::i18n::PluginGraphTranslations::for_language(language)
+                        .output_devices,
+                )
+                .on_click_event(move |_, window, cx| {
+                    toggle.update(cx, |state, cx| {
+                        state.app.audio_device_state.output_ui.open = !open;
+                        cx.notify();
+                    });
+                    if !open {
+                        window.focus(&focus, cx);
+                    }
+                });
+                #[cfg(feature = "dev-api")]
+                let trigger = {
+                    use crate::app::dev_api::DevTrackExt;
+                    trigger.dev_track("sidebar.nav-devices")
+                };
+                div().relative().child(trigger).when(open, |element| {
+                    let outside_close = self.state.downgrade();
+                    let menu_label =
+                        crate::app::i18n::PluginGraphTranslations::for_language(language)
+                            .output_devices;
+                    let menu_props = AriaProps::with_role(AriaRole::Dialog);
+                    cx.register_accessible(AccessibilityNode {
+                        element_id: menu_id.clone(),
+                        label: menu_label.into(),
+                        props: menu_props.clone(),
+                    });
+                    let content = div()
+                        .id(menu_id.clone())
+                        .track_focus(&menu_focus)
+                        .track_focus_element(&menu_focus)
+                        .on_mouse_down_out(move |_, _, cx| {
+                            let _ = outside_close.update(cx, |state, cx| {
+                                state.app.audio_device_state.output_ui.open = false;
+                                cx.notify();
+                            });
+                        })
+                        .key_context("SidebarOutputMenu")
+                        .w(rems(18.0))
+                        .max_h(rems(15.0))
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .p(d.pad_y)
+                        .child(self.render_sidebar_device_actions(
+                            cast_discovery_running,
+                            cast_text,
+                            &theme,
+                            &d,
+                            cx,
+                        ))
+                        .children(
+                            output_devices
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, device)| !device.name.trim().is_empty())
+                                .map(|(idx, device)| {
+                                    self.render_sidebar_output_device_item(
+                                        idx,
+                                        &device.name,
+                                        idx == selected_output_device_index
+                                            && selected_cast_device.is_none(),
+                                        &theme,
+                                        &d,
+                                        cx,
+                                    )
+                                }),
+                        )
+                        .child(self.render_sidebar_cast_group_label(
+                            cast_discovery_running,
+                            cast_text,
+                            &theme,
+                            &d,
+                        ))
+                        .children(
+                            cast_devices
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, device)| {
+                                    !device.name.trim().is_empty()
+                                        || !device.device_type.trim().is_empty()
+                                })
+                                .map(|(idx, device)| {
+                                    self.render_sidebar_cast_device_item(
+                                        idx,
+                                        &device.name,
+                                        &device.device_type,
+                                        selected_cast_device == Some(idx),
+                                        &theme,
+                                        &d,
+                                        cx,
+                                    )
+                                }),
+                        );
+                    let content = gpui_ui_kit::accessibility::apply_native_accessibility(
+                        content,
+                        menu_label,
+                        &menu_props,
+                    );
+                    element.child(
+                        deferred(
+                            gpui_ui_kit::Popover::new(menu_id)
+                                .placement(gpui_ui_kit::PopoverPlacement::TopStart)
+                                .focus_handle(menu_focus)
+                                .show_backdrop(false)
+                                .content(content)
+                                .on_close(move |_, cx| {
+                                    let _ = close.update(cx, |state, cx| {
+                                        state.app.audio_device_state.output_ui.open = false;
+                                        cx.notify();
+                                    });
+                                }),
+                        )
+                        .with_priority(100),
                     )
                 })
-                .children(
-                    cast_devices
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, device)| {
-                            !device.name.trim().is_empty() || !device.device_type.trim().is_empty()
-                        })
-                        .take(4)
-                        .map(|(idx, device)| {
-                            self.render_sidebar_cast_device_item(
-                                idx,
-                                &device.name,
-                                &device.device_type,
-                                selected_cast_device == Some(idx),
-                                &theme,
-                                &d,
-                                cx,
-                            )
-                        }),
-                )
             })
+            .child(self.render_sidebar_screen_item(
+                "nav-preferences-button",
+                cast_text.preferences,
+                IconName::Settings,
+                Screen::Settings,
+                current_screen == Screen::Settings,
+                collapsed,
+                &theme,
+                &d,
+                cx,
+            ))
             .into_any_element()
+    }
+
+    fn render_sidebar_section(
+        &self,
+        id: &'static str,
+        label: &str,
+        icon: IconName,
+        collapsed: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        let section = div()
+            .id(SharedString::from(format!("sidebar-section-{id}")))
+            .flex()
+            .items_center()
+            .px(d.pad_y)
+            .py(d.grid)
+            .when(collapsed, |element| {
+                element
+                    .justify_center()
+                    .child(Icon::new(icon).size(IconSize::Sm).color(theme.text_muted))
+            })
+            .when(!collapsed, |element| {
+                element.child(gpui_ui_kit::Text::label(label.to_owned()).color(theme.text_muted))
+            });
+        #[cfg(feature = "dev-api")]
+        let section = {
+            use crate::app::dev_api::DevTrackExt;
+            section.dev_track(format!("sidebar.section-{id}"))
+        };
+        section.into_any_element()
     }
 
     fn render_sidebar_separator(&self, d: &Ds, theme: &crate::theme::Theme) -> AnyElement {
@@ -1541,45 +1553,6 @@ impl PlayerView {
             .my(d.grid)
             .bg(theme.border)
             .into_any_element()
-    }
-
-    fn render_sidebar_mode_item(
-        &self,
-        id: &'static str,
-        label: &str,
-        icon: IconName,
-        mode: SidebarMode,
-        selected: bool,
-        collapsed: bool,
-        theme: &crate::theme::Theme,
-        d: &Ds,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let label = label.to_string();
-        let state_entity = self.state.clone();
-        let state_entity_id = state_entity.entity_id();
-
-        self.render_sidebar_item_base(
-            id,
-            &label,
-            icon,
-            selected,
-            collapsed,
-            theme,
-            d,
-            cx,
-            move |cx| {
-                state_entity.update(cx, |state, _cx| {
-                    match mode {
-                        SidebarMode::Player => state.app.enter_player_mode("SidebarPlayerMode"),
-                        SidebarMode::Studio => state.app.enter_studio_mode("SidebarStudioMode"),
-                    }
-                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                });
-                cx.notify(state_entity_id);
-            },
-        )
-        .into_any_element()
     }
 
     fn render_sidebar_screen_item(
@@ -1610,6 +1583,7 @@ impl PlayerView {
             move |cx| {
                 state_entity.update(cx, |state, _cx| {
                     state.app.set_screen(screen, "SidebarNav");
+                    state.app.audio_device_state.output_ui.open = false;
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                 });
                 cx.notify(state_entity_id);
@@ -1650,71 +1624,6 @@ impl PlayerView {
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                 });
                 cx.notify(state_entity_id);
-            },
-        )
-        .into_any_element()
-    }
-
-    fn render_sidebar_search_item(
-        &self,
-        label: &str,
-        selected: bool,
-        collapsed: bool,
-        theme: &crate::theme::Theme,
-        d: &Ds,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let state_entity = self.state.clone();
-        let state_entity_id = state_entity.entity_id();
-
-        self.render_sidebar_item_base(
-            "nav-search",
-            label,
-            IconName::Search,
-            selected,
-            collapsed,
-            theme,
-            d,
-            cx,
-            move |cx| {
-                state_entity.update(cx, |state, _cx| {
-                    state.app.set_screen(Screen::Library, "SidebarSearch");
-                    state.app.ui_state.input_mode = crate::app::InputMode::Search;
-                    state.app.clear_library_search();
-                });
-                #[cfg(any(target_os = "ios", target_os = "tvos"))]
-                gpui_ios::show_keyboard();
-                cx.notify(state_entity_id);
-            },
-        )
-        .into_any_element()
-    }
-
-    fn render_sidebar_devices_item(
-        &self,
-        label: &str,
-        collapsed: bool,
-        theme: &crate::theme::Theme,
-        d: &Ds,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let state_entity = self.state.clone();
-
-        self.render_sidebar_item_base(
-            "nav-devices",
-            label,
-            IconName::Speaker,
-            false,
-            collapsed,
-            theme,
-            d,
-            cx,
-            move |cx| {
-                state_entity.update(cx, |state, _cx| {
-                    state.app.set_screen(Screen::Settings, "SidebarDevices");
-                    state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
-                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                });
             },
         )
         .into_any_element()
@@ -1847,11 +1756,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let device_name = name.to_string();
-        let display_name = if device_name.chars().count() > 18 {
-            format!("{}...", device_name.chars().take(15).collect::<String>())
-        } else {
-            device_name.clone()
-        };
+        let display_name = device_name.clone();
         let element_id = ElementId::from(SharedString::from(format!("nav-device-{index}")));
         let focus_handle = interactive_focus_handle(&element_id, cx);
         let accessibility_props =
@@ -1867,6 +1772,7 @@ impl PlayerView {
         let on_activate = std::rc::Rc::new(move |cx: &mut App| {
             state_entity.update(cx, |state, _cx| {
                 let devices = &mut state.app.audio_device_state;
+                devices.output_ui.open = false;
                 devices.output_draft.select(
                     activation_device_name.clone(),
                     devices.current_output_device_name.as_deref(),
@@ -2105,6 +2011,7 @@ impl PlayerView {
 
         let element_id: ElementId = id.into();
         let focus_handle = interactive_focus_handle(&element_id, cx);
+        let pointer_focus = focus_handle.clone();
         let accessibility_props =
             AriaProps::with_role(AriaRole::Button).maybe_state(selected, AriaState::Pressed(true));
         cx.register_accessible(AccessibilityNode {
@@ -2141,6 +2048,9 @@ impl PlayerView {
             .px(if collapsed { d.grid } else { d.pad_y })
             .rounded(d.r_md)
             .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.focus(&pointer_focus, cx);
+            })
             .focus_visible({
                 let theme = theme.clone();
                 move |style| style.border_2().border_color(theme.accent)

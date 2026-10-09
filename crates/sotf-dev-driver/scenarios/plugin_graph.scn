@@ -2,7 +2,7 @@
 # Addition, bypass, invalid connection, cancellation, and deletion are driven
 # through the graph's documented keyboard interaction model.
 action     PluginClear
-click      sidebar.nav-studiohub
+click      sidebar.nav-studio-rack
 resize     700 700
 wait_idle
 assert_in_viewport studio.workspace-picker

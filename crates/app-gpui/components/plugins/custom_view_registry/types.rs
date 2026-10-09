@@ -13,8 +13,12 @@ pub struct CustomViewRenderContext<'a> {
     pub plugin_idx: usize,
     /// Stable engine/plugin instance identity, including nonlinear graph nodes.
     pub plugin_instance_id: Option<usize>,
+    pub layout_choice_menu: Option<(usize, usize)>,
+    pub layout_choice_highlight: Option<usize>,
     pub settings: &'a PluginSettings,
     pub available_width: f32,
+    /// Measured scrollport height; short wide windows need compact controls too.
+    pub available_height: f32,
     pub layout_scale: f32,
     pub is_editing: bool,
     pub selected_param: usize,
@@ -36,6 +40,10 @@ pub struct CustomViewRenderContext<'a> {
     /// Stable focus target for the one selected plugin parameter exact editor.
     /// Only one selected knob renders its exact editor at a time.
     pub plugin_exact_entry_focus_handle: FocusHandle,
+    /// Rack scrollport for custom controls that need focus-follow scrolling.
+    pub rack_scroll_handle: Option<ScrollHandle>,
+    /// View-owned Matrix grid; captures copy its offset into an independent handle.
+    pub matrix_scroll_handle: ScrollHandle,
 }
 
 /// Function signature for custom view renderers.

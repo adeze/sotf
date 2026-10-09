@@ -21,10 +21,10 @@ impl Screen {
             | Screen::Spinorama
             | Screen::ListeningTest
             | Screen::Studio
-            | Screen::RoomEq => ReleaseChannel::Prod,
-            Screen::Streams => ReleaseChannel::Beta,
-            Screen::PluginGraph => ReleaseChannel::Alpha,
-            Screen::Playlists => ReleaseChannel::Alpha,
+            | Screen::RoomEq
+            | Screen::Streams
+            | Screen::PluginGraph
+            | Screen::Playlists => ReleaseChannel::Prod,
         }
     }
 }

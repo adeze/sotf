@@ -4,7 +4,7 @@ Utility binaries for test data generation and file conversion. No library.
 
 ## Binaries
 
-- `generate-audio-tests` - Generate deterministic test audio signals (sine, sweep, noise, IMD) for validation
+- `generate-audio-tests` - Generate deterministic test audio signals (sine, sweep, noise, IMD, STIPA/full-STI) for validation
 - `generate-upmixer-golden` - Generate upmixer golden reference files (depends on `sotf-plugins` internals)
 - `export-design-tokens` - Export app-specific SOTF GPUI themes to `design-tokens/tokens.json` (Tokens Studio format)
 - `import-design-tokens` - Import app-specific `design-tokens/tokens.json` back into Rust theme files in `app-gpui`

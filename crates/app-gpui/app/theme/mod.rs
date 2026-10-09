@@ -474,6 +474,23 @@ impl Theme {
         }
     }
 
+    /// Convert the plugin chassis palette to a NumberInput theme.
+    pub fn to_number_input_theme(&self) -> gpui_ui_kit::NumberInputTheme {
+        gpui_ui_kit::NumberInputTheme {
+            background: self.background,
+            text: self.text_primary,
+            button_bg: self.surface,
+            button_hover: self.surface_hover,
+            button_active: self.accent,
+            selection_text: self.text_on_accent,
+            button_text: self.text_secondary,
+            border: self.border,
+            border_focus: self.accent,
+            label: self.text_secondary,
+            disabled_opacity: 0.5,
+        }
+    }
+
     /// Convert to IconButtonTheme for use with ui_kit IconButton component
     pub fn to_icon_button_theme(&self) -> gpui_ui_kit::IconButtonTheme {
         gpui_ui_kit::IconButtonTheme {

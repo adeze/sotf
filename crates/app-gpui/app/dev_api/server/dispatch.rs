@@ -661,8 +661,12 @@ pub(super) fn dispatch_screenshot(
         .with_context(|| format!("creating screenshot directory {}", output_dir.display()))?;
     let output = output_dir.join(format!("{name}.png"));
 
-    let (state, scroll) = with_player_view(window, cx, |view, _cx| {
-        Ok((view.state.clone(), view.scroll.detached_copy()))
+    let (state, scroll, interface_model_menu) = with_player_view(window, cx, |view, _cx| {
+        Ok((
+            view.state.clone(),
+            view.scroll.detached_copy(),
+            view.interface_model_menu(),
+        ))
     })?;
     let viewport_size = window
         .update(cx, |_view, window, _cx| window.viewport_size())
@@ -688,6 +692,7 @@ pub(super) fn dispatch_screenshot(
                     // Recreate independent handles: sharing the live handles would
                     // let capture layout overwrite the interactive window's bounds.
                     view.scroll = scroll;
+                    view.set_interface_model_menu(interface_model_menu.0, interface_model_menu.1);
                     view
                 })
             },
@@ -1050,8 +1055,42 @@ fn dispatch_plugin_action(
     if !handled {
         return Ok(false);
     }
+    if name == "PluginSetParamString" {
+        use crate::components::plugins::editing::PluginEditingManager;
+        let payload_ref = payload
+            .as_ref()
+            .ok_or_else(|| anyhow!("missing string edit payload"))?;
+        let index = payload_ref
+            .get("index")
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| anyhow!("missing or invalid index"))?;
+        let param_index = payload_ref
+            .get("param_index")
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| anyhow!("missing or invalid param_index"))?;
+        let value = payload_str(&payload, "value")?.to_string();
+        with_app_state(window, cx, |state| {
+            // File-picker completion uses this editor setter, including its
+            // validation, graph target and correlated update receipt.
+            state
+                .app
+                .set_plugin_param_string(index, param_index, value)
+                .map_err(|error| anyhow!(error))
+        })?;
+        return Ok(true);
+    }
     with_app_state(window, cx, |state| {
-        plugin_action(&mut state.app.plugin_state.graph, name, payload)
+        plugin_action(&mut state.app.plugin_state.graph, name, payload)?;
+        if name != "PluginChainSave" {
+            // The QA action mutates the same graph as the product UI. Publish
+            // that change to an already-running engine before any later UI
+            // parameter gesture derives an engine slot from the new graph.
+            state.app.plugin_state.update_state.pending_plugin_update =
+                Some(crate::app::types::PluginUpdateType::Structural);
+        }
+        Ok(())
     })?;
     Ok(true)
 }
@@ -1089,6 +1128,8 @@ fn dispatch_metadata_action(
             with_player_view(window, cx, |view, cx| {
                 view.state.update(cx, |state, cx| {
                     state.app.plugin_state.graph.adapt_matrix_to_input(channels);
+                    state.app.plugin_state.update_state.pending_plugin_update =
+                        Some(crate::app::types::PluginUpdateType::Structural);
                     cx.notify();
                 });
                 Ok(())
@@ -1848,11 +1889,39 @@ fn dispatch_metadata_action(
             let (name, channels) = match mode {
                 "first" => ("practice-source-mono.wav", 1),
                 "second" => ("practice-source-stereo.wav", 2),
+                "quad" => ("practice-source-quad.wav", 4),
+                "surround6" => ("practice-source-surround6.wav", 6),
+                "surround12" => ("practice-source-surround12.wav", 12),
+                "analysis-muted" => ("analysis-source-muted.wav", 2),
                 "comparison" => ("comparison-source-stereo.wav", 2),
                 "comparison-silent" => ("comparison-source-silent.wav", 2),
                 "invalid" => ("practice-source-invalid.wav", 0),
                 _ => anyhow::bail!("Unknown listening source fixture"),
             };
+            if mode == "analysis-muted" {
+                with_player_view(window, cx, |view, cx| {
+                    let state = view.state.read(cx);
+                    let muted = state
+                        .app
+                        .plugin_state
+                        .graph
+                        .node_for_role(sotf_audio_player::plugin_graph::NodeRole::Matrix)
+                        .is_some_and(|node| match &node.plugin.settings {
+                            sotf_audio_player::PluginSettings::Matrix {
+                                channel_states, ..
+                            } => {
+                                !channel_states.is_empty()
+                                    && channel_states.iter().all(|channel| channel.muted)
+                            }
+                            _ => false,
+                        });
+                    anyhow::ensure!(
+                        muted,
+                        "Analysis fixture requires all output Matrix channels muted"
+                    );
+                    Ok(())
+                })?;
+            }
             let path = qa_dir.join(name);
             if channels == 0 {
                 std::fs::write(&path, b"not an audio file")?;
@@ -1864,12 +1933,25 @@ fn dispatch_metadata_action(
                     sample_format: hound::SampleFormat::Int,
                 };
                 let mut writer = hound::WavWriter::create(&path, spec)?;
-                // Playback fixtures remain silent. Comparison preparation needs
-                // a measurable signal; its scenarios must keep playback stopped.
+                // Ordinary playback fixtures remain silent. Comparison preparation
+                // uses signal only while stopped; analysis requires muted outputs.
                 let comparison = mode.starts_with("comparison");
-                let seconds = if comparison { 10 } else { 120 };
+                let seconds = if comparison {
+                    10
+                } else if mode.starts_with("surround") {
+                    30
+                } else {
+                    120
+                };
                 for index in 0..48000 * seconds * usize::from(channels) {
-                    let sample = if mode == "comparison" {
+                    let sample = if mode == "analysis-muted" {
+                        let frame = index / usize::from(channels);
+                        let time = frame as f64 / 48000.0;
+                        (1024.0
+                            * ((std::f64::consts::TAU * 440.0 * time).sin()
+                                + (std::f64::consts::TAU * 2000.0 * time).sin()))
+                            as i16
+                    } else if mode == "comparison" {
                         let frame = index / usize::from(channels);
                         (2048.0 * (std::f64::consts::TAU * 440.0 * frame as f64 / 48000.0).sin())
                             as i16

@@ -832,6 +832,9 @@ impl SidebarTranslations {
         Self {
                 expand: pseudo_static("Expand sidebar"),
                 collapse: pseudo_static("Collapse sidebar"),
+                tools: pseudo_static("Tools"),
+                learning: pseudo_static("Learning"),
+                studio_graph: pseudo_static("Studio Graph"),
             }
     }
 }

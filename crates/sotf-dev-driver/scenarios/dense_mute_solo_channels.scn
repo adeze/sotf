@@ -1,0 +1,35 @@
+# 2026-10-08: Channel Mute/Solo used a separate Setup column and legacy
+# numeric adapters. ui_mute_solo.rs now uses schema-backed dense sliders,
+# header master enable, and compact independent M/S/D channel buttons.
+# Run from sotf: target/debug/sotf-dev-driver run-suite
+# crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The suite starts a dev-api desktop in a fresh isolated QA directory.
+resize 1440 1000
+action CycleLanguage
+assert settings.language == "French"
+focus Studio
+plugin_clear
+action PluginSetInputChannels {"channels":16}
+plugin_add ChannelMuteSolo
+action PluginSelectFirstUser
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/before.json
+assert_visible mute-channel-2-15
+assert_visible solo-channel-2-15
+assert_visible dim-channel-2-15
+click mute-channel-2-15
+click solo-channel-2-15
+click dim-channel-2-15
+wait_idle 1s
+screenshot mute-solo-sixteen-wide
+resize 1000 900
+wait_idle 1s
+scroll_into_view rack.params dim-channel-2-15
+assert_within dim-channel-2-15 rack.params
+click dim-channel-2-15
+wait_idle 1s
+screenshot mute-solo-sixteen-narrow
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+wait_idle 1s
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

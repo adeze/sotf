@@ -26,6 +26,263 @@ macro_rules! state_method_handler {
 }
 
 impl PlayerView {
+    fn submit_parameter_update(
+        state: &mut AppState,
+        instance_id: usize,
+        engine_index: usize,
+        param_index: usize,
+        param_id: String,
+        value: String,
+    ) -> Result<(), crate::app::player_handle::PlayerCommandError> {
+        #[cfg(feature = "dev-api")]
+        {
+            let receipt = match state.player.set_plugin_parameter_with_receipt(
+                engine_index,
+                param_id.clone(),
+                value.clone(),
+            ) {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    Self::record_submission_error(
+                        state,
+                        instance_id,
+                        param_index,
+                        error.to_string(),
+                    );
+                    return Err(error);
+                }
+            };
+            let update_state = &mut state.app.plugin_state.update_state;
+            update_state.last_parameter_receipt =
+                Some(crate::app::state::plugin::DevParameterReceipt {
+                    request_id: update_state.parameter_request_id,
+                    transport_epoch: state.player.qa_transport_epoch(),
+                    instance_id,
+                    engine_generation: update_state.engine_generation,
+                    accepted_generation: None,
+                    engine_index,
+                    param_index,
+                    key: param_id,
+                    requested_value: value,
+                    outcome: crate::app::state::plugin::DevParameterOutcome::Parameter(receipt),
+                });
+            Ok(())
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            let _ = (instance_id, param_index);
+            state
+                .player
+                .set_plugin_parameter(engine_index, param_id, value)
+        }
+    }
+
+    #[cfg(feature = "dev-api")]
+    fn submit_action_update(
+        state: &mut AppState,
+        instance_id: usize,
+        engine_index: usize,
+        param_index: usize,
+        key: String,
+        value: String,
+    ) -> Result<(), crate::app::player_handle::PlayerCommandError> {
+        let receipt = match state.player.set_plugin_action_with_receipt(
+            engine_index,
+            key.clone(),
+            value.clone(),
+        ) {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                Self::record_submission_error(state, instance_id, param_index, error.to_string());
+                return Err(error);
+            }
+        };
+        let update = &mut state.app.plugin_state.update_state;
+        update.last_parameter_receipt = Some(crate::app::state::plugin::DevParameterReceipt {
+            request_id: update.parameter_request_id,
+            transport_epoch: state.player.qa_transport_epoch(),
+            instance_id,
+            engine_generation: update.engine_generation,
+            accepted_generation: None,
+            engine_index,
+            param_index,
+            key,
+            requested_value: value,
+            outcome: crate::app::state::plugin::DevParameterOutcome::Action(receipt),
+        });
+        Ok(())
+    }
+
+    #[cfg(feature = "dev-api")]
+    fn record_deferred_parameter_update(
+        state: &mut AppState,
+        instance_id: usize,
+        param_index: usize,
+        reason: &'static str,
+    ) {
+        let update = &mut state.app.plugin_state.update_state;
+        update.last_parameter_receipt = Some(crate::app::state::plugin::DevParameterReceipt {
+            request_id: update.parameter_request_id,
+            transport_epoch: state.player.qa_transport_epoch(),
+            instance_id,
+            engine_generation: update.engine_generation,
+            accepted_generation: None,
+            engine_index: usize::MAX,
+            param_index,
+            key: String::new(),
+            requested_value: String::new(),
+            outcome: crate::app::state::plugin::DevParameterOutcome::Deferred(reason),
+        });
+    }
+
+    #[cfg(feature = "dev-api")]
+    fn record_action_rejection(
+        state: &mut AppState,
+        action: &PluginUpdateType,
+        reason: &str,
+    ) {
+        let PluginUpdateType::Action {
+            node_id,
+            param_index,
+            key,
+            value,
+            request_id,
+            ..
+        } = action else {
+            return;
+        };
+        let target = node_id.and_then(|node_id| {
+            state.app.plugin_state.graph.nodes.get(&node_id).map(|node| {
+                (
+                    node.plugin.id,
+                    state
+                        .app
+                        .plugin_state
+                        .graph
+                        .get_engine_index(node_id)
+                        .unwrap_or(usize::MAX),
+                )
+            })
+        });
+        let update = &mut state.app.plugin_state.update_state;
+        update.last_parameter_receipt = Some(crate::app::state::plugin::DevParameterReceipt {
+            request_id: *request_id,
+            transport_epoch: state.player.qa_transport_epoch(),
+            instance_id: target.map_or(0, |(id, _)| id),
+            engine_generation: update.engine_generation,
+            accepted_generation: None,
+            engine_index: target.map_or(usize::MAX, |(_, index)| index),
+            param_index: *param_index,
+            key: (*key).to_string(),
+            requested_value: value.to_string(),
+            outcome: crate::app::state::plugin::DevParameterOutcome::SubmissionError(
+                reason.to_string(),
+            ),
+        });
+    }
+
+    #[cfg(feature = "dev-api")]
+    fn record_submission_error(
+        state: &mut AppState,
+        instance_id: usize,
+        param_index: usize,
+        reason: String,
+    ) {
+        let update = &mut state.app.plugin_state.update_state;
+        update.last_parameter_receipt = Some(crate::app::state::plugin::DevParameterReceipt {
+            request_id: update.parameter_request_id,
+            transport_epoch: state.player.qa_transport_epoch(),
+            instance_id,
+            engine_generation: update.engine_generation,
+            accepted_generation: None,
+            engine_index: usize::MAX,
+            param_index,
+            key: String::new(),
+            requested_value: String::new(),
+            outcome: crate::app::state::plugin::DevParameterOutcome::SubmissionError(reason),
+        });
+    }
+
+    #[cfg(feature = "dev-api")]
+    fn submit_structural_parameter_update(
+        state: &mut AppState,
+        instance_id: usize,
+        param_index: usize,
+    ) -> Result<(), crate::app::player_handle::PlayerCommandError> {
+        let device_name = state
+            .app
+            .audio_device_state
+            .current_output_device_name
+            .as_deref();
+        let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
+        let sample_rate = crate::app::state::audio_device::output_sample_rate_for_track(
+            track_sample_rate,
+            device_name,
+        );
+        let requested_graph = serde_json::to_string(&state.app.plugin_state.graph)
+            .unwrap_or_else(|_| "<graph serialization failed>".to_owned());
+        let submitted = if state.app.plugin_state.is_rack_available() {
+            let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
+            state.player.update_plugins_qa_receipt(plugins)
+        } else {
+            let graph = state
+                .app
+                .plugin_state
+                .graph
+                .to_plugin_graph_config(sample_rate);
+            state.player.update_plugin_graph_qa_receipt(graph)
+        };
+        let receipt = match submitted {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                Self::record_submission_error(state, instance_id, param_index, error.to_string());
+                return Err(error);
+            }
+        };
+        let update = &mut state.app.plugin_state.update_state;
+        update.last_parameter_receipt = Some(crate::app::state::plugin::DevParameterReceipt {
+            request_id: update.parameter_request_id,
+            transport_epoch: state.player.qa_transport_epoch(),
+            instance_id,
+            engine_generation: update.engine_generation,
+            accepted_generation: None,
+            engine_index: usize::MAX,
+            param_index,
+            key: format!("structural.param.{param_index}@{sample_rate}Hz"),
+            requested_value: requested_graph,
+            outcome: crate::app::state::plugin::DevParameterOutcome::Structural(receipt),
+        });
+        Ok(())
+    }
+
+    #[cfg(feature = "dev-api")]
+    fn record_direct_structural_receipt(
+        state: &mut AppState,
+        sample_rate: f64,
+        receipt: &crate::app::player_handle::PlayerCommandReceipt,
+    ) {
+        let update = &state.app.plugin_state.update_state;
+        if update.parameter_request_id == 0 || update.last_parameter_receipt.is_some() {
+            return;
+        }
+        let requested_graph = serde_json::to_string(&state.app.plugin_state.graph)
+            .unwrap_or_else(|_| "<graph serialization failed>".to_owned());
+        let update = &mut state.app.plugin_state.update_state;
+        let (instance_id, param_index) = update.last_edit_target.unwrap_or((0, usize::MAX));
+        update.last_parameter_receipt = Some(crate::app::state::plugin::DevParameterReceipt {
+            request_id: update.parameter_request_id,
+            transport_epoch: state.player.qa_transport_epoch(),
+            instance_id,
+            engine_generation: update.engine_generation,
+            accepted_generation: None,
+            engine_index: usize::MAX,
+            param_index,
+            key: format!("structural.graph@{sample_rate}Hz"),
+            requested_value: requested_graph,
+            outcome: crate::app::state::plugin::DevParameterOutcome::Structural(receipt.clone()),
+        });
+    }
+
     fn poll_plugin_update_acknowledgement(state: &mut AppState) -> bool {
         let result = state
             .app
@@ -37,19 +294,51 @@ impl PlayerView {
         if let Some(result) = result
             && let Some(pending) = state.app.plugin_state.update_state.pending_ack.take()
         {
+            let no_engine = result
+                .as_ref()
+                .is_err_and(|failure| failure.error == "No engine running");
+            let deferred = cfg!(feature = "dev-api") && no_engine;
+            let acknowledged = result.is_ok() || deferred;
+            // Offline QA deferral has no stale live topology. A later source load
+            // can create the engine without passing through this rebuild ACK.
+            let rejected_action = state
+                .app
+                .plugin_state
+                .update_state
+                .settle_action_topology(result.is_ok(), no_engine);
             if let Some(graph) = &pending.submitted_processing_graph {
                 state.app.acknowledge_correction_application(
                     pending.correction_revisions,
                     graph,
-                    result.is_ok(),
+                    acknowledged,
                 );
-                if result.is_ok() {
+                if acknowledged {
                     state
                         .app
                         .plugin_state
                         .update_state
                         .acknowledged_processing_graph = Some(graph.clone());
                 }
+            }
+            if rejected_action.is_some() {
+                state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
+                    "Profile action was not sent because the plugin graph could not be applied."
+                        .to_string(),
+                ));
+                #[cfg(feature = "dev-api")]
+                if let Some(action) = &rejected_action {
+                    Self::record_action_rejection(
+                        state,
+                        action,
+                        "plugin graph unavailable before profile action",
+                    );
+                }
+            }
+            if let Some(submitted) = &pending.submitted_graph {
+                state
+                    .app
+                    .plugin_state
+                    .settle_resource_edits(submitted, acknowledged);
             }
             let current_graph = serde_json::to_value(&state.app.plugin_state.graph).ok();
             if pending.submitted_graph.is_some() && pending.submitted_graph != current_graph {
@@ -59,10 +348,24 @@ impl PlayerView {
                     Some(PluginUpdateType::Structural);
                 return true;
             }
-            let succeeded = result.is_ok() && pending.submitted_graph.is_some();
+            let succeeded = acknowledged && pending.submitted_graph.is_some();
+            if result.is_ok() && succeeded {
+                let update = &mut state.app.plugin_state.update_state;
+                update.engine_generation = update.engine_generation.wrapping_add(1);
+                #[cfg(feature = "dev-api")]
+                if let Some(last) = &mut update.last_parameter_receipt
+                    && let crate::app::state::plugin::DevParameterOutcome::Structural(receipt) =
+                        &last.outcome
+                    && receipt.is_same_command(&pending.receipt)
+                {
+                    last.accepted_generation = Some(update.engine_generation);
+                }
+            }
             if pending.routing {
                 state.app.plugin_state.finish_routing_apply(succeeded);
-                if let Err(failure) = &result {
+                if let Err(failure) = &result
+                    && !deferred
+                {
                     state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
                         format!("Plugin update failed: {}", failure.error),
                     ));
@@ -116,6 +419,14 @@ impl PlayerView {
     /// Apply a pending plugin update to the audio engine.
     /// Called from the timer callback when there's a pending update.
     fn apply_plugin_update(state: &mut AppState, update_type: PluginUpdateType) {
+        // Snapshot requests are issued earlier in the tick. Fence their
+        // pre-command data before a player command can be accepted.
+        state.app.plugin_state.update_state.profile_observation_revision = state
+            .app
+            .plugin_state
+            .update_state
+            .profile_observation_revision
+            .wrapping_add(1);
         if !matches!(update_type, PluginUpdateType::Structural) {
             // Parameter-only submissions are not acknowledged by this path.
             state
@@ -126,10 +437,63 @@ impl PlayerView {
         }
         let plugin_state_snapshot = match update_type {
             PluginUpdateType::Structural => Some(state.app.plugin_state.clone()),
-            PluginUpdateType::Parameter { .. } | PluginUpdateType::ParameterByNodeId { .. } => None,
+            PluginUpdateType::Parameter { .. }
+            | PluginUpdateType::ParameterByNodeId { .. }
+            | PluginUpdateType::Action { .. } => None,
         };
 
         let result = match update_type {
+            PluginUpdateType::Action {
+                plugin_index: _,
+                node_id,
+                param_index,
+                key,
+                value,
+                request_id,
+            } => {
+                let target = if let Some(node_id) = node_id {
+                    state.app.plugin_state.graph.nodes.get(&node_id).and_then(|node| {
+                        state.app.plugin_state.graph.get_engine_index(node_id)
+                            .map(|engine_index| (node.plugin.id, engine_index))
+                    })
+                } else {
+                    None
+                };
+                if let Some((instance_id, engine_index)) = target {
+                    #[cfg(feature = "dev-api")]
+                    let result = Self::submit_action_update(
+                        state, instance_id, engine_index, param_index,
+                        key.to_string(), value.to_string(),
+                    );
+                    #[cfg(not(feature = "dev-api"))]
+                    let result = state.player.set_plugin_action(
+                        engine_index, key.to_string(), value.to_string(),
+                    );
+                    #[cfg(feature = "dev-api")]
+                    if let Some(receipt) = &mut state.app.plugin_state.update_state.last_parameter_receipt {
+                        receipt.request_id = request_id;
+                    }
+                    #[cfg(not(feature = "dev-api"))]
+                    let _ = request_id;
+                    result
+                } else {
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
+                        "This profile action needs an active plugin. Start playback or apply the routing graph first."
+                            .to_string(),
+                    ));
+                    #[cfg(feature = "dev-api")]
+                    Self::record_submission_error(
+                        state, 0, param_index, "Action target absent from engine".to_string(),
+                    );
+                    #[cfg(feature = "dev-api")]
+                    if let Some(receipt) = &mut state.app.plugin_state.update_state.last_parameter_receipt {
+                        receipt.request_id = request_id;
+                        receipt.key = key.to_string();
+                        receipt.requested_value = value.to_string();
+                    }
+                    Ok(())
+                }
+            }
             PluginUpdateType::Parameter {
                 plugin_index,
                 param_index,
@@ -147,31 +511,71 @@ impl PlayerView {
                         if let Some((param_id, value)) =
                             param_index_to_engine_param(&plugin.settings, param_index)
                         {
-                            state
-                                .player
-                                .set_plugin_parameter(engine_index, param_id, value)
+                            Self::submit_parameter_update(
+                                state,
+                                plugin.id,
+                                engine_index,
+                                param_index,
+                                param_id,
+                                value,
+                            )
                         } else {
                             // Parameter not supported for individual update, fall back to structural
-                            let device_name = state
-                                .app
-                                .audio_device_state
-                                .current_output_device_name
-                                .as_deref();
-                            let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
-                            let sample_rate =
-                                crate::app::state::audio_device::output_sample_rate_for_track(
-                                    track_sample_rate,
-                                    device_name,
-                                );
-                            let plugins =
-                                state.app.plugin_state.graph.to_plugin_configs(sample_rate);
-                            state.player.update_plugins(plugins)
+                            #[cfg(feature = "dev-api")]
+                            {
+                                Self::submit_structural_parameter_update(
+                                    state,
+                                    plugin.id,
+                                    param_index,
+                                )
+                            }
+                            #[cfg(not(feature = "dev-api"))]
+                            {
+                                let device_name = state
+                                    .app
+                                    .audio_device_state
+                                    .current_output_device_name
+                                    .as_deref();
+                                let track_sample_rate =
+                                    state.app.playback.sample_rate.unwrap_or(48000);
+                                let sample_rate =
+                                    crate::app::state::audio_device::output_sample_rate_for_track(
+                                        track_sample_rate,
+                                        device_name,
+                                    );
+                                if state.app.plugin_state.is_rack_available() {
+                                    let plugins =
+                                        state.app.plugin_state.graph.to_plugin_configs(sample_rate);
+                                    state.player.update_plugins(plugins)
+                                } else {
+                                    let graph = state
+                                        .app
+                                        .plugin_state
+                                        .graph
+                                        .to_plugin_graph_config(sample_rate);
+                                    state.player.update_plugin_graph(graph)
+                                }
+                            }
                         }
                     } else {
                         // Plugin is disabled or not found in engine map - ignore or full update
+                        #[cfg(feature = "dev-api")]
+                        Self::record_deferred_parameter_update(
+                            state,
+                            plugin.id,
+                            param_index,
+                            "Plugin disabled or absent from engine",
+                        );
                         Ok(())
                     }
                 } else {
+                    #[cfg(feature = "dev-api")]
+                    Self::record_deferred_parameter_update(
+                        state,
+                        0,
+                        param_index,
+                        "Plugin not found",
+                    );
                     Ok(()) // Plugin not found, ignore
                 }
             }
@@ -187,30 +591,65 @@ impl PlayerView {
                         if let Some((param_id, value)) =
                             param_index_to_engine_param(&node.plugin.settings, param_index)
                         {
-                            state
-                                .player
-                                .set_plugin_parameter(engine_index, param_id, value)
+                            Self::submit_parameter_update(
+                                state,
+                                node.plugin.id,
+                                engine_index,
+                                param_index,
+                                param_id,
+                                value,
+                            )
                         } else {
                             // Fall back to structural rebuild
-                            let device_name = state
-                                .app
-                                .audio_device_state
-                                .current_output_device_name
-                                .as_deref();
-                            let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
-                            let sample_rate =
-                                crate::app::state::audio_device::output_sample_rate_for_track(
-                                    track_sample_rate,
-                                    device_name,
-                                );
-                            let plugins =
-                                state.app.plugin_state.graph.to_plugin_configs(sample_rate);
-                            state.player.update_plugins(plugins)
+                            #[cfg(feature = "dev-api")]
+                            {
+                                Self::submit_structural_parameter_update(
+                                    state,
+                                    node.plugin.id,
+                                    param_index,
+                                )
+                            }
+                            #[cfg(not(feature = "dev-api"))]
+                            {
+                                let device_name = state
+                                    .app
+                                    .audio_device_state
+                                    .current_output_device_name
+                                    .as_deref();
+                                let track_sample_rate =
+                                    state.app.playback.sample_rate.unwrap_or(48000);
+                                let sample_rate =
+                                    crate::app::state::audio_device::output_sample_rate_for_track(
+                                        track_sample_rate,
+                                        device_name,
+                                    );
+                                if state.app.plugin_state.is_rack_available() {
+                                    let plugins =
+                                        state.app.plugin_state.graph.to_plugin_configs(sample_rate);
+                                    state.player.update_plugins(plugins)
+                                } else {
+                                    let graph = state
+                                        .app
+                                        .plugin_state
+                                        .graph
+                                        .to_plugin_graph_config(sample_rate);
+                                    state.player.update_plugin_graph(graph)
+                                }
+                            }
                         }
                     } else {
+                        #[cfg(feature = "dev-api")]
+                        Self::record_deferred_parameter_update(
+                            state,
+                            node.plugin.id,
+                            param_index,
+                            "Node disabled or absent from engine",
+                        );
                         Ok(()) // Node disabled or not in engine
                     }
                 } else {
+                    #[cfg(feature = "dev-api")]
+                    Self::record_deferred_parameter_update(state, 0, param_index, "Node not found");
                     Ok(()) // Node not found
                 }
             }
@@ -244,36 +683,39 @@ impl PlayerView {
                         state.app.plugin_state.graph.output_channels(),
                         sample_rate
                     );
-                    state
-                        .player
-                        .update_plugins_with_receipt(plugins)
-                        .map(|receipt| {
-                            state.app.plugin_state.update_state.pending_ack =
-                                Some(crate::app::state::plugin::PluginUpdateAcknowledgement {
-                                    receipt,
-                                    correction_revisions: state.app.pending_correction_revisions(),
-                                    submitted_processing_graph: state
-                                        .app
-                                        .correction_processing_snapshot(),
-                                    submitted_graph: serde_json::to_value(
-                                        &state.app.plugin_state.graph,
-                                    )
-                                    .ok(),
-                                    routing: state
-                                        .app
-                                        .plugin_state
-                                        .graph_state
-                                        .applying_original
-                                        .is_some(),
-                                    audition: state
-                                        .app
-                                        .measurement_state
-                                        .headphone_eq_state
-                                        .audition
-                                        .as_ref()
-                                        .is_some_and(|audition| audition.is_pending()),
-                                });
-                        })
+                    #[cfg(feature = "dev-api")]
+                    let submitted = state.player.update_plugins_qa_receipt(plugins);
+                    #[cfg(not(feature = "dev-api"))]
+                    let submitted = state.player.update_plugins_with_receipt(plugins);
+                    submitted.map(|receipt| {
+                        #[cfg(feature = "dev-api")]
+                        Self::record_direct_structural_receipt(state, sample_rate, &receipt);
+                        state.app.plugin_state.update_state.pending_ack =
+                            Some(crate::app::state::plugin::PluginUpdateAcknowledgement {
+                                receipt,
+                                correction_revisions: state.app.pending_correction_revisions(),
+                                submitted_processing_graph: state
+                                    .app
+                                    .correction_processing_snapshot(),
+                                submitted_graph: serde_json::to_value(
+                                    &state.app.plugin_state.graph,
+                                )
+                                .ok(),
+                                routing: state
+                                    .app
+                                    .plugin_state
+                                    .graph_state
+                                    .applying_original
+                                    .is_some(),
+                                audition: state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .audition
+                                    .as_ref()
+                                    .is_some_and(|audition| audition.is_pending()),
+                            });
+                    })
                 } else {
                     let graph_config = state
                         .app
@@ -286,41 +728,61 @@ impl PlayerView {
                         graph_config.edges.len(),
                         sample_rate
                     );
-                    state
-                        .player
-                        .update_plugin_graph_with_receipt(graph_config)
-                        .map(|receipt| {
-                            state.app.plugin_state.update_state.pending_ack =
-                                Some(crate::app::state::plugin::PluginUpdateAcknowledgement {
-                                    receipt,
-                                    correction_revisions: state.app.pending_correction_revisions(),
-                                    submitted_processing_graph: state
-                                        .app
-                                        .correction_processing_snapshot(),
-                                    submitted_graph: serde_json::to_value(
-                                        &state.app.plugin_state.graph,
-                                    )
-                                    .ok(),
-                                    routing: state
-                                        .app
-                                        .plugin_state
-                                        .graph_state
-                                        .applying_original
-                                        .is_some(),
-                                    audition: state
-                                        .app
-                                        .measurement_state
-                                        .headphone_eq_state
-                                        .audition
-                                        .as_ref()
-                                        .is_some_and(|audition| audition.is_pending()),
-                                });
-                        })
+                    #[cfg(feature = "dev-api")]
+                    let submitted = state.player.update_plugin_graph_qa_receipt(graph_config);
+                    #[cfg(not(feature = "dev-api"))]
+                    let submitted = state.player.update_plugin_graph_with_receipt(graph_config);
+                    submitted.map(|receipt| {
+                        #[cfg(feature = "dev-api")]
+                        Self::record_direct_structural_receipt(state, sample_rate, &receipt);
+                        state.app.plugin_state.update_state.pending_ack =
+                            Some(crate::app::state::plugin::PluginUpdateAcknowledgement {
+                                receipt,
+                                correction_revisions: state.app.pending_correction_revisions(),
+                                submitted_processing_graph: state
+                                    .app
+                                    .correction_processing_snapshot(),
+                                submitted_graph: serde_json::to_value(
+                                    &state.app.plugin_state.graph,
+                                )
+                                .ok(),
+                                routing: state
+                                    .app
+                                    .plugin_state
+                                    .graph_state
+                                    .applying_original
+                                    .is_some(),
+                                audition: state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .audition
+                                    .as_ref()
+                                    .is_some_and(|audition| audition.is_pending()),
+                            });
+                    })
                 }
             }
         };
 
         if let Err(e) = result {
+            #[cfg(feature = "dev-api")]
+            if state
+                .app
+                .plugin_state
+                .update_state
+                .last_parameter_receipt
+                .is_none()
+                && state.app.plugin_state.update_state.parameter_request_id > 0
+            {
+                let (instance_id, param_index) = state
+                    .app
+                    .plugin_state
+                    .update_state
+                    .last_edit_target
+                    .unwrap_or((0, usize::MAX));
+                Self::record_submission_error(state, instance_id, param_index, e.to_string());
+            }
             if let Some(graph) = state.app.correction_processing_snapshot() {
                 state.app.acknowledge_correction_application(
                     state.app.pending_correction_revisions(),
@@ -340,6 +802,12 @@ impl PlayerView {
                 )));
             }
             state.app.plugin_state.finish_routing_apply(false);
+            if let Ok(submitted) = serde_json::to_value(&state.app.plugin_state.graph) {
+                state
+                    .app
+                    .plugin_state
+                    .settle_resource_edits(&submitted, false);
+            }
             Self::acknowledge_headphone_audition(state, false);
         }
     }

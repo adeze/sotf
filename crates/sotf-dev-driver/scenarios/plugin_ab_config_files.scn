@@ -7,6 +7,8 @@ plugin_add ABCompare
 action PluginSelectFirstUser
 wait_idle
 assert plugins.plugin.2.type == "A/B Compare"
+click plugin.layout.tab.2.1
+wait_idle
 
 scroll_into_view rack.params plugin.file_picker.2.path_a_config
 assert_in_viewport plugin.file_picker.2.path_a_config
@@ -33,13 +35,18 @@ assert_text ab.path.1.file == "ab-path-b.json"
 screenshot ab-files-loaded
 
 plugin_chain_save $SOTF_QA_DIR/ABCompare-files.json
+plugin_chain_save $SOTF_QA_DIR/files-before-reload.json
 plugin_remove 2
 assert plugins.user_count == 0
 plugin_chain_load $SOTF_QA_DIR/ABCompare-files.json
 action PluginSelectFirstUser
+wait_idle
+click plugin.layout.tab.2.1
 wait_idle
 assert_visible ab.path.0.plugin.0.gain
 assert_visible ab.path.1.plugin.0.delay
 assert_text ab.path.0.file == "ab-path-a.json"
 assert_text ab.path.1.file == "ab-path-b.json"
 screenshot ab-files-restored
+
+plugin_chain_save $SOTF_QA_DIR/files-reloaded.json

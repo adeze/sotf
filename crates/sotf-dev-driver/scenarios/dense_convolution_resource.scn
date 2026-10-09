@@ -1,0 +1,19 @@
+# Valid existing WAV fixture; no native dialog or audio qualification claim.
+resize 1440 1100
+click sidebar.nav-studio-rack
+plugin_chain_load crates/app-gpui/tests/fixtures/convolution-ir-chain.json
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/convolution-resource-before.json
+assert_within plugin.file_picker.2.ir_file rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+assert_text convolution.status.2 == "Impulse response selected · Partitioned FFT"
+screenshot convolution-resource-wide
+resize 1000 700
+wait_idle 500ms
+assert_within plugin.file_picker.2.ir_file rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.2.exact rack.params
+screenshot convolution-resource-narrow
+plugin_chain_save $SOTF_QA_DIR/convolution-resource-after.json

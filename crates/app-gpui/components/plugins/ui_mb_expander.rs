@@ -1,17 +1,7 @@
-//! Multiband Expander Plugin UI Component
-//!
-//! Layout (3-column):
-//! +------------------+--------------------------------------------+------------------+
-//! | GLOBAL           | BAND VIEW                                  | OUTPUT           |
-//! |                  |                                            |                  |
-//! | [Bands]    knob  | [Global] [1] [2] [3] ... tabs              | [Mix]      knob  |
-//! | [XOver 1]  knob  | Per band:                                  | [Link Ch]  tog   |
-//! | [XOver 2]  knob  | [Thresh] [Ratio] [Knee]                    |                  |
-//! | [XOver 3]  knob  | [Attack] [Release] [Hold] [Range] [Hyst]   |                  |
-//! | [XOver 4]  knob  | [Solo] [Bypass]                            |                  |
-//! +------------------+--------------------------------------------+------------------+
+//! Dense multiband expander editor with inherited band controls.
 
-mod misc;
+// Rust guideline compliant 2026-02-21
 mod types;
 
-pub use types::*;
+#[doc(inline)]
+pub use types::{MbExpanderRenderState, render_mb_expander_plugin};

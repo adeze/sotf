@@ -151,6 +151,7 @@ rqrr = { workspace = true }        # QR image decoding for remote server setup
 signal-hook = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+sotf-plugins = { workspace = true, features = ["external-plugin-au"] }
 gpui_macos = { workspace = true }
 driver-hal = { workspace = true, optional = true }
 core-foundation = { workspace = true }
@@ -202,6 +203,10 @@ syn = { workspace = true, features = ["visit"] }
 [[test]]
 name = "e2e"
 path = "tests/e2e/mod.rs"
+
+[[test]]
+name = "matrix_channel_states_test"
+path = "tests/matrix_channel_states_test.rs"
 
 [[test]]
 name = "negative"

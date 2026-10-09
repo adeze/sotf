@@ -1,5 +1,4 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
-use super::super::common::ParamSectionStyle;
 use super::consts::CELL_SIZE;
 use super::consts::DB_STEP;
 use super::consts::LABEL_WIDTH;
@@ -20,12 +19,10 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize, Select, SelectOption,
+    SelectSize, Slider, SliderSize, Text,
 };
 use sotf_audio_player::PluginUpdateEffect;
-use sotf_audio_player::{
-    apply_matrix_preset, available_matrix_presets, db_to_linear, detect_matrix_preset,
-    get_channel_label_from_config,
-};
+use sotf_audio_player::{db_to_linear, get_channel_label_from_config};
 
 #[derive(Clone, Copy)]
 struct MatrixGeometry {
@@ -65,59 +62,51 @@ pub fn render_matrix_plugin(
     mut state: MatrixRenderState,
     theme: &Theme,
     route_labels: [&'static str; 2],
+    scroll_handle: &ScrollHandle,
 ) -> impl IntoElement {
-    let preset_name =
-        detect_matrix_preset(state.input_channels, state.output_channels, state.matrix);
     let geometry = matrix_geometry(&state);
     // Keep a route editable even before the user can reach the grid.
     if state.selected_cell.is_none() && state.input_channels > 0 && state.output_channels > 0 {
         state.selected_cell = Some((0, 0));
     }
 
+    let grid = div()
+        .id("matrix-grid-scroll")
+        .w_full()
+        .min_w_0()
+        .overflow_x_scroll()
+        .map(|mut content| {
+            // Vertical wheel navigation belongs to the enclosing plugin editor.
+            content.style().restrict_scroll_to_axis = Some(true);
+            content
+        })
+        .track_scroll(scroll_handle)
+        .child(render_matrix_grid(
+            d,
+            entity.clone(),
+            plugin_idx,
+            &state,
+            geometry,
+            theme,
+        ));
+    #[cfg(feature = "dev-api")]
+    let grid = {
+        use crate::app::dev_api::DevTrackExt;
+        grid.dev_track("matrix.grid")
+    };
     div()
         .w_full()
         .min_w_0()
         .flex()
         .flex_col()
-        .gap(d.section)
-        // Preset buttons
-        .child(render_preset_buttons(
-            entity.clone(),
-            state.plugin_instance_id,
-            state.input_channels,
-            state.output_channels,
-            preset_name,
-            theme,
-        ))
-        .child(render_route_selectors(
-            d,
-            entity.clone(),
-            &state,
-            theme,
-            route_labels,
-        ))
-        .children(render_selected_cell_editor(
-            d,
-            entity.clone(),
-            &state,
-            theme,
-        ))
-        // Matrix grid
+        .gap(d.grid)
         .child(
-            div()
-                .id("matrix-grid-scroll")
-                .w_full()
-                .min_w_0()
-                .overflow_x_scroll()
-                .child(render_matrix_grid(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    &state,
-                    geometry,
-                    theme,
-                )),
+            div().flex().flex_wrap().items_center().gap(d.grid)
+                .child(render_route_selectors(d, entity.clone(), &state, theme, route_labels))
+                .children(render_selected_cell_editor(d, entity.clone(), &state, theme)),
         )
+        .child(grid)
+        .child(Text::caption("Off silences the route; On starts at 0 dB. Alt+wheel adjusts gain; double-click a cell to clear it."))
 }
 
 fn render_route_selectors(
@@ -143,12 +132,13 @@ fn render_route_selectors(
             // Select's retained blur subscription must not own the window state.
             let toggle = entity.downgrade();
             let change = entity.clone();
-            Select::new(if is_output {
+            let highlight_entity = entity.downgrade();
+            let selector = Select::new(if is_output {
                 "matrix-route-output"
             } else {
                 "matrix-route-input"
             })
-            .label(route_labels[usize::from(is_output)])
+            .size(SelectSize::Xs)
             .options(
                 (0..count)
                     .map(|index| {
@@ -166,11 +156,26 @@ fn render_route_selectors(
             .selected(selected.to_string())
             .disabled(count == 0)
             .is_open(state.route_menu == Some(is_output))
+            .highlighted_index(state.route_highlight)
             .theme(theme.to_select_theme())
             .on_toggle(move |open, _, cx| {
                 let _ = toggle.update(cx, |state, cx| {
-                    state.app.plugin_state.plugin_ui_state.matrix_route_menu =
-                        open.then_some((instance_id, is_output));
+                    let ui = &mut state.app.plugin_state.plugin_ui_state;
+                    ui.matrix_route_menu = open.then_some((instance_id, is_output));
+                    ui.matrix_choice_highlight = open.then_some(selected);
+                    if open {
+                        ui.matrix_preset_menu = None;
+                    }
+                    cx.notify();
+                });
+            })
+            .on_highlight(move |index, _, cx| {
+                let _ = highlight_entity.update(cx, |state, cx| {
+                    state
+                        .app
+                        .plugin_state
+                        .plugin_ui_state
+                        .matrix_choice_highlight = index;
                     cx.notify();
                 });
             })
@@ -192,7 +197,23 @@ fn render_route_selectors(
                     state.app.plugin_state.plugin_ui_state.matrix_route_menu = None;
                     cx.notify();
                 });
-            })
+            });
+            #[cfg(feature = "dev-api")]
+            let selector = {
+                use crate::app::dev_api::DevTrackExt;
+                selector.dev_track(if is_output {
+                    "matrix.route.output"
+                } else {
+                    "matrix.route.input"
+                })
+            };
+            div()
+                .key_context("PluginLayoutChoiceSelect")
+                .flex()
+                .items_center()
+                .gap(d.gap)
+                .child(Text::label(route_labels[usize::from(is_output)]))
+                .child(selector)
         }))
 }
 
@@ -218,6 +239,7 @@ fn render_selected_cell_editor(
         20.0 * gain.abs().log10()
     };
     let polarity = if gain < 0.0 { -1.0 } else { 1.0 };
+    let route_on = gain != 0.0;
     let input_label = get_channel_label_from_config(
         input_idx,
         state.input_channels,
@@ -228,123 +250,209 @@ fn render_selected_cell_editor(
         state.output_channels,
         state.speaker_config.as_deref(),
     );
-
+    let label = format!("{output_label} ← {input_label} gain");
+    let slider = Slider::new(("matrix-route-gain", plugin_instance_id))
+        .value(current_db)
+        .range(MIN_DB, MAX_DB)
+        .step(0.1)
+        .width(142.0)
+        .size(SliderSize::Sm)
+        .theme(theme.to_slider_theme())
+        .disabled(!route_on)
+        .aria_label(label.clone())
+        .on_change({
+            let entity = entity.clone();
+            move |value, _, cx| {
+                set_selected_gain(
+                    &entity,
+                    plugin_instance_id,
+                    input_idx,
+                    output_idx,
+                    polarity * db_to_linear(value),
+                    cx,
+                )
+            }
+        })
+        .on_reset({
+            let entity = entity.clone();
+            move |_, cx| {
+                set_selected_gain(
+                    &entity,
+                    plugin_instance_id,
+                    input_idx,
+                    output_idx,
+                    polarity,
+                    cx,
+                )
+            }
+        });
+    let exact = NumberInput::new("matrix-selected-gain")
+        .value(current_db as f64)
+        .min(MIN_DB as f64)
+        .max(MAX_DB as f64)
+        .step(0.1)
+        .decimals(1)
+        .unit("dB")
+        .size(NumberInputSize::Xs)
+        .width(96.0)
+        .theme(theme.to_number_input_theme())
+        .disabled(!route_on)
+        .aria_label(label)
+        .on_change({
+            let entity = entity.clone();
+            move |value, _, cx| {
+                set_selected_gain(
+                    &entity,
+                    plugin_instance_id,
+                    input_idx,
+                    output_idx,
+                    polarity * db_to_linear(value as f32),
+                    cx,
+                )
+            }
+        });
+    let route = ButtonSet::new(("matrix-route-enabled", plugin_instance_id))
+        .options(vec![
+            ButtonSetOption::new("off", "Off"),
+            ButtonSetOption::new("on", "On"),
+        ])
+        .selected(if route_on { "on" } else { "off" })
+        .size(ButtonSetSize::Xs)
+        .theme(theme.to_button_set_theme())
+        .on_change({
+            let entity = entity.clone();
+            move |value, _, cx| {
+                set_selected_gain(
+                    &entity,
+                    plugin_instance_id,
+                    input_idx,
+                    output_idx,
+                    if value.as_ref() == "on" {
+                        if route_on { gain } else { 1.0 }
+                    } else {
+                        0.0
+                    },
+                    cx,
+                )
+            }
+        });
+    let phase = ButtonSet::new(("matrix-route-polarity", plugin_instance_id))
+        .options(vec![
+            ButtonSetOption::new("positive", "+"),
+            ButtonSetOption::new("negative", "−"),
+        ])
+        .selected(if polarity < 0.0 {
+            "negative"
+        } else {
+            "positive"
+        })
+        .disabled(!route_on)
+        .size(ButtonSetSize::Xs)
+        .theme(theme.to_button_set_theme())
+        .on_change(move |value, _, cx| {
+            set_selected_gain(
+                &entity,
+                plugin_instance_id,
+                input_idx,
+                output_idx,
+                if value.as_ref() == "negative" {
+                    -gain.abs()
+                } else {
+                    gain.abs()
+                },
+                cx,
+            )
+        });
+    #[cfg(feature = "dev-api")]
+    let (slider, exact, route, phase) = {
+        use crate::app::dev_api::DevTrackExt;
+        (
+            slider.dev_track("matrix.gain.slider"),
+            exact.dev_track("matrix.gain.exact"),
+            route
+                .option_wrapper(|option, button| {
+                    button
+                        .dev_track(format!("matrix.route.enabled.{}", ["off", "on"][option]))
+                        .into_any_element()
+                })
+                .dev_track("matrix.route.enabled"),
+            phase
+                .option_wrapper(|option, button| {
+                    button
+                        .dev_track(format!(
+                            "matrix.route.polarity.{}",
+                            ["positive", "negative"][option]
+                        ))
+                        .into_any_element()
+                })
+                .dev_track("matrix.route.polarity"),
+        )
+    };
     Some(
         div()
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(d.gap)
-            .child(
-                div()
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.text_secondary)
-                    .child(format!("{output_label} ← {input_label}")),
-            )
-            .child(
-                NumberInput::new("matrix-selected-gain")
-                    .value(current_db as f64)
-                    .min(MIN_DB as f64)
-                    .max(MAX_DB as f64)
-                    .step(0.1)
-                    .decimals(1)
-                    .unit("dB")
-                    .size(NumberInputSize::Xs)
-                    .width(96.0)
-                    .aria_label(format!("{output_label} ← {input_label}"))
-                    .on_change(move |value, _window, cx| {
-                        entity.update(cx, |state, _| {
-                            if state
-                                .app
-                                .plugin_state
-                                .matrix_selected_cell
-                                .is_some_and(|selected| {
-                                    selected.0 == plugin_instance_id
-                                        && selected != (plugin_instance_id, input_idx, output_idx)
-                                })
-                            {
-                                return;
-                            }
-                            if let Some(settings) = state
-                                .app
-                                .plugin_state
-                                .editor_settings_mut_by_instance_id(plugin_instance_id)
-                                && let sotf_audio_player::PluginSettings::Matrix {
-                                    input_channels,
-                                    output_channels,
-                                    matrix,
-                                    ..
-                                } = settings
-                                && let Some(index) = checked_matrix_cell_index(
-                                    input_idx,
-                                    output_idx,
-                                    *input_channels,
-                                    *output_channels,
-                                    matrix.len(),
-                                )
-                            {
-                                matrix[index] = polarity * db_to_linear(value as f32);
-                                state
-                                    .app
-                                    .plugin_state
-                                    .record_editor_effect(PluginUpdateEffect::Structural);
-                            }
-                        });
-                    }),
-            )
+            .gap(d.grid)
+            .child(Text::label("Route"))
+            .child(route)
+            .child(Text::label("Polarity"))
+            .child(phase)
+            .child(Text::label("Gain"))
+            .child(slider)
+            .child(exact)
             .into_any_element(),
     )
 }
 
-/// Render preset buttons using ButtonSet
-fn render_preset_buttons(
-    entity: Entity<AppState>,
-    plugin_instance_id: usize,
-    input_channels: usize,
-    output_channels: usize,
-    current_preset: &str,
-    theme: &Theme,
-) -> impl IntoElement {
-    let presets = available_matrix_presets(input_channels, output_channels);
-    let ms_disabled = input_channels > 2;
-    let current = current_preset.to_string();
-
-    let options: Vec<ButtonSetOption> = presets
-        .into_iter()
-        .map(|preset| {
-            let is_ms = preset == "M/S Encode" || preset == "M/S Decode";
-            ButtonSetOption::new(preset, preset).disabled(is_ms && ms_disabled)
-        })
-        .collect();
-
-    ButtonSet::new("matrix-preset")
-        .options(options)
-        .selected(current)
-        .size(ButtonSetSize::Sm)
-        .theme(theme.to_button_set_theme())
-        .on_change(move |value, _window, cx| {
-            let preset_name = value.to_string();
-            entity.update(cx, |state, _| {
-                if let Some(settings) = state
-                    .app
-                    .plugin_state
-                    .editor_settings_mut_by_instance_id(plugin_instance_id)
-                    && let sotf_audio_player::PluginSettings::Matrix {
-                        input_channels: in_ch,
-                        output_channels: out_ch,
-                        matrix,
-                        ..
-                    } = settings
-                {
-                    apply_matrix_preset(*in_ch, *out_ch, matrix, &preset_name);
-                    state
-                        .app
-                        .plugin_state
-                        .record_editor_effect(PluginUpdateEffect::Structural);
-                }
-            });
-        })
+/// Apply an edit only to the same selected route and live matrix dimensions.
+fn set_selected_gain(
+    entity: &Entity<AppState>,
+    instance_id: usize,
+    input: usize,
+    output: usize,
+    gain: f32,
+    cx: &mut App,
+) {
+    if !gain.is_finite() {
+        return;
+    }
+    entity.update(cx, |state, cx| {
+        if state
+            .app
+            .plugin_state
+            .matrix_selected_cell
+            .is_some_and(|selected| {
+                selected.0 == instance_id && selected != (instance_id, input, output)
+            })
+        {
+            return;
+        }
+        if let Some(sotf_audio_player::PluginSettings::Matrix {
+            input_channels,
+            output_channels,
+            matrix,
+            ..
+        }) = state
+            .app
+            .plugin_state
+            .editor_settings_mut_by_instance_id(instance_id)
+            && let Some(index) = checked_matrix_cell_index(
+                input,
+                output,
+                *input_channels,
+                *output_channels,
+                matrix.len(),
+            )
+        {
+            matrix[index] = gain;
+            state
+                .app
+                .plugin_state
+                .record_editor_effect(PluginUpdateEffect::Structural);
+            cx.notify();
+        }
+    });
 }
 
 /// Render the matrix grid with input columns and output rows, plus M/S/D sidebar
@@ -359,10 +467,17 @@ fn render_matrix_grid(
     let output_groups =
         compute_output_groups(state.output_channels, state.speaker_config.as_deref());
 
+    // Include each cell's retained two-pixel horizontal margin so the scrollport
+    // measures the full route grid instead of only its shrinkable flex wrapper.
+    let content_width = geometry.label_width
+        + state.input_channels as f32 * (geometry.cell_size + 2.0)
+        + geometry.msd_col_width
+        + 16.0 * state.layout_scale;
     div()
+        .min_w(px(content_width))
+        .flex_shrink_0()
         .flex()
         .gap(d.gap)
-        .param_section_style_lg(d, theme)
         // Left: the matrix grid
         .child(
             div()
@@ -376,6 +491,7 @@ fn render_matrix_grid(
                             // Empty corner cell
                             div()
                                 .w(px(geometry.label_width))
+                                .flex_shrink_0()
                                 .h(px(geometry.cell_size * 0.5))
                                 .flex()
                                 .items_center()
@@ -392,6 +508,9 @@ fn render_matrix_grid(
                             );
                             div()
                                 .w(px(geometry.cell_size))
+                                .flex_shrink_0()
+                                // Match route-cell spacing without increasing header height.
+                                .mx_px()
                                 .h(px(geometry.cell_size * 0.5))
                                 .flex()
                                 .items_center()
@@ -567,16 +686,11 @@ fn render_msd_button(
     };
     let tooltip = format!("{action_name} output group");
     let tooltip_theme = theme.clone();
+    let group_first_channel = channels.first().copied().unwrap_or(0);
 
-    div()
+    let button = div()
         .id(ElementId::Name(
-            format!(
-                "msd-{}-{}-{:?}",
-                plugin_idx,
-                channels.first().copied().unwrap_or(0),
-                label
-            )
-            .into(),
+            format!("msd-{}-{}-{:?}", plugin_idx, group_first_channel, label).into(),
         ))
         .min_w(rems(1.5))
         .min_h(rems(1.5))
@@ -647,7 +761,18 @@ fn render_msd_button(
                         .record_editor_effect(PluginUpdateEffect::Structural);
                 }
             });
-        })
+        });
+    #[cfg(feature = "dev-api")]
+    let button = {
+        use crate::app::dev_api::{DevElementState, DevTrackExt};
+        button.dev_track_with_state(
+            format!("matrix.output.{plugin_idx}.{group_first_channel}.{label}"),
+            DevElementState::default()
+                .selected(is_active)
+                .text(action_name),
+        )
+    };
+    button
 }
 
 /// Render a single row of the matrix grid
@@ -672,6 +797,7 @@ fn render_matrix_row(
         .child(
             div()
                 .w(px(geometry.label_width))
+                .flex_shrink_0()
                 .h(px(geometry.cell_size))
                 .flex()
                 .items_center()
@@ -755,11 +881,12 @@ fn render_matrix_cell(
     let entity_keyboard = entity.clone();
     let focus_color = theme.border_focused;
 
-    div()
+    let cell = div()
         .id(ElementId::Name(
             format!("matrix-cell-{}-{}-{}", plugin_idx, input_idx, output_idx).into(),
         ))
         .w(px(cell_size))
+        .flex_shrink_0()
         .h(px(cell_size))
         .flex()
         .items_center()
@@ -911,7 +1038,13 @@ fn render_matrix_cell(
                     }
                 }
             });
-        })
+        });
+    #[cfg(feature = "dev-api")]
+    let cell = {
+        use crate::app::dev_api::DevTrackExt;
+        cell.dev_track(format!("matrix.cell.{plugin_idx}.{input_idx}.{output_idx}"))
+    };
+    cell
 }
 
 fn matrix_navigation(

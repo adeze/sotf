@@ -79,7 +79,7 @@ driver-hal = { workspace = true, optional = true }
 rand = { workspace = true }
 criterion = { workspace = true }
 assert_cmd = "2.0"
-predicates = "3.1"
+predicates = { version = "3.1", package = "sotf-predicates", git = "https://github.com/pierreaubert/sotf-3rdparties" }
 sotf-engine = { workspace = true }
 sotf-test = { workspace = true }
 sotf-testkit = { workspace = true }

@@ -1,0 +1,70 @@
+resize 1440 1000
+focus Studio
+plugin_clear
+plugin_chain_load crates/app-gpui/tests/fixtures/loudness-auto-dense-chain.json
+action PluginSelectFirstUser
+wait_idle 500ms
+click meters.group.0.mute
+assert meters.group.0.muted == true
+plugin_chain_save $SOTF_QA_DIR/before.json
+action VolumeMin
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"analysis-muted"}
+wait_until playback.is_playing == true timeout=12s
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+wait_visible plugin.readout.2.14 timeout=12s
+wait_until playback.position_secs > 1 timeout=15s
+wait_text plugin.readout.2.14 == "-80.0 dB" timeout=5s
+assert plugins.plugin.2.param.14.value == -18
+screenshot loudness-volume-zero
+action VolumeUpLarge
+sleep 1s
+wait_text plugin.readout.2.14 == "-20.0 dB" timeout=5s
+assert plugins.plugin.2.param.14.value == -18
+action VolumeUpLarge
+sleep 1s
+wait_text plugin.readout.2.14 == "-14.0 dB" timeout=5s
+screenshot loudness-volume-live
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+sleep 1s
+wait_text plugin.readout.2.14 == "-14.0 dB" timeout=5s
+assert plugins.plugin.2.param.14.value == -18
+assert meters.group.0.muted == true
+plugin_chain_save $SOTF_QA_DIR/reloaded.json
+focus PluginGraph
+wait_idle 500ms
+click routing.node.3
+wait_idle 500ms
+action GraphEditSelectedNode
+wait_visible plugin.readout.2.14 timeout=10s
+sleep 1s
+wait_text plugin.readout.2.14 == "-14.0 dB" timeout=5s
+assert_in_viewport plugin.readout.2.14
+screenshot loudness-volume-graph-inspector
+action VolumeUpLarge
+sleep 1s
+wait_text plugin.readout.2.14 == "-10.5 dB" timeout=5s
+assert routing.dirty == false
+click routing.inspector.close
+click sidebar.nav-studio-rack
+action PluginSelectFirstUser
+sleep 1s
+wait_text plugin.readout.2.14 == "-10.5 dB" timeout=5s
+action VolumeMax
+sleep 1s
+wait_text plugin.readout.2.14 == "0.0 dB" timeout=5s
+action VolumeMin
+sleep 1s
+wait_text plugin.readout.2.14 == "-80.0 dB" timeout=5s
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.readout.2.14
+assert_within plugin.readout.2.14 rack.params
+assert_enabled plugin.readout.2.14 == false
+assert_absent plugin.param.2.14.exact
+screenshot loudness-volume-narrow
+click transport.play
+wait_until playback.is_playing == false timeout=5s

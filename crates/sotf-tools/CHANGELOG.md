@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `generate-audio-tests` STI signals (IEC 60268-16): `stipa`
+  composite test signal (in the default set) and opt-in `full-sti`
+  98-segment signal (`--signals full-sti`, `--duration` per segment,
+  new `--sti-gap` inter-segment silence). Both skip sample rates
+  below 22050 Hz and record bands, modulations, and target RMS in
+  the sidecar; full STI additionally records the segment grid
+  (modulation-major order) and whole-file duration.
+
+### Fixed
+- Corrected `--signals` value names in help and docs to the kebab-case
+  values clap accepts (`pink-noise`, `imd-smpte`, …); the stale
+  `pink_noise` example never parsed.
+
 ## [0.5.8] - 2026-07-08
 
 ### Changed

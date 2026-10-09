@@ -1,0 +1,120 @@
+resize 1000 700
+focus Studio
+plugin_clear
+plugin_add AnalogLimiter
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before.json
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "-3"
+key enter
+assert plugins.plugin.2.param.0.value == -3 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "100"
+key enter
+assert plugins.plugin.2.param.1.value == 100 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.5.exact
+click plugin.param.2.5.exact
+key cmd-a
+type "75"
+key enter
+assert plugins.plugin.2.param.5.value == 0.75 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.8.exact
+click plugin.param.2.8.exact
+key cmd-a
+type "50"
+key enter
+assert plugins.plugin.2.param.8.value == 0.5 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.10.exact
+click plugin.param.2.10.exact
+key cmd-a
+type "-2"
+key enter
+assert plugins.plugin.2.param.10.value == -2 tolerance=0.001
+click plugin.choice.2.3.1
+assert plugins.plugin.2.param.3.value == 1
+click plugin.choice.2.3.0
+assert plugins.plugin.2.param.3.value == 0
+click plugin.choice.2.3.1
+assert plugins.plugin.2.param.3.value == 1
+click plugin.choice.2.4.1
+assert plugins.plugin.2.param.4.value == 1
+click plugin.choice.2.4.0
+assert plugins.plugin.2.param.4.value == 0
+click plugin.choice.2.4.1
+assert plugins.plugin.2.param.4.value == 1
+scroll_into_view rack.params plugin.layout.header.2.TIMING
+click plugin.layout.header.2.TIMING
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "7.5"
+key enter
+assert plugins.plugin.2.param.2.value == 7.5 tolerance=0.001
+scroll_into_view rack.params plugin.layout.header.2.ANALOG
+click plugin.layout.header.2.ANALOG
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "3"
+key enter
+assert plugins.plugin.2.param.7.value == 3 tolerance=0.001
+scroll_into_view rack.params plugin.param.2.9.exact
+click plugin.param.2.9.exact
+key cmd-a
+type "25"
+key enter
+assert plugins.plugin.2.param.9.value == 0.25 tolerance=0.001
+scroll_into_view rack.params plugin.select.2.6
+click plugin.select.2.6
+key down
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.6.value == 1
+scroll_into_view rack.params plugin.select.2.6
+click plugin.select.2.6
+key down
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.6.value == 2
+scroll_into_view rack.params plugin.select.2.6
+click plugin.select.2.6
+key down
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.6.value == 3
+scroll_into_view rack.params plugin.select.2.6
+click plugin.select.2.6
+key down
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.6.value == 4
+scroll_into_view rack.params plugin.select.2.6
+click plugin.select.2.6
+key down
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.6.value == 5
+resize 1600 1000
+wait_idle 500ms
+screenshot analog-limiter-wide
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params plugin.setup.2.header
+assert_within plugin.param.2.0.exact rack.params
+assert_within plugin.param.2.1.exact rack.params
+assert_within plugin.param.2.5.exact rack.params
+assert_within plugin.param.2.8.exact rack.params
+assert_within plugin.param.2.10.exact rack.params
+screenshot analog-limiter-narrow
+plugin_chain_save $SOTF_QA_DIR/edited.json
+plugin_chain_load $SOTF_QA_DIR/edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/reloaded.json

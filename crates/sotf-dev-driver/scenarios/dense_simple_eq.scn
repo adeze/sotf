@@ -1,0 +1,33 @@
+resize 1000 700
+focus Studio
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/simple-eq-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "320"
+key enter
+assert plugins.plugin.2.param.0.value == 320 tolerance=0.000001
+click plugin.param.2.0.exact
+key up
+key escape
+assert plugins.plugin.2.param.0.value == 330 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/simple-eq-edited.json
+plugin_chain_load $SOTF_QA_DIR/simple-eq-edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.0.value == 330 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/simple-eq-reloaded.json
+screenshot simple-eq

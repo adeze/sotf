@@ -1,0 +1,39 @@
+resize 1000 700
+focus Studio
+plugin_clear
+plugin_add Gain
+action PluginSelectFirstUser
+wait_idle 500ms
+focus ListeningTest
+action ListeningSetSourceFixture {"mode":"first"}
+wait_until playback.is_playing == true timeout=12s
+focus Studio
+action PluginSelectFirstUser
+wait_idle 2s
+wait_until plugins.update_pending == false timeout=10s
+assert_within plugin.param.2.0.exact rack.params
+click plugin.param.2.0.exact
+key cmd-a
+type "-6.5"
+key enter
+wait_until plugins.parameter_receipt.status == "applied" timeout=10s
+assert plugins.plugin.2.param.0.value == -6.5 tolerance=0.01
+assert plugins.parameter_receipt.param_index == 0
+assert plugins.parameter_receipt.instance_id == 5
+assert plugins.parameter_receipt.key == "gain_db"
+assert plugins.parameter_receipt.requested_value == "-6.5"
+assert plugins.parameter_receipt.request_id > 0
+wait_until plugins.update_pending == false timeout=10s
+click plugin.param.2.0.exact
+key cmd-a
+type "-5.5"
+key enter
+wait_until plugins.parameter_receipt.status == "applied" timeout=10s
+assert plugins.parameter_receipt.request_id > 1
+assert plugins.parameter_receipt.requested_value == "-5.5"
+assert plugins.plugin.2.param.0.value == -5.5 tolerance=0.01
+snapshot $SOTF_QA_DIR/GainLiveReceipt.json
+plugin_chain_save $SOTF_QA_DIR/GainLiveReceipt-chain.json
+plugin_clear
+plugin_chain_load $SOTF_QA_DIR/GainLiveReceipt-chain.json
+assert plugins.plugin.2.param.0.value == -5.5 tolerance=0.01

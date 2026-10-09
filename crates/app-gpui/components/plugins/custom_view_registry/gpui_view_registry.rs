@@ -1,5 +1,6 @@
 use super::render::render_ab_compare;
 use super::render::render_binaural;
+use super::render::render_compressor;
 use super::render::render_convolution;
 use super::render::render_crossfeed;
 use super::render::render_denoiser;
@@ -29,6 +30,7 @@ impl GpuiViewRegistry {
         let mut views: HashMap<&'static str, CustomViewRenderFn> = HashMap::new();
 
         views.insert("eq", render_eq);
+        views.insert("compressor", render_compressor);
         views.insert("dynamic_eq", render_dynamic_eq);
         views.insert("denoiser", render_denoiser);
         views.insert("convolution", render_convolution);

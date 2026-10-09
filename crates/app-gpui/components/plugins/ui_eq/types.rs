@@ -13,7 +13,7 @@ use sotf_audio_player_midi::mapping::MidiOverlay;
 pub enum EqViewMode {
     Standard,
     LinearPhase {
-        /// Latency in samples = (fir_length - 1) / 2
+        /// Actual DSP streaming latency, including convolver partitions and ordered stages.
         latency_samples: usize,
         /// Latency in milliseconds at the current sample rate
         latency_ms: f32,
@@ -60,6 +60,8 @@ pub struct EqRenderState<'a> {
     pub sample_rate: f64,
     /// Available width in pixels for responsive compact-layout selection
     pub available_width: f32,
+    /// Measured height of the rack editor's visible scrollport.
+    pub available_height: f32,
     /// Effective responsive/font scale used to interpret logical breakpoints.
     pub layout_scale: f32,
     /// Stable focus target for the selected band's exact numeric editor.

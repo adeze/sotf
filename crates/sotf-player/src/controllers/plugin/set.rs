@@ -115,12 +115,22 @@ pub fn set_plugin_param_value(
     channel_count_changed: &mut bool,
 ) -> bool {
     match settings {
+        settings @ PluginSettings::Crossover { .. }
+            if param_idx >= sotf_plugins::param_specs::crossover::CHANNEL_PARAM_START =>
+        {
+            let changed = super::crossover::set(settings, param_idx, value);
+            *channel_count_changed |= changed;
+            changed
+        }
         // === EQ: dynamic filter array, param indices map to band/field ===
         PluginSettings::EQ { filters, .. } => {
             let filter_idx = param_idx / 4;
             let field_idx = param_idx % 4;
 
             set_eq_band_field_for_plugin(filter_idx, field_idx, filters, value, true)
+        }
+        settings @ PluginSettings::LinearPhaseEq { .. } if param_idx >= 100 => {
+            super::linear_phase::set_extra(settings, param_idx, value)
         }
         PluginSettings::LinearPhaseEq { filters, .. } => {
             let filter_idx = param_idx / 5;
@@ -190,12 +200,44 @@ pub fn set_plugin_param_value(
             }
             _ => false,
         },
+        // A band whose stored value equals the old global inherits that
+        // global. Keep the serialized band value in step so rebuilding the
+        // plugin does not turn inheritance into an accidental override.
+        PluginSettings::DynamicEq {
+            threshold, bands, ..
+        } if param_idx == 1 => {
+            use sotf_plugins::param_specs::{dynamic_eq::PARAMS as DQ, find_by_key as p};
+            let old = *threshold;
+            let next = p(DQ, "threshold").clamp_f64(value);
+            *threshold = next;
+            for band in bands {
+                if (f64::from(band.band_threshold) - old).abs() <= 0.01 {
+                    band.band_threshold = next as f32;
+                }
+            }
+            true
+        }
+        PluginSettings::DynamicEq { ratio, bands, .. } if param_idx == 2 => {
+            use sotf_plugins::param_specs::{dynamic_eq::PARAMS as DQ, find_by_key as p};
+            let old = *ratio;
+            let next = p(DQ, "ratio").clamp_f64(value);
+            *ratio = next;
+            for band in bands {
+                if (f64::from(band.band_ratio) - old).abs() <= 0.01 {
+                    band.band_ratio = next as f32;
+                }
+            }
+            true
+        }
         // === DynamicEq band-level params (idx >= 100) ===
         PluginSettings::DynamicEq { bands, .. } if param_idx >= 100 => {
             let band_idx = (param_idx - 100) / 10;
             let local_idx = (param_idx - 100) % 10;
             if let Some(band) = bands.get_mut(band_idx) {
                 use sotf_plugins::param_specs::{dynamic_eq::BAND_PARAMS as BT, find_by_key as p};
+                let Some(spec) = super::misc::dynamic_eq_band_spec(param_idx) else {
+                    return false;
+                };
                 match local_idx {
                     0 => {
                         band.frequency = p(BT, "frequency").clamp_f64(value) as f32;
@@ -225,6 +267,26 @@ pub fn set_plugin_param_value(
                         band.solo = value > 0.5;
                         true
                     }
+                    7 => {
+                        band.shape =
+                            sotf_plugins::plugin_dynamic_eq::DynEqShape::from_choice_index(
+                                spec.clamp_f64(value) as i32,
+                            )
+                            .unwrap_or_default();
+                        true
+                    }
+                    8 => {
+                        band.shelf_slope = spec.clamp_f64(value) as f32;
+                        true
+                    }
+                    9 => {
+                        band.placement =
+                            sotf_plugins::plugin_dynamic_eq::DynEqPlacement::from_choice_index(
+                                spec.clamp_f64(value) as i32,
+                            )
+                            .unwrap_or_default();
+                        true
+                    }
                     _ => false,
                 }
             } else {
@@ -239,7 +301,7 @@ pub fn set_plugin_param_value(
             let local_idx = param_idx % 100;
             // Missing entries inherit the global defaults until independently edited.
             if band_idx >= *num_bands
-                || !matches!(local_idx, 6..=10 | 13..=17)
+                || !matches!(local_idx, 6..=10 | 13..=19)
                 || !value.is_finite()
             {
                 return false;
@@ -251,6 +313,8 @@ pub fn set_plugin_param_value(
                 9 => Some("release"),
                 10 => Some("knee"),
                 13 => Some("makeup_gain"),
+                18 => Some("range_db"),
+                19 => Some("hold_ms"),
                 _ => None,
             };
             let value = numeric_key.map_or(value, |key| {
@@ -301,6 +365,14 @@ pub fn set_plugin_param_value(
                     }
                     17 => {
                         band.active = value > 0.5;
+                        true
+                    }
+                    18 => {
+                        band.range_db = Some(value as f32);
+                        true
+                    }
+                    19 => {
+                        band.hold_ms = Some(value as f32);
                         true
                     }
                     _ => false,
@@ -693,7 +765,7 @@ mod tests {
     }
 
     #[test]
-    fn set_plugin_param_value_multiband_compressor_band_threshold() {
+    fn set_plugin_param_value_multiband_compressor_band_dynamics() {
         let mut settings = PluginSettings::MultibandCompressor {
             num_bands: 1,
             crossover_preset: 0,
@@ -743,12 +815,96 @@ mod tests {
             -15.0,
             &mut changed
         ));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            118,
+            80.0,
+            &mut changed
+        ));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            119,
+            25.0,
+            &mut changed
+        ));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            17,
+            90.0,
+            &mut changed
+        ));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            18,
+            40.0,
+            &mut changed
+        ));
         match settings {
-            PluginSettings::MultibandCompressor { bands, .. } => {
+            PluginSettings::MultibandCompressor {
+                bands,
+                range_db,
+                hold_ms,
+                ..
+            } => {
                 assert!((bands[0].threshold_db.unwrap() - -15.0).abs() < 0.01);
+                assert_eq!(bands[0].range_db, Some(80.0));
+                assert_eq!(bands[0].hold_ms, Some(25.0));
+                assert_eq!(range_db, 90.0);
+                assert_eq!(hold_ms, 40.0);
             }
             _ => panic!("expected MultibandCompressor"),
         }
+    }
+
+    #[test]
+    fn multiband_compressor_range_hold_reset_restores_current_global_values() {
+        let mut settings =
+            PluginSettings::default_for(&crate::PluginType::MultibandCompressor).unwrap();
+        let mut changed = false;
+        assert!(set_plugin_param_value(
+            &mut settings,
+            118,
+            80.0,
+            &mut changed
+        ));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            119,
+            25.0,
+            &mut changed
+        ));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            17,
+            90.0,
+            &mut changed
+        ));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            18,
+            40.0,
+            &mut changed
+        ));
+        assert_eq!(
+            super::super::misc::reset_multiband_override(&mut settings, 118),
+            Some(true)
+        );
+        assert_eq!(
+            super::super::misc::reset_multiband_override(&mut settings, 119),
+            Some(true)
+        );
+        let PluginSettings::MultibandCompressor {
+            bands,
+            range_db,
+            hold_ms,
+            ..
+        } = &settings
+        else {
+            unreachable!()
+        };
+        assert_eq!((*range_db, *hold_ms), (90.0, 40.0));
+        assert_eq!(bands[0].range_db, None);
+        assert_eq!(bands[0].hold_ms, None);
     }
 
     #[test]
@@ -854,5 +1010,75 @@ mod tests {
             0.0,
             &mut changed
         ));
+    }
+
+    #[test]
+    fn dynamic_eq_global_dynamics_preserve_inheritance_across_serialization() {
+        let mut settings = PluginSettings::default_for(&crate::PluginType::DynamicEq).unwrap();
+        let mut changed = false;
+        assert!(set_plugin_param_value(
+            &mut settings,
+            113,
+            -35.0,
+            &mut changed
+        ));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            114,
+            8.0,
+            &mut changed
+        ));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            1,
+            -30.0,
+            &mut changed
+        ));
+        assert!(set_plugin_param_value(&mut settings, 2, 4.0, &mut changed));
+        let serialized = serde_json::to_value(&settings).unwrap();
+        let saved = &serialized["DynamicEq"];
+        assert_eq!(saved["threshold"], -30.0);
+        assert_eq!(saved["ratio"], 4.0);
+        for (index, band) in saved["bands"].as_array().unwrap().iter().enumerate() {
+            assert_eq!(
+                band["band_threshold"],
+                if index == 1 { -35.0 } else { -30.0 }
+            );
+            assert_eq!(band["band_ratio"], if index == 1 { 8.0 } else { 4.0 });
+        }
+        let reloaded: PluginSettings = serde_json::from_value(serialized.clone()).unwrap();
+        assert_eq!(serde_json::to_value(reloaded).unwrap(), serialized);
+
+        assert!(super::super::adjust::adjust_plugin_param(
+            &mut settings,
+            1,
+            -1.0,
+            &mut changed,
+        ));
+        let PluginSettings::DynamicEq {
+            threshold, bands, ..
+        } = &settings
+        else {
+            unreachable!()
+        };
+        assert!((f64::from(bands[0].band_threshold) - threshold).abs() < 1e-3);
+        assert_eq!(bands[1].band_threshold, -35.0);
+
+        assert!(set_plugin_param_value(&mut settings, 0, 2.0, &mut changed));
+        assert!(set_plugin_param_value(&mut settings, 0, 5.0, &mut changed));
+        let PluginSettings::DynamicEq {
+            threshold,
+            ratio,
+            bands,
+            ..
+        } = &settings
+        else {
+            unreachable!()
+        };
+        assert_eq!(bands.len(), 5);
+        for band in &bands[2..] {
+            assert!((f64::from(band.band_threshold) - threshold).abs() < 1e-3);
+            assert!((f64::from(band.band_ratio) - ratio).abs() < 1e-3);
+        }
     }
 }

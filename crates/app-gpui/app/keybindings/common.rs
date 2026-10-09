@@ -7,6 +7,8 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         // Let focused parameter choices handle activation instead of rack shortcuts.
         KeyBinding::new("enter", gpui::NoAction, Some("PluginChoice")),
         KeyBinding::new("space", gpui::NoAction, Some("PluginChoice")),
+        KeyBinding::new("enter", gpui::NoAction, Some("ToolkitButton")),
+        KeyBinding::new("space", gpui::NoAction, Some("ToolkitButton")),
         KeyBinding::new("shift-enter", actions::AddToQueue, Some("PlayerView")),
         // Font size controls (global) - Cmd/Ctrl + (or =), -, Shift+0 to reset
         KeyBinding::new("secondary-=", actions::IncreaseFontSize, None),

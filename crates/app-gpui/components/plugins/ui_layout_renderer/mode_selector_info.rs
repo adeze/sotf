@@ -63,9 +63,21 @@ pub(super) fn solve_main_groups(
     };
     // Roles stay stable across resize and active editing. Explicit secondary
     // groups use inline disclosure; primary groups wrap instead of vanishing.
-    let (overflow, visible) = groups.into_iter().partition(|group| {
-        group.layout.overflow == GroupOverflow::Auto && group.layout.collapse_priority < 0.5
-    });
+    let (overflow, mut visible): (Vec<&'static ControlGroup>, Vec<&'static ControlGroup>) =
+        groups.into_iter().partition(|group| {
+            group.layout.overflow == GroupOverflow::Auto && group.layout.collapse_priority < 0.5
+        });
+
+    // In a short, wrapped inspector the first row is the only one guaranteed
+    // to be visible. Keep the declared order at wide widths, but put the
+    // schema's essential groups first when the editor is narrow.
+    if main_width < 700.0 {
+        visible.sort_by(|a, b| {
+            b.layout
+                .collapse_priority
+                .total_cmp(&a.layout.collapse_priority)
+        });
+    }
 
     (visible, overflow)
 }

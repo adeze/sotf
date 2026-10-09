@@ -1,0 +1,33 @@
+resize 1000 900
+focus Studio
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/simple-fir-before.json
+click rack.config.toggle
+click rack.config.view
+key down
+key down
+key down
+key enter
+wait_idle 500ms
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.104.exact
+click plugin.param.2.104.exact
+key cmd-a
+type "37"
+key enter
+assert plugins.plugin.2.param.104.value == 0.37 tolerance=0.000001
+click plugin.param.2.104.exact
+key up
+key escape
+assert plugins.plugin.2.param.104.value == 0.38 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/simple-fir-edited.json
+plugin_chain_load $SOTF_QA_DIR/simple-fir-edited.json
+action PluginSelectFirstUser
+wait_idle 500ms
+assert plugins.plugin.2.param.104.value == 0.38 tolerance=0.000001
+plugin_chain_save $SOTF_QA_DIR/simple-fir-reloaded.json
+screenshot simple-fir-eq

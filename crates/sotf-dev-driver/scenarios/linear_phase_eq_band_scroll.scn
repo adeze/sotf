@@ -1,0 +1,136 @@
+# 2026-10-08: nested horizontal wheel events also moved the vertical rack,
+# clipping the band strip and making later band clicks hit unrelated surfaces.
+# Fix: app-gpui/components/plugins/ui_rack/plugin.rs:1947 restricts the rack axis;
+# ui_eq/linear_phase.rs consumes the strip wheel after its own scrolling.
+# 2026-10-08: FIR EQ now uses a dense editor with header globals, five-field band
+# addresses and sparse Placement IDs. The former adjustment path used stride 4.
+# Fix: crates/app-gpui/components/plugins/ui_eq/linear_phase.rs:122;
+# crates/sotf-player/src/controllers/plugin/linear_phase.rs:9.
+# Manual app: qa_dir=$(mktemp -d); cargo run -p sotf-gpui --features dev-api --bin sotf-desktop -- --qa "$qa_dir"
+# Manual driver: cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/linear_phase_eq_band_scroll.scn -v
+# Suite app build: cargo build -p sotf-gpui --features dev-api --bin sotf-desktop;
+# sotf-dev-driver run-suite crates/sotf-dev-driver/suites/dense_plugin_bindings.toml
+# The suite runner supplies an isolated temporary QA directory to each app launch.
+# All FIR filter types and routes use actual controller parameters.
+action CycleLanguage
+assert settings.language == "French"
+resize 1440 1100
+focus Studio
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_idle 1s
+click fir.eq.band.1.select
+wait_idle 1s
+click plugin.select.2.5
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.5.value == 1
+assert_within plugin.param.2.8.exact rack.params
+click plugin.select.2.5
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.5.value == 2
+assert_within plugin.param.2.8.exact rack.params
+click plugin.select.2.5
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.5.value == 3
+assert_absent plugin.param.2.8.exact
+click plugin.select.2.5
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.5.value == 4
+assert_absent plugin.param.2.8.exact
+click plugin.select.2.5
+wait_idle 300ms
+key up
+wait_idle 300ms
+key up
+wait_idle 300ms
+key up
+wait_idle 300ms
+key up
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.5.value == 0
+assert_within plugin.param.2.8.exact rack.params
+click plugin.select.2.201
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.201.value == 1
+click plugin.select.2.201
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.201.value == 2
+click plugin.select.2.201
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.201.value == 3
+click plugin.select.2.201
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.201.value == 4
+click plugin.select.2.201
+wait_idle 300ms
+key down
+wait_idle 300ms
+key enter
+wait_idle 300ms
+assert plugins.plugin.2.param.201.value == 5
+click eq.band.reset
+wait_idle 500ms
+assert plugins.plugin.2.param.201.value == 0
+click plugin.param.2.100.exact
+key cmd-a
+type "10"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param_count == 65
+resize 1000 700
+wait_idle 500ms
+scroll_into_view rack.params fir.eq.band.0.select
+assert_within fir.eq.band.0.select rack.params
+scroll_horizontal fir.eq.band.0.select -2000
+wait_idle 500ms
+assert_within fir.eq.band.9.select rack.params
+click fir.eq.band.9.select
+wait_idle 500ms
+assert_within plugin.param.2.46.exact rack.params
+assert_within plugin.param.2.47.exact rack.params
+assert_within plugin.param.2.48.exact rack.params
+snapshot $SOTF_QA_DIR/ten-bands.json
+screenshot linear-phase-eq-ten-bands
+scroll fir.eq.band.9.select 2000
+wait_idle 500ms
+assert_within fir.eq.band.0.select rack.params
+click fir.eq.band.0.select
+wait_idle 500ms
+assert_within plugin.param.2.1.exact rack.params
+snapshot $SOTF_QA_DIR/wheel-back.json
+screenshot linear-phase-eq-wheel-back

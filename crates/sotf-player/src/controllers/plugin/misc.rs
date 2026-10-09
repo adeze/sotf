@@ -1,11 +1,41 @@
 use crate::{BiquadFilterType, EQFilter, PluginSettings};
 
+/// Explain a custom decoder choice that lacks valid speaker geometry.
+pub fn ambisonics_layout_transition_error(
+    settings: &PluginSettings,
+    param_idx: usize,
+    value: f64,
+) -> Option<&'static str> {
+    let PluginSettings::AmbisonicsDecoder { custom_layout, .. } = settings else {
+        return None;
+    };
+    let param = settings.param_specs().get(param_idx)?;
+    if param.engine_key != "target_layout" {
+        return None;
+    }
+    let sotf_plugins::param_specs::ParamType::Choice { labels, .. } = param.param_type else {
+        return None;
+    };
+    if labels.get((value as usize).min(labels.len().saturating_sub(1))) != Some(&"custom") {
+        return None;
+    }
+    if custom_layout
+        .as_ref()
+        .is_some_and(sotf_audio::plugins::valid_ambisonics_custom_layout)
+    {
+        return None;
+    }
+    Some(
+        "Custom layout needs valid speaker geometry. Load a preset with a custom speaker layout before selecting Custom.",
+    )
+}
+
 /// Get parameter count for a plugin's settings.
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
         PluginSettings::EQ { filters, .. } => filters.len() * 4,
-        PluginSettings::LinearPhaseEq { filters, .. } => filters.len() * 5,
-        PluginSettings::DynamicEq { num_bands, .. } => 8 + (*num_bands as usize).clamp(1, 8) * 7,
+        PluginSettings::LinearPhaseEq { filters, .. } => filters.len() * 6 + 5,
+        PluginSettings::DynamicEq { num_bands, .. } => 8 + (*num_bands as usize).clamp(1, 8) * 10,
         _ => settings.param_specs().len(),
     }
 }
@@ -34,13 +64,23 @@ pub(super) fn eq_band_types(allow_extended: bool) -> &'static [BiquadFilterType]
 
 /// Apply structural side effects after a parameter update via the generic path.
 ///
-/// Handles: Upmixer output topology params set channel_count_changed,
+/// Handles: output-layout choices set channel_count_changed,
 /// MultibandCompressor/Expander num_bands (idx 0) resizes band arrays.
 pub(super) fn apply_structural_side_effects(
     settings: &mut PluginSettings,
     param_idx: usize,
     channel_count_changed: &mut bool,
 ) {
+    if matches!(
+        settings,
+        PluginSettings::Gate { .. } | PluginSettings::DeEsser { .. }
+    ) && settings
+        .param_specs()
+        .get(param_idx)
+        .is_some_and(|param| param.engine_key == "sidechain_external")
+    {
+        *channel_count_changed = true;
+    }
     let upmixer_binaural_preview_idx = sotf_plugins::param_specs::index_of(
         sotf_plugins::param_specs::upmixer::PARAMS,
         "binaural_preview",
@@ -50,6 +90,21 @@ pub(super) fn apply_structural_side_effects(
         PluginSettings::Upmixer { .. }
             if param_idx == 0 || param_idx == upmixer_binaural_preview_idx =>
         {
+            *channel_count_changed = true;
+        }
+        PluginSettings::AAE { .. } if param_idx == 0 => {
+            *channel_count_changed = true;
+        }
+        PluginSettings::AmbisonicsDecoder { .. } if param_idx == 1 => {
+            *channel_count_changed = true;
+        }
+        PluginSettings::Crossover { .. } if matches!(param_idx, 2 | 4 | 5 | 6 | 7) => {
+            *channel_count_changed = true;
+        }
+        PluginSettings::BandSplit { .. } if param_idx == 3 => {
+            *channel_count_changed = true;
+        }
+        PluginSettings::BandMerge { .. } if param_idx == 0 => {
             *channel_count_changed = true;
         }
         PluginSettings::MultibandCompressor {
@@ -81,15 +136,24 @@ pub(super) fn apply_structural_side_effects(
             *channel_count_changed = true;
         }
         PluginSettings::DynamicEq {
-            num_bands, bands, ..
+            num_bands,
+            bands,
+            threshold,
+            ratio,
+            ..
         } if param_idx == 0 => {
-            bands.resize_with((*num_bands as usize).clamp(1, 8), Default::default);
+            bands.resize_with((*num_bands as usize).clamp(1, 8), || {
+                let mut band = sotf_plugins::DynEqBandParams::default();
+                band.band_threshold = *threshold as f32;
+                band.band_ratio = *ratio as f32;
+                band
+            });
         }
         PluginSettings::LinearPhaseEq {
             num_filters,
             filters,
             ..
-        } if param_idx == 0 => {
+        } if param_idx == 100 => {
             let n = (*num_filters as usize).clamp(1, 10);
             filters.resize_with(n, || {
                 EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)
@@ -114,7 +178,7 @@ pub(super) fn reset_multiband_override(
         PluginSettings::MultibandCompressor {
             num_bands, bands, ..
         } => {
-            if band_index >= *num_bands || !matches!(field, 6..=10 | 13..=17) {
+            if band_index >= *num_bands || !matches!(field, 6..=10 | 13..=19) {
                 return Some(false);
             }
             let Some(band) = bands.get_mut(band_index) else {
@@ -131,6 +195,8 @@ pub(super) fn reset_multiband_override(
                 15 => band.solo = false,
                 16 => band.auto_makeup = false,
                 17 => band.active = band_index < 3 || *num_bands < 4,
+                18 => band.range_db = None,
+                19 => band.hold_ms = None,
                 _ => return Some(false),
             }
             Some(true)
@@ -163,4 +229,46 @@ pub(super) fn reset_multiband_override(
         }
         _ => None,
     }
+}
+
+/// Resolve the stable desktop ID of a Dynamic EQ band control.
+pub(super) fn dynamic_eq_band_spec(
+    index: usize,
+) -> Option<&'static sotf_plugins::param_specs::ParamSpec> {
+    use sotf_plugins::param_specs::dynamic_eq as specs;
+    let local = index.checked_sub(100)? % 10;
+    match local {
+        0..=6 => specs::BAND_PARAMS.get(local),
+        7 => specs::SHELF_PARAMS.first(),
+        8 => specs::SHELF_PARAMS.get(1),
+        9 => specs::ROUTING_PARAMS.first(),
+        _ => None,
+    }
+}
+
+/// Reset a band field, restoring global inheritance for threshold and ratio.
+pub(super) fn reset_dynamic_eq_band(settings: &mut PluginSettings, index: usize) -> Option<bool> {
+    let PluginSettings::DynamicEq {
+        bands,
+        threshold,
+        ratio,
+        ..
+    } = settings
+    else {
+        return None;
+    };
+    if index < 100 {
+        return None;
+    }
+    if bands.get((index - 100) / 10).is_none() {
+        return Some(false);
+    }
+    let default = match (index - 100) % 10 {
+        3 => *threshold,
+        4 => *ratio,
+        _ => dynamic_eq_band_spec(index)?.default_f64(),
+    };
+    Some(super::set::set_plugin_param_value(
+        settings, index, default, &mut false,
+    ))
 }

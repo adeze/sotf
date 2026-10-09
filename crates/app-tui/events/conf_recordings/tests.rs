@@ -11,6 +11,7 @@ use super::misc::update_channel_mappings_for_config;
 use super::poll::{
     poll_bass_anchor_capture, poll_probe_capture, poll_recording, poll_spl_calibration_capture,
 };
+use super::spawn::prepare_spl_calibration_capture;
 
 use crate::events::tests::make_app;
 use sotf_audio_player::recording_types::{
@@ -364,17 +365,31 @@ fn auxiliary_capture_polls_discard_stale_spl_result() {
     use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
 
     let mut app = make_app();
-    app.recording.model.spl_calibration_capture.status =
-        SplCalibrationCaptureStatus::Running { started_at_ms: 0 };
-    let stale_generation = app
-        .recording
-        .model
-        .spl_calibration_capture
-        .capture_generation;
+    let stale_generation = prepare_spl_calibration_capture(&mut app, 0);
     app.recording
         .model
-        .spl_calibration_capture
-        .next_capture_generation();
+        .spl_cancel_requested
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    app.recording.model.spl_calibration_capture.reported_db_spl = Some(75.0);
+    let current_generation = prepare_spl_calibration_capture(&mut app, 1);
+    assert_ne!(current_generation, stale_generation);
+    assert!(matches!(
+        app.recording.model.spl_calibration_capture.status,
+        SplCalibrationCaptureStatus::Running { started_at_ms: 1 }
+    ));
+    assert!(
+        app.recording
+            .model
+            .spl_calibration_capture
+            .reported_db_spl
+            .is_none()
+    );
+    assert!(
+        !app.recording
+            .model
+            .spl_cancel_requested
+            .load(std::sync::atomic::Ordering::Relaxed)
+    );
     let slot = SPL_CAPTURE_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
@@ -384,6 +399,14 @@ fn auxiliary_capture_polls_discard_stale_spl_result() {
     assert!(matches!(
         app.recording.model.spl_calibration_capture.status,
         SplCalibrationCaptureStatus::Running { .. }
+    ));
+    assert!(slot.lock().unwrap().is_none());
+
+    *slot.lock().unwrap() = Some((current_generation, Err("current SPL".to_string())));
+    assert!(poll_spl_calibration_capture(&mut app));
+    assert!(matches!(
+        &app.recording.model.spl_calibration_capture.status,
+        SplCalibrationCaptureStatus::Failed(error) if error == "current SPL"
     ));
     assert!(slot.lock().unwrap().is_none());
 }

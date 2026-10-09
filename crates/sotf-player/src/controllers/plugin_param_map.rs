@@ -2,10 +2,28 @@
 //!
 //! This enables zero-dropout parameter updates for plugins that support it.
 //! Most plugins use the generic `engine_param_at()` path which derives the mapping
-//! from `ParamSpec` arrays. Only plugins with special band-level encoding
-//! (idx >= 100) need manual handling.
+//! from `ParamSpec` arrays. Sparse multiband IDs need manual handling, and
+//! EQ/FIR band-local IDs must bypass the overlapping static global specs.
 
 use crate::PluginSettings;
+
+/// Momentary profile controls are named host commands, not persisted toggles.
+/// Their indexed DSP setters deliberately do not fire the action.
+pub fn momentary_action_param(settings: &PluginSettings, param_idx: usize) -> Option<&'static str> {
+    match settings {
+        PluginSettings::Denoiser { .. } => match param_idx {
+            20 => Some("learn_noise"),
+            22 => Some("clear_profile"),
+            _ => None,
+        },
+        PluginSettings::HissReducer { .. } => match param_idx {
+            5 => Some("learn_noise"),
+            7 => Some("clear_profile"),
+            _ => None,
+        },
+        _ => None,
+    }
+}
 
 /// Map a UI parameter index to the engine parameter ID and formatted value string.
 /// Returns None if this parameter requires a Structural update (e.g., EQ, channel count changes).
@@ -13,7 +31,36 @@ pub fn param_index_to_engine_param(
     settings: &PluginSettings,
     param_idx: usize,
 ) -> Option<(String, String)> {
+    if momentary_action_param(settings, param_idx).is_some() {
+        return None;
+    }
     match settings {
+        // Independent channel edits reconstruct the crossover's filter bank.
+        PluginSettings::Crossover { .. }
+            if param_idx >= sotf_plugins::param_specs::crossover::CHANNEL_PARAM_START =>
+        {
+            None
+        }
+        // The single-band Expander's host parameter is numeric, while its UI
+        // settings and generic choice mapping use "Peak"/"RMS" strings.
+        // Rebuild until that host parameter contract is unified, otherwise a
+        // realtime command fails with Parameter type mismatch after the UI
+        // already saved the new choice.
+        PluginSettings::Expander { .. }
+            if param_idx
+                == sotf_plugins::param_specs::index_of(
+                    sotf_plugins::param_specs::expander::PARAMS,
+                    "detection_mode",
+                ) =>
+        {
+            None
+        }
+        // EQ editors use band-local numeric IDs. Those IDs overlap unrelated
+        // entries in the static DSP ParamSpec arrays (for example FIR band 0
+        // active is index 4, while the engine spec at 4 is global mix).
+        // Rebuild the exact edited graph until a dedicated band ID protocol
+        // exists; never dispatch the coincidentally indexed global parameter.
+        PluginSettings::EQ { .. } | PluginSettings::LinearPhaseEq { .. } => None,
         // MultibandCompressor: band-level params (idx >= 100) need manual handling
         PluginSettings::MultibandCompressor {
             num_bands,
@@ -22,6 +69,8 @@ pub fn param_index_to_engine_param(
             attack_ms,
             release_ms,
             knee_db,
+            range_db,
+            hold_ms,
             bands,
             ..
         } if param_idx >= 100 => {
@@ -38,9 +87,11 @@ pub fn param_index_to_engine_param(
                 8 => "attack",
                 9 => "release",
                 10 => "knee",
-                13 => "makeup_gain",
+                13 => "makeup",
                 14 => "bypass",
                 15 => "solo",
+                18 => "range_db",
+                19 => "hold_ms",
                 _ => return None,
             };
 
@@ -50,14 +101,16 @@ pub fn param_index_to_engine_param(
             let band = bands.get(band_zero_based).unwrap_or(&inherited);
             let val_str = {
                 match local_idx {
-                    6 => format!("{}", band.threshold_db.unwrap_or(*threshold_db as f32)),
-                    7 => format!("{}", band.ratio.unwrap_or(*ratio as f32)),
-                    8 => format!("{}", band.attack_ms.unwrap_or(*attack_ms as f32)),
-                    9 => format!("{}", band.release_ms.unwrap_or(*release_ms as f32)),
-                    10 => format!("{}", band.knee_db.unwrap_or(*knee_db as f32)),
-                    13 => format!("{}", band.makeup_gain_db),
+                    6 => format!("{:?}", band.threshold_db.unwrap_or(*threshold_db as f32)),
+                    7 => format!("{:?}", band.ratio.unwrap_or(*ratio as f32)),
+                    8 => format!("{:?}", band.attack_ms.unwrap_or(*attack_ms as f32)),
+                    9 => format!("{:?}", band.release_ms.unwrap_or(*release_ms as f32)),
+                    10 => format!("{:?}", band.knee_db.unwrap_or(*knee_db as f32)),
+                    13 => format!("{:?}", band.makeup_gain_db),
                     14 => format!("{}", band.bypass),
                     15 => format!("{}", band.solo),
+                    18 => format!("{:?}", band.range_db.unwrap_or(*range_db as f32)),
+                    19 => format!("{:?}", band.hold_ms.unwrap_or(*hold_ms as f32)),
                     _ => return None,
                 }
             };
@@ -105,14 +158,14 @@ pub fn param_index_to_engine_param(
             let band = bands.get(band_zero_based).unwrap_or(&inherited);
             let val_str = {
                 match local_idx {
-                    6 => format!("{}", band.threshold_db.unwrap_or(*threshold_db as f32)),
-                    7 => format!("{}", band.ratio.unwrap_or(*ratio as f32)),
-                    8 => format!("{}", band.attack_ms.unwrap_or(*attack_ms as f32)),
-                    9 => format!("{}", band.release_ms.unwrap_or(*release_ms as f32)),
-                    10 => format!("{}", band.range_db.unwrap_or(*range_db as f32)),
-                    11 => format!("{}", band.knee_db.unwrap_or(*knee_db as f32)),
-                    12 => format!("{}", band.hysteresis_db.unwrap_or(*hysteresis_db as f32)),
-                    13 => format!("{}", band.hold_ms.unwrap_or(*hold_ms as f32)),
+                    6 => format!("{:?}", band.threshold_db.unwrap_or(*threshold_db as f32)),
+                    7 => format!("{:?}", band.ratio.unwrap_or(*ratio as f32)),
+                    8 => format!("{:?}", band.attack_ms.unwrap_or(*attack_ms as f32)),
+                    9 => format!("{:?}", band.release_ms.unwrap_or(*release_ms as f32)),
+                    10 => format!("{:?}", band.range_db.unwrap_or(*range_db as f32)),
+                    11 => format!("{:?}", band.knee_db.unwrap_or(*knee_db as f32)),
+                    12 => format!("{:?}", band.hysteresis_db.unwrap_or(*hysteresis_db as f32)),
+                    13 => format!("{:?}", band.hold_ms.unwrap_or(*hold_ms as f32)),
                     14 => format!("{}", band.bypass),
                     15 => format!("{}", band.solo),
                     _ => return None,
@@ -129,7 +182,46 @@ pub fn param_index_to_engine_param(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sotf_plugins::{BandCompressorParams, BandExpanderParams, DynEqBandParams};
+    use sotf_plugins::{
+        BandCompressorParams, BandExpanderParams, DynEqBandParams, MultibandCompressorPlugin,
+        ParameterId, ParameterValue,
+    };
+
+    #[test]
+    fn spectrum_frequency_grid_edits_rebuild_while_smoothing_stays_live() {
+        let mut settings =
+            PluginSettings::default_for(&crate::PluginType::SpectrumAnalyzer).unwrap();
+        for (index, value) in [(0, 64.0), (1, 80.0), (2, 12000.0)] {
+            settings.set_param_value(index, value);
+            assert!(settings.engine_param_at(index).is_none());
+            assert!(param_index_to_engine_param(&settings, index).is_none());
+        }
+        let (key, _) = param_index_to_engine_param(&settings, 3).unwrap();
+        assert_eq!(key, "smoothing");
+    }
+
+    #[test]
+    fn expander_detection_choice_uses_structural_route_until_host_types_match() {
+        let mut settings = PluginSettings::default_for(&crate::PluginType::Expander).unwrap();
+        let idx = sotf_plugins::param_specs::index_of(
+            sotf_plugins::param_specs::expander::PARAMS,
+            "detection_mode",
+        );
+        let PluginSettings::Expander { detection_mode, .. } = &mut settings else {
+            unreachable!()
+        };
+        *detection_mode = "RMS".to_string();
+        assert!(param_index_to_engine_param(&settings, idx).is_none());
+        assert!(param_index_to_engine_param(&settings, 0).is_some());
+    }
+
+    #[test]
+    fn linear_phase_eq_band_active_does_not_alias_global_mix() {
+        let settings = PluginSettings::default_for(&crate::PluginType::LinearPhaseEq).unwrap();
+        assert!(settings.engine_param_at(4).is_some());
+        assert!(param_index_to_engine_param(&settings, 4).is_none());
+        assert!(param_index_to_engine_param(&settings, 9).is_none());
+    }
 
     fn mb_compressor_settings(bands: Vec<BandCompressorParams>) -> PluginSettings {
         PluginSettings::MultibandCompressor {
@@ -222,15 +314,15 @@ mod tests {
         // Band 1 (idx 100): threshold=6, ratio=7, attack=8, release=9, knee=10, makeup=13, bypass=14, solo=15
         assert_eq!(
             param_index_to_engine_param(&settings, 106),
-            Some(("band_0_threshold".to_string(), "-18".to_string()))
+            Some(("band_0_threshold".to_string(), "-18.0".to_string()))
         );
         assert_eq!(
             param_index_to_engine_param(&settings, 107),
-            Some(("band_0_ratio".to_string(), "3".to_string()))
+            Some(("band_0_ratio".to_string(), "3.0".to_string()))
         );
         assert_eq!(
             param_index_to_engine_param(&settings, 113),
-            Some(("band_0_makeup_gain".to_string(), "1.5".to_string()))
+            Some(("band_0_makeup".to_string(), "1.5".to_string()))
         );
         assert_eq!(
             param_index_to_engine_param(&settings, 114),
@@ -240,6 +332,49 @@ mod tests {
             param_index_to_engine_param(&settings, 215),
             Some(("band_1_solo".to_string(), "false".to_string()))
         );
+    }
+
+    #[test]
+    fn multiband_makeup_mapping_is_accepted_by_the_live_plugin() {
+        let settings = mb_compressor_settings(vec![BandCompressorParams {
+            makeup_gain_db: 3.0,
+            ..BandCompressorParams::default()
+        }]);
+        let (key, text) = param_index_to_engine_param(&settings, 113).unwrap();
+        let value = ParameterValue::parse(&text);
+        assert_eq!(value, ParameterValue::Float(3.0));
+
+        let mut plugin = MultibandCompressorPlugin::new(2);
+        let id = ParameterId::from(key.as_str());
+        plugin.set_parameter(id.clone(), value.clone()).unwrap();
+        assert_eq!(plugin.get_parameter(&id).unwrap(), value);
+    }
+
+    #[test]
+    fn multiband_range_and_hold_mapping_reaches_the_live_plugin() {
+        let settings = mb_compressor_settings(vec![
+            BandCompressorParams {
+                range_db: Some(80.0),
+                hold_ms: Some(25.0),
+                ..BandCompressorParams::default()
+            },
+            BandCompressorParams::default(),
+        ]);
+        let mut plugin = MultibandCompressorPlugin::new(2);
+        for (index, expected_key, expected) in [
+            (118, "band_0_range_db", 80.0),
+            (119, "band_0_hold_ms", 25.0),
+            (218, "band_1_range_db", 120.0),
+            (219, "band_1_hold_ms", 0.0),
+        ] {
+            let (key, text) = param_index_to_engine_param(&settings, index).unwrap();
+            assert_eq!(key, expected_key);
+            let value = ParameterValue::parse(&text);
+            assert_eq!(value, ParameterValue::Float(expected));
+            let id = ParameterId::from(key.as_str());
+            plugin.set_parameter(id.clone(), value.clone()).unwrap();
+            assert_eq!(plugin.get_parameter(&id).unwrap(), value);
+        }
     }
 
     #[test]
@@ -262,11 +397,11 @@ mod tests {
 
         assert_eq!(
             param_index_to_engine_param(&settings, 106),
-            Some(("band_0_threshold".to_string(), "-25".to_string()))
+            Some(("band_0_threshold".to_string(), "-25.0".to_string()))
         );
         assert_eq!(
             param_index_to_engine_param(&settings, 112),
-            Some(("band_0_hysteresis".to_string(), "2".to_string()))
+            Some(("band_0_hysteresis".to_string(), "2.0".to_string()))
         );
         assert_eq!(
             param_index_to_engine_param(&settings, 115),
@@ -307,7 +442,7 @@ mod tests {
             for band in 1..=3 {
                 assert_eq!(
                     param_index_to_engine_param(&settings, band * 100 + 6),
-                    Some((format!("band_{}_threshold", band - 1), "-25".into()))
+                    Some((format!("band_{}_threshold", band - 1), "-25.0".into()))
                 );
                 assert_eq!(
                     param_index_to_engine_param(&settings, band * 100 + 14),
@@ -316,6 +451,43 @@ mod tests {
             }
             assert_eq!(param_index_to_engine_param(&settings, 406), None);
             assert_eq!(param_index_to_engine_param(&settings, 199), None);
+        }
+    }
+
+    #[test]
+    fn multiband_float_values_parse_as_host_floats() {
+        use sotf_plugins::ParameterValue;
+
+        for kind in [
+            crate::PluginType::MultibandCompressor,
+            crate::PluginType::MultibandExpander,
+        ] {
+            let mut inherited = PluginSettings::default_for(&kind).unwrap();
+            inherited.set_param_value(7, 3.0);
+            let (_, value) = param_index_to_engine_param(&inherited, 107).unwrap();
+            assert_eq!(ParameterValue::parse(&value), ParameterValue::Float(3.0));
+            let (_, bypass) = param_index_to_engine_param(&inherited, 114).unwrap();
+            assert_eq!(ParameterValue::parse(&bypass), ParameterValue::Bool(false));
+        }
+
+        let compressor = mb_compressor_settings(vec![BandCompressorParams {
+            ratio: Some(3.0),
+            attack_ms: Some(15.0),
+            ..Default::default()
+        }]);
+        let expander = mb_expander_settings(vec![BandExpanderParams {
+            ratio: Some(3.0),
+            hold_ms: Some(20.0),
+            ..Default::default()
+        }]);
+        for (settings, indices) in [(compressor, [107, 108]), (expander, [107, 113])] {
+            for index in indices {
+                let (_, value) = param_index_to_engine_param(&settings, index).unwrap();
+                assert!(matches!(
+                    ParameterValue::parse(&value),
+                    ParameterValue::Float(_)
+                ));
+            }
         }
     }
 

@@ -12,6 +12,8 @@ use types::SavedPlaybackConfig;
 
 pub struct Player {
     manager: AudioEngineManager,
+    /// Current graph retained across source starts, switches, and recovery.
+    playback_graph: Option<sotf_audio::engine::PluginGraphConfig>,
     /// Config saved at each `load_and_play_at` for crash recovery.
     saved_config: Option<SavedPlaybackConfig>,
     /// How many times we've restarted for the current track (max 1).
@@ -29,6 +31,7 @@ impl Player {
     pub fn new() -> Self {
         Self {
             manager: AudioEngineManager::with_signal_watching(true),
+            playback_graph: None,
             saved_config: None,
             restart_count: 0,
             engine_restarted_flag: false,
@@ -102,8 +105,13 @@ impl Player {
         self.manager.load_source(source)?;
 
         // Start playback with plugins and specified output device
-        self.manager
-            .start_playback_at(output_device, plugins, output_channels, position)?;
+        self.manager.start_playback_with_graph_at(
+            output_device,
+            plugins,
+            output_channels,
+            position,
+            self.playback_graph.clone(),
+        )?;
 
         Ok(())
     }
@@ -155,7 +163,11 @@ impl Player {
         self.engine_restarted_flag = false;
         self.engine_fatal_flag = false;
 
-        self.manager.update_plugin_chain(&plugins)?;
+        if let Some(graph) = &self.playback_graph {
+            self.manager.update_plugin_graph(graph.clone())?;
+        } else {
+            self.manager.update_plugin_chain(&plugins)?;
+        }
         self.manager.switch_source_at(source, position)?;
 
         Ok(())
@@ -169,6 +181,7 @@ impl Player {
         match self.manager.update_plugin_chain(&plugins) {
             Ok(()) => {
                 // Update saved config so crash recovery uses latest plugins.
+                self.playback_graph = None;
                 if let Some(ref mut config) = self.saved_config {
                     config.plugins = Arc::from(plugins.into_boxed_slice());
                 }
@@ -177,10 +190,24 @@ impl Player {
             }
             Err(e) if e == "No engine running" => {
                 // Engine not running yet - plugins will be applied on next playback
+                self.playback_graph = None;
                 Ok(())
             }
             Err(e) => Err(e.into()),
         }
+    }
+
+    #[cfg(feature = "dev-api")]
+    pub fn update_plugins_strict(
+        &mut self,
+        plugins: Vec<PluginConfig>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.manager.update_plugin_chain(&plugins)?;
+        self.playback_graph = None;
+        if let Some(ref mut config) = self.saved_config {
+            config.plugins = Arc::from(plugins.into_boxed_slice());
+        }
+        Ok(())
     }
 
     /// Update the plugin graph (DAG topology for multi-driver crossovers)
@@ -193,14 +220,36 @@ impl Player {
             config.nodes.len(),
             config.edges.len()
         );
-        match self.manager.update_plugin_graph(config) {
+        match self.manager.update_plugin_graph(config.clone()) {
             Ok(()) => {
+                self.playback_graph = Some(config);
                 log::info!("[Player] update_plugin_graph: success");
                 Ok(())
             }
-            Err(e) if e == "No engine running" => Ok(()),
+            Err(e) if e == "No engine running" => {
+                self.playback_graph = Some(config);
+                Ok(())
+            }
             Err(e) => Err(e.into()),
         }
+    }
+
+    #[cfg(feature = "dev-api")]
+    pub fn update_plugin_graph_strict(
+        &mut self,
+        config: sotf_audio::engine::PluginGraphConfig,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.manager.update_plugin_graph(config.clone())?;
+        self.playback_graph = Some(config);
+        Ok(())
+    }
+
+    /// Configure the topology for the next source start or switch.
+    ///
+    /// Passing `None` selects the flat chain supplied by the source command.
+    /// This does not change the running engine before that source command.
+    pub fn set_playback_graph(&mut self, graph: Option<sotf_audio::engine::PluginGraphConfig>) {
+        self.playback_graph = graph;
     }
 
     /// Set a plugin parameter directly (zero-dropout update)
@@ -224,6 +273,20 @@ impl Player {
             }
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// QA path that reports whether the processing thread acknowledged the
+    /// parameter update. Unlike the normal edit path, an absent engine is an
+    /// error so callers cannot mistake a deferred setting for an applied one.
+    pub fn set_plugin_parameter_strict(
+        &self,
+        plugin_index: usize,
+        param_id: String,
+        value: String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.manager
+            .set_plugin_parameter(plugin_index, param_id, value)
+            .map_err(Into::into)
     }
 
     pub fn pause(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -531,11 +594,12 @@ impl Player {
 
         // Re-load and play
         self.manager.load_source(source)?;
-        self.manager.start_playback_at(
+        self.manager.start_playback_with_graph_at(
             output_device,
             plugins,
             output_channels,
             Some(resume_pos),
+            self.playback_graph.clone(),
         )?;
 
         // Update saved position for any future restart
@@ -576,6 +640,30 @@ mod tests {
         let mut player = Player::new();
         let result = player.update_plugins(Vec::new());
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn deferred_graph_is_retained_until_a_flat_chain_is_selected() {
+        let mut player = Player::new();
+        let mut graph = crate::PluginGraph::new();
+        graph
+            .add_plugin_node(
+                &crate::PluginType::Gain,
+                crate::plugin_graph::NodePosition::new(0.0, 0.0),
+            )
+            .unwrap();
+        let config = graph.to_plugin_graph_config(48_000.0);
+        let expected = serde_json::to_value(&config).unwrap();
+
+        player.update_plugin_graph(config).unwrap();
+        assert_eq!(
+            serde_json::to_value(player.playback_graph.as_ref().unwrap()).unwrap(),
+            expected
+        );
+        // A deferred chain selection must clear old routing even without an
+        // engine; otherwise the next source could resurrect the old graph.
+        player.update_plugins(Vec::new()).unwrap();
+        assert!(player.playback_graph.is_none());
     }
 
     #[test]

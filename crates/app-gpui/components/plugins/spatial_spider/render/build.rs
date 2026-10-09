@@ -7,6 +7,8 @@ use super::spider_disc2_d::SpiderDisc2D;
 #[cfg(feature = "gpu-3d")]
 use super::spider_view3_d::SpiderView3D;
 use crate::app::AppState;
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::{DevElementState, DevTrackExt};
 use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use gpui::prelude::*;
@@ -25,6 +27,7 @@ pub(super) fn build_header(
     view_mode: SpiderViewMode,
     ref_channel: usize,
     ref_channel_select_open: bool,
+    ref_channel_highlight: Option<usize>,
     cfg_opt: Option<&'static SpeakerConfig>,
     text: PluginCommonTranslations,
     theme: &crate::theme::Theme,
@@ -203,6 +206,7 @@ pub(super) fn build_header(
             spider_mode,
             ref_channel,
             ref_channel_select_open,
+            ref_channel_highlight,
             cfg_opt,
             text,
             theme,
@@ -218,6 +222,7 @@ pub(super) fn build_ref_channel_select(
     spider_mode: SpiderMode,
     ref_channel: usize,
     is_open: bool,
+    highlighted_index: Option<usize>,
     cfg_opt: Option<&'static SpeakerConfig>,
     text: PluginCommonTranslations,
     theme: &crate::theme::Theme,
@@ -246,6 +251,76 @@ pub(super) fn build_ref_channel_select(
                 .unwrap_or_default()
         });
 
+    let selected_index = options
+        .iter()
+        .position(|option| option.value.as_ref() == selected_label);
+    let select = Select::new(("spider-ref-channel", plugin_idx))
+        .options(options)
+        .selected(selected_label.clone())
+        .disabled(!active)
+        .is_open(is_open)
+        .highlighted_index(highlighted_index.or(selected_index))
+        .on_highlight({
+            let entity = entity.downgrade();
+            move |index, _window, cx| {
+                if let Some(entity) = entity.upgrade() {
+                    entity.update(cx, |st, cx| {
+                        st.app.plugin_ui.spatial_spider.ref_channel_highlight = index;
+                        cx.notify();
+                    });
+                }
+            }
+        })
+        .size(SelectSize::Xs)
+        .theme(theme.to_select_theme())
+        .aria_label(text.spatial.reference_channel)
+        .on_toggle({
+            let entity = entity.downgrade();
+            move |open, _window, cx| {
+                let Some(entity) = entity.upgrade() else {
+                    return;
+                };
+                entity.update(cx, |st, cx| {
+                    st.app.plugin_ui.spatial_spider.ref_channel_select_open = open;
+                    st.app.plugin_ui.spatial_spider.ref_channel_highlight =
+                        if open { selected_index } else { None };
+                    cx.notify();
+                });
+            }
+        })
+        .on_change({
+            let entity = entity.clone();
+            move |value, _window, cx| {
+                let picked = cfg
+                    .speakers
+                    .iter()
+                    .find(|s| s.label == value.as_ref() && !s.is_lfe)
+                    .map(|s| s.channel)
+                    .unwrap_or(0);
+                entity.update(cx, |st, cx| {
+                    st.app.plugin_ui.spatial_spider.correlation_ref_channel = picked;
+                    if let SpiderMode::CorrelationFromRef { .. } =
+                        st.app.plugin_ui.spatial_spider.spider_mode
+                    {
+                        st.app.plugin_ui.spatial_spider.spider_mode =
+                            SpiderMode::CorrelationFromRef {
+                                ref_channel: picked,
+                            };
+                    }
+                    // Close the dropdown after a selection so the
+                    // next click reopens it cleanly.
+                    st.app.plugin_ui.spatial_spider.ref_channel_select_open = false;
+                    st.app.plugin_ui.spatial_spider.ref_channel_highlight = None;
+                    cx.notify();
+                });
+            }
+        });
+    #[cfg(feature = "dev-api")]
+    let select = select.dev_track_with_state(
+        "upmixer.metric.reference",
+        DevElementState::default().text(selected_label),
+    );
+
     div()
         .flex()
         .items_center()
@@ -255,56 +330,9 @@ pub(super) fn build_ref_channel_select(
             div()
                 .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
-                .child(text.spatial.reference_channel),
+                .child("Ref channel"),
         )
-        .child(
-            Select::new(("spider-ref-channel", plugin_idx))
-                .options(options)
-                .selected(selected_label)
-                .disabled(!active)
-                .is_open(is_open)
-                .size(SelectSize::Xs)
-                .theme(theme.to_select_theme())
-                .aria_label(text.spatial.reference_channel)
-                .on_toggle({
-                    let entity = entity.downgrade();
-                    move |open, _window, cx| {
-                        let Some(entity) = entity.upgrade() else {
-                            return;
-                        };
-                        entity.update(cx, |st, cx| {
-                            st.app.plugin_ui.spatial_spider.ref_channel_select_open = open;
-                            cx.notify();
-                        });
-                    }
-                })
-                .on_change({
-                    let entity = entity.clone();
-                    move |value, _window, cx| {
-                        let picked = cfg
-                            .speakers
-                            .iter()
-                            .find(|s| s.label == value.as_ref() && !s.is_lfe)
-                            .map(|s| s.channel)
-                            .unwrap_or(0);
-                        entity.update(cx, |st, cx| {
-                            st.app.plugin_ui.spatial_spider.correlation_ref_channel = picked;
-                            if let SpiderMode::CorrelationFromRef { .. } =
-                                st.app.plugin_ui.spatial_spider.spider_mode
-                            {
-                                st.app.plugin_ui.spatial_spider.spider_mode =
-                                    SpiderMode::CorrelationFromRef {
-                                        ref_channel: picked,
-                                    };
-                            }
-                            // Close the dropdown after a selection so the
-                            // next click reopens it cleanly.
-                            st.app.plugin_ui.spatial_spider.ref_channel_select_open = false;
-                            cx.notify();
-                        });
-                    }
-                }),
-        )
+        .child(div().key_context("SpatialReferenceSelect").child(select))
         .into_any_element()
 }
 
@@ -420,7 +448,8 @@ pub(super) fn build_body(
     // flex parent has bitten us before — `relative(1.0)` width inside a
     // flex row without an explicit flex_basis collapses to 0.
     let container = || div().h(rems(20.0)).w_full();
-    match view_mode {
+    let body = match view_mode {
+        SpiderViewMode::Off => div().into_any_element(),
         SpiderViewMode::Disc2D => container()
             .child(
                 SpiderDisc2D::new(cfg, metric)
@@ -450,5 +479,25 @@ pub(super) fn build_body(
                     .highlight_channel(highlight),
             )
             .into_any_element(),
-    }
+    };
+    #[cfg(feature = "dev-api")]
+    let body = body
+        .dev_track_with_state(
+            "upmixer.visualization",
+            DevElementState::default().text(format!(
+                "{}:{}",
+                match view_mode {
+                    SpiderViewMode::Off => "Off",
+                    SpiderViewMode::Disc2D => "2D",
+                    SpiderViewMode::View3D => "3D",
+                },
+                if matches!(spider_mode, SpiderMode::Spl) {
+                    "SPL"
+                } else {
+                    "Correlation"
+                },
+            )),
+        )
+        .into_any_element();
+    body
 }

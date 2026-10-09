@@ -35,17 +35,20 @@ impl PlayerView {
                     graph.node_input_channels(*id)
                 };
                 for port in 0..channels {
+                    let plugin_id = graph.nodes.get(id).map(|node| node.plugin.id).unwrap_or(0);
                     endpoints.push((
                         format!("{id}:{port}"),
                         format!("{name} · {} · {}", &id.to_string()[..8], port + 1),
+                        (name.clone(), plugin_id, port),
                     ));
                 }
             }
-            endpoints.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+            // Random node UUIDs must not reorder same-type plugins between sessions.
+            endpoints.sort_by(|a, b| a.2.cmp(&b.2).then(a.0.cmp(&b.0)));
             let selected = form.endpoints[side].map(|(id, port)| format!("{id}:{port}"));
             valid &= selected
                 .as_ref()
-                .is_some_and(|value| endpoints.iter().any(|(key, _)| key == value));
+                .is_some_and(|value| endpoints.iter().any(|(key, _, _)| key == value));
             let toggle = self.state.downgrade();
             let change = self.state.downgrade();
             let highlight = self.state.downgrade();
@@ -55,7 +58,7 @@ impl PlayerView {
                 .options(
                     endpoints
                         .into_iter()
-                        .map(|(key, label)| SelectOption::new(key, label))
+                        .map(|(key, label, _)| SelectOption::new(key, label))
                         .collect(),
                 )
                 .is_open(form.open == Some(side))
