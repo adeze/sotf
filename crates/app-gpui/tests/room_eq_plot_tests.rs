@@ -213,6 +213,7 @@ fn make_report_channel(
         waterfall: None,
         resonance_decays: None,
         wavelet: None,
+        speech_transmission: None,
     }
 }
 
@@ -237,6 +238,7 @@ fn make_empty_report_channel(name: &str) -> autoeq::roomeq::ChannelDspChain {
         waterfall: None,
         resonance_decays: None,
         wavelet: None,
+        speech_transmission: None,
     }
 }
 

@@ -1,3 +1,5 @@
+# Engine telemetry can precede the next paint; wait for the rendered action
+# before clicking it. Keep the live cancellation/capture/use/clear assertions.
 resize 1000 1000
 click sidebar.nav-studio-rack
 plugin_clear
@@ -15,16 +17,16 @@ sleep 100ms
 assert plugins.profile.present == false
 plugin_chain_save $SOTF_QA_DIR/profile-live-before.json
 scroll_into_view rack.params plugin.action.2.20
-assert_text plugin.action.2.20 == "Learn Noise"
+wait_text plugin.action.2.20 == "Learn Noise" timeout=1s
 click plugin.action.2.20
 wait_until plugins.profile.learning == true timeout=5s
 wait_until plugins.profile.progress > 0 timeout=5s
-assert_text plugin.action.2.20 == "Cancel Learn"
+wait_text plugin.action.2.20 == "Cancel Learn" timeout=1s
 click plugin.action.2.20
 wait_until plugins.profile.learning == false timeout=5s
 sleep 100ms
 assert plugins.profile.present == false
-assert_text plugin.action.2.20 == "Learn Noise"
+wait_text plugin.action.2.20 == "Learn Noise" timeout=1s
 click plugin.action.2.20
 wait_until plugins.profile.present == true timeout=8s
 wait_until plugins.profile.learning == false timeout=5s

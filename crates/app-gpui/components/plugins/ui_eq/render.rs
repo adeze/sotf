@@ -2300,7 +2300,12 @@ pub fn render_eq_plugin(
             !is_lp_mode && popup_open && selected_filter.is_some(),
             |graph| {
                 let filter = selected_filter.expect("guarded above");
-                let panel_width = graph_width.min(440.0).max(1.0);
+                let panel_width = if graph_width.is_nan() {
+                    // Preserve the min/max fallback for invalid layout widths.
+                    440.0
+                } else {
+                    graph_width.clamp(1.0, 440.0)
+                };
                 let chart_height = CHART_HEIGHT * state.layout_scale;
                 // Reserve the shell/header and band rail above the chart in compact racks.
                 let panel_height = (state.available_height - 110.0)

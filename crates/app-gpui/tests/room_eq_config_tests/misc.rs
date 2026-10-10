@@ -34,6 +34,7 @@ pub(super) fn chain(
         waterfall: None,
         resonance_decays: None,
         wavelet: None,
+        speech_transmission: None,
     }
 }
 

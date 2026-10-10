@@ -1736,11 +1736,7 @@ fn real_sparse_spectrum_frame_is_visible_and_display_gaps_are_filled() {
     let data = data
         .downcast_ref::<sotf_audio_player::SpectrumData>()
         .unwrap();
-    assert!(
-        data.magnitudes
-            .iter()
-            .any(|value| *value == f32::NEG_INFINITY)
-    );
+    assert!(data.magnitudes.contains(&f32::NEG_INFINITY));
     assert!(SpectrumViewState::frequency_range(data).is_some());
     for smoothed in [false, true] {
         let display = SpectrumViewState::magnitudes(data, smoothed);
@@ -1748,11 +1744,7 @@ fn real_sparse_spectrum_frame_is_visible_and_display_gaps_are_filled() {
         assert!(display.iter().all(|value| value.is_finite()));
     }
     // Filling the display must not fabricate additional measured band power.
-    assert!(
-        data.magnitudes
-            .iter()
-            .any(|value| *value == f32::NEG_INFINITY)
-    );
+    assert!(data.magnitudes.contains(&f32::NEG_INFINITY));
     assert_eq!(input, output);
 }
 

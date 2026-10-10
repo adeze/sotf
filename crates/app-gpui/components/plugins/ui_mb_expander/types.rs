@@ -8,9 +8,9 @@ use crate::components::design::Ds;
 use crate::components::graphs::common::rgba_to_u32;
 use crate::components::graphs::response_graphs::{ChartConfig, Series, render_line_chart};
 use crate::components::plugins::ui_layout_renderer::{
-    render_compact_choice_param, render_horizontal_param,
+    render_compact_choice_param, render_horizontal_param, render_narrow_horizontal_param,
 };
-use crate::components::plugins::ui_multiband_common::band_tab_label;
+use crate::components::plugins::ui_multiband_common::{band_tab_label, primary_uses_columns};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -62,13 +62,15 @@ pub fn render_mb_expander_plugin(
     plugin_idx: usize,
     state: MbExpanderRenderState,
     available_width: f32,
-    _available_height: f32,
+    available_height: f32,
     layout_scale: f32,
     text: PluginCommonTranslations,
     theme: &Theme,
     settings: &PluginSettings,
     cx: &App,
 ) -> AnyElement {
+    let wide = available_width / layout_scale.max(0.01) >= 800.0;
+    let primary_columns = primary_uses_columns(available_width, available_height, layout_scale);
     let selected = state.selected_band_idx.min(state.num_bands);
     let band = selected > 0;
     // The desktop protocol uses one-based bands at multiples of 100 and
@@ -83,7 +85,12 @@ pub fn render_mb_expander_plugin(
     let numeric = |index: usize, spec: &ParamSpec, value: f64| {
         let mut spec = *spec;
         spec.name = text.label(spec.name);
-        render_horizontal_param(
+        let render = if primary_columns && !wide && (matches!(index % 100, 6..=10) || index == 14) {
+            render_narrow_horizontal_param
+        } else {
+            render_horizontal_param
+        };
+        render(
             d,
             entity.clone(),
             plugin_idx,
@@ -170,7 +177,6 @@ pub fn render_mb_expander_plugin(
         (8, 4, state.attack_ms),
         (9, 5, state.release_ms),
     ];
-    let wide = available_width / layout_scale.max(0.01) >= 800.0;
     let mut left = div().flex_1().min_w_0().flex().flex_col().gap(d.grid);
     let mut right = div().flex_1().min_w_0().flex().flex_col().gap(d.grid);
     for (position, (offset, template, value)) in dynamics.into_iter().enumerate() {
@@ -179,7 +185,7 @@ pub fn render_mb_expander_plugin(
             if band { &MEB[template] } else { &ME[offset] },
             value,
         );
-        if wide && position >= 3 {
+        if primary_columns && position >= 3 {
             right = right.child(control);
         } else {
             left = left.child(control);
@@ -200,7 +206,7 @@ pub fn render_mb_expander_plugin(
         .w_full()
         .min_w_0()
         .gap(d.grid)
-        .when(!wide, |row| row.flex_col())
+        .when(!primary_columns, |row| row.flex_col())
         .child(left)
         .child(right);
     let mut secondary = div()

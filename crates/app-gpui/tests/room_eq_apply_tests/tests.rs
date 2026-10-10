@@ -78,6 +78,7 @@ fn review_display_curve_prefers_dsp_chain_final_curve() {
         waterfall: None,
         resonance_decays: None,
         wavelet: None,
+        speech_transmission: None,
     };
 
     let points = room_eq_display_response_points(Some(&chain), Some(&fallback)).unwrap();
@@ -125,6 +126,7 @@ fn review_initial_curve_prefers_dsp_chain_initial_curve() {
         waterfall: None,
         resonance_decays: None,
         wavelet: None,
+        speech_transmission: None,
     };
 
     let points = room_eq_initial_response_points(Some(&chain), Some(&fallback)).unwrap();
@@ -175,6 +177,7 @@ fn review_display_curve_finds_chain_by_embedded_channel_name() {
         waterfall: None,
         resonance_decays: None,
         wavelet: None,
+        speech_transmission: None,
     };
     let mut channels = std::collections::HashMap::new();
     channels.insert("Front Right".to_string(), chain);

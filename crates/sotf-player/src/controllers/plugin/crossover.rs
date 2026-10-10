@@ -35,7 +35,7 @@ pub(super) fn value(settings: &PluginSettings, index: usize) -> Option<f64> {
     else {
         return None;
     };
-    if (index - CHANNEL_PARAM_START) % 2 == 0 {
+    if (index - CHANNEL_PARAM_START).is_multiple_of(2) {
         channel_frequencies_hz.as_ref()?.get(channel).copied()
     } else {
         let mode = channel_modes
@@ -66,7 +66,7 @@ pub(super) fn set(settings: &mut PluginSettings, index: usize, value: f64) -> bo
     else {
         return false;
     };
-    if (index - CHANNEL_PARAM_START) % 2 == 0 {
+    if (index - CHANNEL_PARAM_START).is_multiple_of(2) {
         let Some(frequency) = channel_frequencies_hz
             .as_mut()
             .and_then(|f| f.get_mut(channel))

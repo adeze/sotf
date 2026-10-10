@@ -85,8 +85,16 @@ impl Render for PlayerView {
         if self.window_state.needs_initial_focus {
             self.window_state.needs_initial_focus = false;
             self.focus_handle.focus(window, cx);
-            window.activate_window();
-            cx.activate(true);
+            #[cfg(feature = "dev-api")]
+            let background_qa = crate::app::dev_api::background_window_enabled();
+            #[cfg(not(feature = "dev-api"))]
+            let background_qa = false;
+            // Internal focus still supports scripted keys in a hidden QA view.
+            // Only an interactive window should activate the macOS application.
+            if !background_qa {
+                window.activate_window();
+                cx.activate(true);
+            }
 
             // When the window close button (red X) is clicked, dispatch QuitApp
             // so that cleanup (save config/geometry, stop player) runs the same

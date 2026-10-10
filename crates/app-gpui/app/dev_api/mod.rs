@@ -23,3 +23,10 @@ pub use registry::clear as clear_tracked_elements;
 pub use server::merge_missing_tracked_elements;
 #[doc(hidden)]
 pub use server::{DevApiTestHandle, start, start_for_testing};
+
+/// Whether an isolated QA run should keep its native window hidden.
+#[doc(hidden)]
+pub fn background_window_enabled() -> bool {
+    std::env::var_os("SOTF_QA_DIR").is_some()
+        && std::env::var_os("SOTF_QA_BACKGROUND").is_some_and(|value| value == "1")
+}

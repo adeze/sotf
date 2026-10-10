@@ -738,6 +738,10 @@ impl PlayerHandle {
         .map(|_| ())
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "The transport command accepts the source, output, position, and graph atomically"
+    )]
     pub fn load_or_switch_source_at_with_receipt(
         &self,
         source: AudioSource,

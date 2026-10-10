@@ -143,10 +143,11 @@ pub(super) fn apply_structural_side_effects(
             ..
         } if param_idx == 0 => {
             bands.resize_with((*num_bands as usize).clamp(1, 8), || {
-                let mut band = sotf_plugins::DynEqBandParams::default();
-                band.band_threshold = *threshold as f32;
-                band.band_ratio = *ratio as f32;
-                band
+                sotf_plugins::DynEqBandParams {
+                    band_threshold: *threshold as f32,
+                    band_ratio: *ratio as f32,
+                    ..Default::default()
+                }
             });
         }
         PluginSettings::LinearPhaseEq {

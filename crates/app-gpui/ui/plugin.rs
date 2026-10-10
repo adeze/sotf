@@ -451,6 +451,8 @@ impl PlayerView {
                 value,
                 request_id,
             } => {
+                #[cfg(not(feature = "dev-api"))]
+                let _ = param_index;
                 let target = if let Some(node_id) = node_id {
                     state.app.plugin_state.graph.nodes.get(&node_id).and_then(|node| {
                         state.app.plugin_state.graph.get_engine_index(node_id)
@@ -460,6 +462,8 @@ impl PlayerView {
                     None
                 };
                 if let Some((instance_id, engine_index)) = target {
+                    #[cfg(not(feature = "dev-api"))]
+                    let _ = instance_id;
                     #[cfg(feature = "dev-api")]
                     let result = Self::submit_action_update(
                         state, instance_id, engine_index, param_index,

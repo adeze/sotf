@@ -69,6 +69,11 @@ fn main() {
     let qa_mode = qa_dir.is_some();
     #[cfg(feature = "dev-api")]
     let qa_onboarding = args.qa_onboarding;
+    #[cfg(feature = "dev-api")]
+    let background_qa =
+        qa_mode && sotf_audio_player_gpui::app::dev_api::background_window_enabled();
+    #[cfg(not(feature = "dev-api"))]
+    let background_qa = false;
     if let Some(qa_dir) = qa_dir {
         sotf_audio_player::config::set_config_dir_override(qa_dir);
     }
@@ -441,8 +446,8 @@ fn main() {
                         traffic_light_position: None,
                     }),
                     window_background: WindowBackgroundAppearance::Opaque,
-                    focus: true,
-                    show: true,
+                    focus: !background_qa,
+                    show: !background_qa,
                     kind: WindowKind::Normal,
                     is_movable: true,
                     display_id: None,

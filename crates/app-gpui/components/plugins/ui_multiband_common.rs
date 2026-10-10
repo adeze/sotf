@@ -150,6 +150,18 @@ pub(crate) fn render_dense_multiband_header(
     row.into_any_element()
 }
 
+/// Keep primary dynamics side by side when vertical space is constrained.
+pub(crate) fn primary_uses_columns(width: f32, height: f32, scale: f32) -> bool {
+    let scale = scale.max(0.01);
+    let width = width / scale;
+    let height = height / scale;
+    // Below 480 logical pixels, six stacked controls plus band/header choices
+    // exceed the rack. Two 240-pixel lanes let each label wrap above its
+    // slider and exact value while retaining all primary controls;
+    // narrower panes keep the single-column layout to avoid horizontal loss.
+    width >= 800.0 || (width >= 480.0 && height < 480.0)
+}
+
 pub(crate) fn band_tab_label(band: usize, num_bands: usize, crossovers: [f64; 4]) -> String {
     if band == 0 {
         return "Global".to_string();

@@ -442,6 +442,7 @@ fn build_channel_dsp_from_real_emitters(
         waterfall: None,
         resonance_decays: None,
         wavelet: None,
+        speech_transmission: None,
     }
 }
 

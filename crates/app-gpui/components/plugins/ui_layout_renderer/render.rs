@@ -185,7 +185,7 @@ pub fn render_from_layout(
         for index in sotf_audio_player::controllers::plugin::desktop_param_indices(settings)
             .into_iter()
             .filter(|index| {
-                *index >= CHANNEL_PARAM_START && (*index - CHANNEL_PARAM_START) % 2 == 0
+                *index >= CHANNEL_PARAM_START && (*index - CHANNEL_PARAM_START).is_multiple_of(2)
             })
         {
             let Some(frequency_spec) =
@@ -561,12 +561,20 @@ pub fn render_config_controls_from_layout(
 
 /// Configuration controls already owned by specialized editor surfaces.
 fn custom_config_owned(settings: &PluginSettings) -> bool {
-    match super::super::custom_view_registry::plugin_type_key(settings) {
-        "eq" | "compressor" | "upmixer" | "dynamic_eq" | "linear_phase_eq" | "fir_designer" => true,
-        "multiband_compressor" => true,
-        "multiband_expander" | "xtc" | "channel_mute_solo" | "matrix" | "spectrum_analyzer" => true,
-        _ => false,
-    }
+    matches!(
+        super::super::custom_view_registry::plugin_type_key(settings),
+        "eq" | "compressor"
+            | "upmixer"
+            | "dynamic_eq"
+            | "linear_phase_eq"
+            | "fir_designer"
+            | "multiband_compressor"
+            | "multiband_expander"
+            | "xtc"
+            | "channel_mute_solo"
+            | "matrix"
+            | "spectrum_analyzer"
+    )
 }
 
 fn generated_header_globals(settings: &PluginSettings) -> bool {
@@ -1563,6 +1571,7 @@ fn render_main_column(
                 is_editing,
                 selected_param,
                 solved,
+                main_width,
                 available_height,
                 if !primary_indices.is_empty() {
                     primary_indices
@@ -1678,6 +1687,7 @@ fn render_main_column(
                         is_editing,
                         selected_param,
                         solved,
+                        main_width,
                         available_height,
                         if gate_compact && group.id == "TIMING" {
                             &[2, 4]
@@ -1835,6 +1845,7 @@ fn render_group(
     is_editing: bool,
     selected_param: usize,
     solved: &SolvedLayout,
+    available_width: f32,
     available_height: f32,
     skip_indices: &[usize],
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
@@ -1875,7 +1886,47 @@ fn render_group(
             .is_some_and(|param| matches!(param.param_type, ParamType::Bool { .. }))
     });
     let mut profile_row = div().flex().flex_wrap().items_center().gap(d.grid);
+    // DeEsser's eight primary rows otherwise hide Mix below a short rack.
+    // Use the rendered center width, not the solver's preferred group width.
+    // Two compact 280px lanes fit at 560px; narrower editors keep scrolling.
+    let deesser_columns = available_height < 420.0
+        && available_width >= 560.0
+        && group.id == "dynamics"
+        && params
+            .get(11)
+            .is_some_and(|param| param.engine_key == "split_topology");
+    if deesser_columns {
+        let mut lanes = div().flex().w_full().gap(d.grid).items_start();
+        for controls in group.controls.chunks(4) {
+            let mut lane = div().flex().flex_col().flex_1().min_w_0().gap(d.half_grid);
+            for spec in controls {
+                let idx = spec.param_index;
+                if spec.hidden || skip_indices.contains(&idx) {
+                    continue;
+                }
+                if let Some(param) = params.get(idx) {
+                    lane = lane.child(render_narrow_horizontal_param(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        idx,
+                        param,
+                        values.get(idx).copied().unwrap_or(0.0),
+                        is_editing,
+                        selected_param,
+                        spec.is_enabled(values),
+                        theme,
+                    ));
+                }
+            }
+            lanes = lanes.child(lane);
+        }
+        col = col.w_full().child(lanes);
+    }
     for spec in group.controls {
+        if deesser_columns {
+            break;
+        }
         if spec.hidden
             || skip_indices.contains(&spec.param_index)
             || (choice_state.relocate_globals
@@ -2190,6 +2241,40 @@ pub(crate) fn render_horizontal_param(
         interactive,
         theme,
         true,
+        false,
+    )
+}
+
+/// Render a numeric row that fits beside another row in short racks.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Matches the shared parameter renderer contract"
+)]
+pub(crate) fn render_narrow_horizontal_param(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    idx: usize,
+    param: &ParamSpec,
+    value: f64,
+    is_editing: bool,
+    selected_param: usize,
+    interactive: bool,
+    theme: &Theme,
+) -> AnyElement {
+    render_horizontal_param_impl(
+        d,
+        entity,
+        plugin_idx,
+        idx,
+        param,
+        value,
+        is_editing,
+        selected_param,
+        interactive,
+        theme,
+        true,
+        true,
     )
 }
 
@@ -2219,6 +2304,7 @@ pub(crate) fn render_horizontal_param_value(
         interactive,
         theme,
         false,
+        false,
     )
 }
 
@@ -2235,6 +2321,7 @@ fn render_horizontal_param_impl(
     interactive: bool,
     theme: &Theme,
     show_label: bool,
+    narrow: bool,
 ) -> AnyElement {
     let (min, max, step) = match param.param_type {
         ParamType::Float { min, max, step, .. } => (min, max, step),
@@ -2253,7 +2340,9 @@ fn render_horizontal_param_impl(
         .range((min * display_scale) as f32, (max * display_scale) as f32)
         .logarithmic(logarithmic)
         .step((step * display_scale).abs() as f32)
-        .width(142.0)
+        // A 96px slider plus a 4.5rem label and exact value fits a 280px lane.
+        // Keep the normal geometry for full-width and table controls.
+        .width(if narrow { 96.0 } else { 142.0 })
         .size(SliderSize::Sm)
         .theme(theme.to_slider_theme())
         .disabled(!interactive)
@@ -2323,7 +2412,7 @@ fn render_horizontal_param_impl(
         .when(show_label, |row| {
             row.child(
                 div()
-                    .w(rems(7.0))
+                    .w(rems(if narrow { 4.5 } else { 7.0 }))
                     .flex_none()
                     .child(gpui_ui_kit::Text::label(param.name)),
             )
@@ -3347,6 +3436,7 @@ fn render_layout_tab_content(
                 is_editing,
                 selected_param,
                 solved,
+                solved.column_width(ColumnRole::Main).unwrap_or(0.0),
                 f32::INFINITY,
                 &[],
                 plugin_data,

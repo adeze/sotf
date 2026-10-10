@@ -396,7 +396,7 @@ pub fn render_spectrum_analyzer_plugin(
                             );
                             SpectrumElement::new(magnitudes)
                                 .peak_hold(true)
-                                .peak_color(theme.text_primary.into())
+                                .peak_color(theme.text_primary)
                                 .height(px(chart_height))
                                 .frequency_range(state.min_freq, state.max_freq)
                                 .smoothing(state.smoothing)

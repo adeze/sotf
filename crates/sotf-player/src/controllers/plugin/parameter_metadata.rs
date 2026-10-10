@@ -177,7 +177,7 @@ pub fn desktop_param_value(settings: &crate::PluginSettings, idx: usize) -> Opti
                 14 => f64::from(band.is_some_and(|b| b.bypass) as u8),
                 15 => f64::from(band.is_some_and(|b| b.solo) as u8),
                 16 => f64::from(band.is_some_and(|b| b.auto_makeup) as u8),
-                17 => f64::from(band.map_or(true, |b| b.active) as u8),
+                17 => f64::from(band.is_none_or(|b| b.active) as u8),
                 18 => f64::from(band.and_then(|b| b.range_db).unwrap_or(*range_db as f32)),
                 19 => f64::from(band.and_then(|b| b.hold_ms).unwrap_or(*hold_ms as f32)),
                 _ => return None,
@@ -217,7 +217,7 @@ pub fn desktop_param_value(settings: &crate::PluginSettings, idx: usize) -> Opti
                 14 => f64::from(band.is_some_and(|b| b.bypass) as u8),
                 15 => f64::from(band.is_some_and(|b| b.solo) as u8),
                 16 => f64::from(band.is_some_and(|b| b.auto_makeup) as u8),
-                17 => f64::from(band.map_or(true, |b| b.active) as u8),
+                17 => f64::from(band.is_none_or(|b| b.active) as u8),
                 _ => return None,
             })
         }

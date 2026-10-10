@@ -7,9 +7,9 @@ use crate::app::{AppState, i18n::PluginCommonTranslations};
 use crate::components::design::Ds;
 use crate::components::plugins::common::render_transfer_curve_with_level;
 use crate::components::plugins::ui_layout_renderer::{
-    render_compact_choice_param, render_horizontal_param,
+    render_compact_choice_param, render_horizontal_param, render_narrow_horizontal_param,
 };
-use crate::components::plugins::ui_multiband_common::band_tab_label;
+use crate::components::plugins::ui_multiband_common::{band_tab_label, primary_uses_columns};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -63,13 +63,15 @@ pub fn render_mb_compressor_plugin(
     plugin_idx: usize,
     state: MbCompressorRenderState,
     available_width: f32,
-    _available_height: f32,
+    available_height: f32,
     layout_scale: f32,
     text: PluginCommonTranslations,
     theme: &Theme,
     settings: &PluginSettings,
     cx: &App,
 ) -> AnyElement {
+    let wide = available_width / layout_scale.max(0.01) >= 800.0;
+    let primary_columns = primary_uses_columns(available_width, available_height, layout_scale);
     let selected = state.selected_band_idx.min(state.num_bands);
     let band = selected > 0;
     // The desktop protocol uses one-based bands at multiples of 100 and
@@ -84,7 +86,13 @@ pub fn render_mb_compressor_plugin(
     let numeric = |index: usize, spec: &ParamSpec, value: f64| {
         let mut spec = *spec;
         spec.name = text.label(spec.name);
-        render_horizontal_param(
+        let render =
+            if primary_columns && !wide && (matches!(index % 100, 6..=9 | 13) || index == 11) {
+                render_narrow_horizontal_param
+            } else {
+                render_horizontal_param
+            };
+        render(
             d,
             entity.clone(),
             plugin_idx,
@@ -170,7 +178,6 @@ pub fn render_mb_compressor_plugin(
         (8, 4, state.attack_ms),
         (9, 5, state.release_ms),
     ];
-    let wide = available_width / layout_scale.max(0.01) >= 800.0;
     let mut left = div().flex_1().min_w_0().flex().flex_col().gap(d.grid);
     let mut right = div().flex_1().min_w_0().flex().flex_col().gap(d.grid);
     for (position, (offset, template, value)) in dynamics.into_iter().enumerate() {
@@ -179,14 +186,21 @@ pub fn render_mb_compressor_plugin(
             if band { &MCB[template] } else { &MC[offset] },
             value,
         );
-        if wide && position >= 2 {
+        if primary_columns && position >= 2 {
             right = right.child(control);
         } else {
             left = left.child(control);
         }
     }
     if band {
-        right = right.child(numeric(address(13), &MCB[7], state.makeup_gain_db));
+        let makeup = numeric(address(13), &MCB[7], state.makeup_gain_db);
+        // Balance three controls per narrow lane. Makeup's two-line label
+        // otherwise pushes the fourth right-lane control below a short rack.
+        if primary_columns && !wide {
+            left = left.child(makeup);
+        } else {
+            right = right.child(makeup);
+        }
     }
     right = right.child(numeric(11, &MC[11], state.mix));
     let response = || {
@@ -209,7 +223,7 @@ pub fn render_mb_compressor_plugin(
         .w_full()
         .min_w_0()
         .gap(d.grid)
-        .when(!wide, |row| row.flex_col())
+        .when(!primary_columns, |row| row.flex_col())
         .child(left)
         .child(right);
     let mut secondary = div()
