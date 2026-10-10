@@ -11,51 +11,7 @@ use sotf_audio_player::PluginType;
 
 /// Get a color for a plugin type
 pub(super) fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
-    match plugin_type {
-        PluginType::EQ | PluginType::AnalogEq => theme.info,
-        PluginType::Gain | PluginType::Dither => theme.success,
-        PluginType::Compressor
-        | PluginType::Limiter
-        | PluginType::Gate
-        | PluginType::Expander
-        | PluginType::MultibandCompressor
-        | PluginType::MultibandExpander
-        | PluginType::AnalogLimiter
-        | PluginType::AnalogCompressor => theme.warning,
-        PluginType::AAE
-        | PluginType::Upmixer
-        | PluginType::BinauralDecoder
-        | PluginType::Convolution
-        | PluginType::XTC => theme.accent,
-        PluginType::LoudnessCompensation
-        | PluginType::FletcherMunson
-        | PluginType::LoudnessMonitor
-        | PluginType::SpectrumAnalyzer
-        | PluginType::ChannelMuteSolo => theme.text_muted,
-        PluginType::Matrix => theme.accent,
-        PluginType::Denoiser => theme.info,
-        PluginType::Declick => theme.info,
-        PluginType::HissReducer => theme.info,
-        PluginType::SpeechDenoiser => theme.info,
-        PluginType::Pnd => theme.info,
-        PluginType::ABCompare => theme.warning, // A/B Compare - use warning color
-        PluginType::Crossover | PluginType::BandSplit | PluginType::BandMerge => theme.accent,
-        PluginType::Downmix => theme.accent,
-        PluginType::MonoToStereo => theme.accent,
-        PluginType::Crossfeed => theme.accent,
-        PluginType::Delay => theme.info,
-        PluginType::Aec => theme.info,
-        PluginType::Beamformer => theme.accent,
-        PluginType::AmbisonicsDecoder => theme.accent,
-        PluginType::StereoImager => theme.accent,
-        PluginType::DeEsser => theme.warning,
-        PluginType::TransientShaper => theme.warning,
-        PluginType::Saturation => theme.warning,
-        PluginType::DynamicEq => theme.warning,
-        PluginType::LinearPhaseEq => theme.success,
-        PluginType::SpectralCompressor => theme.warning,
-        PluginType::External => theme.accent,
-    }
+    super::super::ui_plugin_shell::plugin_accent_color(plugin_type, theme)
 }
 
 /// Get input and output channel counts for a plugin type

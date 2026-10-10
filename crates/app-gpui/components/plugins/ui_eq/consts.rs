@@ -227,3 +227,38 @@ pub fn y_to_gain_with_height(y: f32, min_db: f64, max_db: f64, height: f32) -> f
     let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
     max_db - t * (max_db - min_db)
 }
+
+/// Position an EQ popup away from the selected handle.
+///
+/// Returns left, top, and height in pixels. Prefer the space above the band;
+/// cap the height to the available space so expanded controls can scroll.
+pub fn eq_popup_placement(
+    graph_width: f32,
+    graph_height: f32,
+    panel_width: f32,
+    desired_height: f32,
+    anchor_x: f32,
+    anchor_y: f32,
+    clearance: f32,
+) -> (f32, f32, f32) {
+    let graph_width = graph_width.max(1.0);
+    let graph_height = graph_height.max(1.0);
+    let panel_width = panel_width.clamp(1.0, graph_width);
+    let anchor_x = anchor_x.clamp(0.0, graph_width);
+    let anchor_y = anchor_y.clamp(0.0, graph_height);
+    let clearance = clearance.max(0.0);
+    let above = (anchor_y - clearance).max(0.0);
+    let below = (graph_height - anchor_y - clearance).max(0.0);
+    let desired_height = desired_height.clamp(1.0, graph_height);
+    let use_above = above >= desired_height || above >= below;
+    let height = desired_height
+        .min(if use_above { above } else { below })
+        .max(1.0);
+    let top = if use_above {
+        (anchor_y - clearance - height).max(0.0)
+    } else {
+        (anchor_y + clearance).min(graph_height - height)
+    };
+    let left = (anchor_x - panel_width / 2.0).clamp(0.0, (graph_width - panel_width).max(0.0));
+    (left, top, height)
+}

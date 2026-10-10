@@ -1,6 +1,6 @@
 #[cfg(feature = "dev-api")]
 use crate::app::dev_api::DevTrackExt;
-use crate::app::types::{Screen, SettingsTab};
+use crate::app::types::Screen;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
@@ -185,85 +185,109 @@ impl PlayerView {
         let details_open = state.app.playback.track_information_open;
         let details_state = self.state.clone();
         let details_view = cx.entity().clone();
-        body = body.child(
-            div()
-                .flex()
-                .items_center()
-                .gap(d.gap)
-                .child(tracked!(
-                    IconButton::with_child(
-                        "now-track-information",
-                        Icon::new(if details_open {
-                            IconName::ChevronDown
-                        } else {
-                            IconName::ChevronRight
-                        })
-                        .small()
-                        .color(theme.text_primary),
-                    )
-                    .size(IconButtonSize::Sm)
-                    .variant(IconButtonVariant::Ghost)
-                    .selected(details_open)
-                    .theme(theme.to_icon_button_theme())
-                    .aria_label(labels[1].to_string())
-                    .on_click_event(move |_, _, cx| {
-                        details_state.update(cx, |state, _| {
-                            state.app.playback.track_information_open =
-                                !state.app.playback.track_information_open;
-                        });
-                        details_view.update(cx, |_view, cx| cx.notify());
-                    }),
-                    "now-playing.details-toggle"
-                ))
-                .child(Text::body(labels[1].to_string())),
-        );
+        let mut information = div()
+            .flex()
+            .flex_col()
+            .gap(d.gap_md)
+            .mt(d.section)
+            .p(d.card)
+            .rounded(d.r_md)
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.surface)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.gap)
+                    .child(tracked!(
+                        IconButton::with_child(
+                            "now-track-information",
+                            Icon::new(if details_open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .small()
+                            .color(theme.text_primary),
+                        )
+                        .size(IconButtonSize::Sm)
+                        .variant(IconButtonVariant::Ghost)
+                        .selected(details_open)
+                        .theme(theme.to_icon_button_theme())
+                        .aria_label(labels[1].to_string())
+                        .on_click_event(move |_, _, cx| {
+                            details_state.update(cx, |state, _| {
+                                state.app.playback.track_information_open =
+                                    !state.app.playback.track_information_open;
+                            });
+                            details_view.update(cx, |_view, cx| cx.notify());
+                        }),
+                        "now-playing.details-toggle"
+                    ))
+                    .child(Text::section_header(labels[1].to_string())),
+            );
         if details_open {
-            let mut details = div().flex().flex_col().gap(d.gap).py(d.pad_y);
+            let library = crate::app::i18n::PhoneLibraryTranslations::for_language(
+                state.app.ui_state.language,
+            );
+            let audio = crate::app::i18n::AudioDeviceTranslations::for_language(
+                state.app.ui_state.language,
+            );
+            let mut details = div().flex().flex_col().gap(d.section);
             if let Some(track) = track.filter(|_| !system_input) {
                 if let Some(item) = item {
-                    details = details.child(Text::body(item.album.title.clone()));
-                    if let Some(year) = item.album.year {
-                        details = details.child(Text::caption(year.to_string()));
-                    }
+                    details = details.child(now_playing_field(
+                        library.album,
+                        item.album.title.clone(),
+                        &d,
+                        &theme,
+                    ));
+                }
+                let mut metadata = div().flex().flex_wrap().gap(d.section);
+                if let Some(year) = item.and_then(|item| item.album.year) {
+                    metadata = metadata.child(now_playing_field(
+                        library.year,
+                        year.to_string(),
+                        &d,
+                        &theme,
+                    ));
                 }
                 if let Some(duration) = track.duration_secs {
-                    details = details.child(Text::caption(format!(
-                        "{}:{:02}",
-                        duration / 60,
-                        duration % 60
-                    )));
+                    metadata = metadata.child(now_playing_field(
+                        text.recording_duration_label,
+                        format!("{}:{:02}", duration / 60, duration % 60),
+                        &d,
+                        &theme,
+                    ));
                 }
                 if let Some(channels) = track.channels {
-                    details = details.child(Text::caption(format!("{}: {channels}", labels[10])));
+                    metadata = metadata.child(now_playing_field(
+                        labels[10],
+                        channels.to_string(),
+                        &d,
+                        &theme,
+                    ));
                 }
                 if let Some(bits) = track.bit_depth {
-                    details = details.child(Text::caption(format!("{}: {bits}", labels[11])));
+                    metadata =
+                        metadata.child(now_playing_field(labels[11], bits.to_string(), &d, &theme));
                 }
                 if let Some(rate) = track.sample_rate {
-                    details = details.child(Text::caption(format!("{rate} Hz")));
+                    metadata = metadata.child(now_playing_field(
+                        audio.sample_rate,
+                        format!("{rate} Hz"),
+                        &d,
+                        &theme,
+                    ));
                 }
+                details = details.child(metadata);
             } else {
                 details = details.child(Text::body(labels[6]));
             }
-            body = body.child(tracked!(details, "now-playing.track-information"));
+            information = information.child(tracked!(details, "now-playing.track-information"));
         }
-        let entity = self.state.clone();
-        body.child(
-            div().flex().child(
-                Button::new("now-output", text.devices_title)
-                    .size(ButtonSize::Sm)
-                    .variant(ButtonVariant::Ghost)
-                    .theme(theme.to_button_theme())
-                    .on_click_event(move |_, _, cx| {
-                        entity.update(cx, |state, cx| {
-                            state.app.ui_state.active_settings_tab = SettingsTab::AudioDevice;
-                            state.app.set_screen(Screen::Settings, "NowPlayingOutput");
-                            cx.notify();
-                        });
-                    }),
-            ),
-        )
-        .into_any_element()
+        body.child(information).into_any_element()
     }
 }
 
@@ -277,99 +301,161 @@ impl PlayerView {
         let signal_path_open = state.app.playback.signal_path_open;
         let path_state = self.state.clone();
         let path_view = cx.entity().clone();
-        let panel = div().flex().flex_col().gap(d.gap).py(d.card).child(
-            div()
-                .flex()
-                .items_center()
-                .gap(d.gap)
-                .child(tracked!(
-                    IconButton::with_child(
-                        "now-signal-path",
-                        Icon::new(if signal_path_open {
-                            IconName::ChevronDown
-                        } else {
-                            IconName::ChevronRight
-                        })
-                        .small()
-                        .color(theme.text_primary),
-                    )
-                    .size(IconButtonSize::Sm)
-                    .variant(IconButtonVariant::Ghost)
-                    .selected(signal_path_open)
-                    .theme(theme.to_icon_button_theme())
-                    .aria_label(labels[0].to_string())
-                    .on_click_event(move |_, _, cx| {
-                        path_state.update(cx, |state, _| {
-                            state.app.playback.signal_path_open =
-                                !state.app.playback.signal_path_open;
-                        });
-                        path_view.update(cx, |_view, cx| cx.notify());
-                    }),
-                    "now-playing.signal-path-toggle"
-                ))
-                .child(Text::body(labels[0].to_string())),
-        );
+        let panel = div()
+            .flex()
+            .flex_col()
+            .gap(d.gap_md)
+            .p(d.card)
+            .rounded(d.r_md)
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.surface)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.gap)
+                    .child(tracked!(
+                        IconButton::with_child(
+                            "now-signal-path",
+                            Icon::new(if signal_path_open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .small()
+                            .color(theme.text_primary),
+                        )
+                        .size(IconButtonSize::Sm)
+                        .variant(IconButtonVariant::Ghost)
+                        .selected(signal_path_open)
+                        .theme(theme.to_icon_button_theme())
+                        .aria_label(labels[0].to_string())
+                        .on_click_event(move |_, _, cx| {
+                            path_state.update(cx, |state, _| {
+                                state.app.playback.signal_path_open =
+                                    !state.app.playback.signal_path_open;
+                            });
+                            path_view.update(cx, |_view, cx| cx.notify());
+                        }),
+                        "now-playing.signal-path-toggle"
+                    ))
+                    .child(Text::section_header(labels[0].to_string())),
+            );
         if !signal_path_open {
             return panel.into_any_element();
         }
-        let mut details = div().flex().flex_col().gap(d.gap);
+        let mut details = div().flex().flex_wrap().items_stretch().gap(d.gap_md);
         if let Some(path) = state.app.playback.signal_path.as_ref() {
-            let source = path
-                .source
-                .as_ref()
-                .map(|source| {
-                    format!(
-                        "{} · {} Hz · {}: {} · {}: {}",
-                        source.format,
-                        source.sample_rate_hz,
+            let audio = crate::app::i18n::AudioDeviceTranslations::for_language(
+                state.app.ui_state.language,
+            );
+            let stage = |label: &'static str| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .w(rems(14.0))
+                    .flex_grow(1.0)
+                    .min_w_0()
+                    .p(d.pad_x)
+                    .rounded(d.r_sm)
+                    .bg(theme.background_secondary)
+                    .child(Text::label(label).color(theme.text_muted))
+            };
+            let mut source = stage(labels[12]);
+            if let Some(format) = &path.source {
+                source = source
+                    .child(Text::section_header(format.format.clone()).color(theme.text_primary))
+                    .child(now_playing_field(
+                        audio.sample_rate,
+                        format!("{} Hz", format.sample_rate_hz),
+                        &d,
+                        &theme,
+                    ))
+                    .child(now_playing_field(
                         labels[10],
-                        source.channels,
+                        format.channels.to_string(),
+                        &d,
+                        &theme,
+                    ))
+                    .child(now_playing_field(
                         labels[11],
-                        source.bits_per_sample
-                    )
-                })
-                .unwrap_or_else(|| labels[6].into());
-            details = details.child(Text::body(format!("{}: {source}", labels[12])));
-            if let Some(resampling) = &path.processing.resampling {
-                details = details.child(Text::caption(format!(
-                    "{}: {} → {} Hz",
-                    labels[8], resampling.from_hz, resampling.to_hz
-                )));
+                        format.bits_per_sample.to_string(),
+                        &d,
+                        &theme,
+                    ));
+            } else {
+                source = source.child(Text::body(labels[6]));
             }
+            let mut processing = stage(
+                state
+                    .app
+                    .ui_state
+                    .translations
+                    .autoeq_form
+                    .sections
+                    .processing,
+            );
             if path.processing.bypassed {
-                details = details.child(Text::body(labels[7]));
-            } else if !path.plugin_chain.is_empty() {
-                details = details.child(Text::body(
-                    path.plugin_chain
-                        .iter()
-                        .map(|plugin| {
-                            sotf_audio_player::PluginType::from_wire_name(&plugin.plugin_type)
-                                .map(|kind| kind.name())
-                                .unwrap_or(plugin.plugin_type.as_str())
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" → "),
+                processing = processing.child(Text::body(labels[7]));
+            } else {
+                for (index, plugin) in path.plugin_chain.iter().enumerate() {
+                    if index > 0 {
+                        processing = processing.child(Text::caption("↓").color(theme.text_muted));
+                    }
+                    let name = sotf_audio_player::PluginType::from_wire_name(&plugin.plugin_type)
+                        .map(|kind| kind.name())
+                        .unwrap_or(plugin.plugin_type.as_str());
+                    processing = processing.child(
+                        Text::new(name.to_string())
+                            .size(gpui_ui_kit::TextSize::Sm)
+                            .color(theme.text_primary),
+                    );
+                }
+            }
+            if let Some(resampling) = &path.processing.resampling {
+                processing = processing.child(now_playing_field(
+                    labels[8],
+                    format!("{} → {} Hz", resampling.from_hz, resampling.to_hz),
+                    &d,
+                    &theme,
                 ));
             }
-            let output_format = if path.output.sample_rate_hz > 0 && path.output.channels > 0 {
-                format!(
-                    "{} Hz · {}: {}",
-                    path.output.sample_rate_hz, labels[10], path.output.channels
+            processing = processing.child(now_playing_field(
+                labels[9],
+                path.processing.latency_samples.to_string(),
+                &d,
+                &theme,
+            ));
+            let mut output = stage(labels[13]).child(
+                Text::new(
+                    path.output
+                        .device
+                        .clone()
+                        .unwrap_or_else(|| labels[6].into()),
                 )
+                .size(gpui_ui_kit::TextSize::Sm)
+                .color(theme.text_primary),
+            );
+            if path.output.sample_rate_hz > 0 && path.output.channels > 0 {
+                output = output
+                    .child(now_playing_field(
+                        audio.sample_rate,
+                        format!("{} Hz", path.output.sample_rate_hz),
+                        &d,
+                        &theme,
+                    ))
+                    .child(now_playing_field(
+                        labels[10],
+                        path.output.channels.to_string(),
+                        &d,
+                        &theme,
+                    ));
             } else {
-                labels[6].to_string()
-            };
-            details = details
-                .child(Text::caption(format!(
-                    "{}: {}",
-                    labels[9], path.processing.latency_samples
-                )))
-                .child(Text::body(format!(
-                    "{}: {} · {}",
-                    labels[13],
-                    path.output.device.as_deref().unwrap_or(labels[6]),
-                    output_format
-                )));
+                output = output.child(Text::body(labels[6]));
+            }
+            details = details.child(source).child(processing).child(output);
         } else {
             details = details.child(Text::body(labels[6]));
         }
@@ -377,4 +463,23 @@ impl PlayerView {
             .child(tracked!(details, "now-playing.signal-path"))
             .into_any_element()
     }
+}
+
+fn now_playing_field(
+    label: &'static str,
+    value: String,
+    d: &Ds,
+    theme: &crate::app::theme::Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .min_w_0()
+        .gap(d.grid)
+        .child(Text::caption(label).color(theme.text_muted))
+        .child(
+            Text::new(value)
+                .size(gpui_ui_kit::TextSize::Sm)
+                .color(theme.text_primary),
+        )
 }

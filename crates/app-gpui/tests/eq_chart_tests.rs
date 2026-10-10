@@ -549,3 +549,28 @@ fn test_filter_type_index() {
         4
     );
 }
+
+#[test]
+fn eq_popup_stays_clear_of_peak_and_cut_handles() {
+    use sotf_audio_player_gpui::components::plugins::ui_eq::eq_popup_placement;
+    for anchor_y in [20.0, 80.0, 150.0, 220.0, 280.0] {
+        for desired_height in [108.0, 280.0] {
+            let (left, top, height) =
+                eq_popup_placement(800.0, 300.0, 304.0, desired_height, 400.0, anchor_y, 24.0);
+            assert!(left >= 0.0 && left + 304.0 <= 800.0);
+            assert!(top >= 0.0 && top + height <= 300.0);
+            assert!(top + height <= anchor_y - 24.0 || top >= anchor_y + 24.0);
+        }
+    }
+}
+
+#[test]
+fn eq_popup_clamps_to_narrow_chart_edges() {
+    use sotf_audio_player_gpui::components::plugins::ui_eq::eq_popup_placement;
+    for anchor_x in [0.0, 100.0, 200.0] {
+        let (left, top, height) =
+            eq_popup_placement(200.0, 180.0, 304.0, 108.0, anchor_x, 120.0, 24.0);
+        assert_eq!(left, 0.0);
+        assert!(top >= 0.0 && top + height <= 96.0);
+    }
+}

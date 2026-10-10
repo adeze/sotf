@@ -150,21 +150,21 @@ symphonia-codec-wavpack = { version = "0.1.0", git = "https://github.com/pierrea
 symphonia-format-sacd = { version = "0.1.0", git = "https://github.com/pierreaubert/symphonia-add-ons" }
 
 # GPUI toolkit
-gpui-d3rs = { version = "0.9", path = "../gpui-toolkit/crates/gpui-d3rs" }
-gpui-px = { version = "0.9", path = "../gpui-toolkit/crates/gpui-px" }
-gpui-audio-kit = { version = "0.9", path = "../gpui-toolkit/crates/gpui-audio-kit" }
-gpui-component-lab = { version = "0.9", path = "../gpui-toolkit/crates/gpui-component-lab" }
-gpui-design-tools = { version = "0.9", path = "../gpui-toolkit/crates/gpui-design-tools" }
-gpui-ui-kit = { version = "0.9", path = "../gpui-toolkit/crates/gpui-ui-kit" }
-gpui-ui-kit-macros = { version = "0.9", path = "../gpui-toolkit/crates/gpui-ui-kit-macros" }
-gpui-themes = { version = "0.9", path = "../gpui-toolkit/crates/gpui-themes" }
-gpui-miniapp = { version = "0.9", path = "../gpui-toolkit/crates/gpui-miniapp" }
-gpui-builder = { version = "0.9", path = "../gpui-toolkit/crates/gpui-builder" }
-gpui-design = { version = "0.9", path = "../gpui-toolkit/crates/gpui-design" }
-gpui-keybinding = { version = "0.9", path = "../gpui-toolkit/crates/gpui-keybinding" }
-gpui-pretext = { version = "0.9", path = "../gpui-toolkit/crates/gpui-pretext" }
-gpui-ios = { version = "0.9", path = "../gpui-toolkit/crates/gpui-ios" }
-gpui-au = { version = "0.9", path = "../gpui-toolkit/crates/gpui-au" }
+gpui-d3rs = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-px = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-audio-kit = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-component-lab = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-design-tools = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-ui-kit = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-ui-kit-macros = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-themes = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-miniapp = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-builder = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-design = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-keybinding = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-pretext = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-ios = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-au = { version = "0.10", git = "https://github.com/pierreaubert/gpui-toolkit" }
 
 # SotF
 sotf-host = { path = "../sotf-daw/crates/sotf-plugins/crates/sotf-host", default-features = false }

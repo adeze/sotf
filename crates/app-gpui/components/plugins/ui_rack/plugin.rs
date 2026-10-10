@@ -3,7 +3,8 @@ use super::super::actions::ToggleUpmixerConfig;
 use super::super::level_meters::render_gradient_meter;
 use super::super::render_plugin_content;
 use super::super::ui_plugin_shell::{
-    bypass_tooltip as shared_bypass_tooltip, plugin_accent_color as plugin_color, plugin_icon,
+    bypass_tooltip as shared_bypass_tooltip, plugin_accent_color as plugin_color,
+    plugin_category_color, plugin_icon,
 };
 use super::plugin_drag_info::PluginDragInfo;
 use super::short::short_name;
@@ -1689,6 +1690,7 @@ impl PlayerView {
 
         for cat in categories {
             let cat_name = &cat.name;
+            let category_color = plugin_category_color(cat.name, &theme);
             let plugins = cat.plugins;
             let mut buttons: Vec<gpui::AnyElement> = Vec::new();
 
@@ -1706,7 +1708,7 @@ impl PlayerView {
                     continue;
                 }
 
-                let color = plugin_color(&pt, &theme);
+                let color = category_color;
                 // The add workflow favors comprehension over rack density.
                 // Abbreviated names remain appropriate on compact rack cards.
                 let name = pt.name();
@@ -1773,7 +1775,7 @@ impl PlayerView {
                             div()
                                 .text_size(d.text_xs)
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.text_muted)
+                                .text_color(category_color)
                                 // intentional: fixed 60px label column width for category labels
                                 .w(rems(3.75))
                                 .flex_shrink_0()

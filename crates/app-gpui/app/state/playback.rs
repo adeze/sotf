@@ -18,8 +18,7 @@ pub struct HeldSpectrumFrame {
 
 pub struct PlaybackState {
     pub track_information_open: bool,
-    /// Whether the Now Playing signal-path details are expanded. Closed by
-    /// default so negotiated formats stay one explicit disclosure away.
+    /// Whether the Now Playing signal-path details are expanded. Open by default.
     pub signal_path_open: bool,
     ctrl: PlaybackController,
 
@@ -87,8 +86,8 @@ impl PlaybackState {
         // Override the default volume with GPUI's startup volume
         ctrl.volume = constants::ui::DEFAULT_STARTUP_VOLUME;
         Self {
-            track_information_open: false,
-            signal_path_open: false,
+            track_information_open: true,
+            signal_path_open: true,
             ctrl,
             current_queue_index: None,
             input_loudness_info: None,

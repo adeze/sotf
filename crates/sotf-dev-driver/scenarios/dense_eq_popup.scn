@@ -10,20 +10,49 @@ assert_visible eq.header.topology
 click eq.band.0.select
 wait_visible eq.band.0.type.select timeout=3s
 assert_within eq.band.0.type.select rack.params
-assert_within eq.exact.0 rack.params
-assert_within eq.exact.1 rack.params
-assert_within eq.exact.2 rack.params
+assert_within eq.summary.0 rack.params
+assert_within eq.summary.1 rack.params
+assert_within eq.summary.2 rack.params
+assert_absent eq.slider.0
+click eq.band.details
+wait_visible eq.slider.0 timeout=3s
+assert_within eq.slider.0 rack.params
+screenshot eq-expanded-band-editor
+click eq.band.details
+wait_idle 250ms
+assert_absent eq.slider.0
+screenshot eq-compact-band-editor
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.6 timeout=3s
+screenshot eq-filter-shape-menu
+click eq.filter_type.0.6
+assert plugins.plugin.2.param.3.value == 6
+wait_idle 250ms
+assert_visible eq.band.0.type.select
+click eq.band.0.type.select
+key up
+key enter
+assert plugins.plugin.2.param.3.value == 5
+wait_idle 250ms
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.0 timeout=3s
+click eq.filter_type.0.0
+assert plugins.plugin.2.param.3.value == 0
 plugin_chain_save $SOTF_QA_DIR/eq-before.json
+click eq.band.details
+scroll_into_view eq.band.editor eq.exact.0
 click eq.exact.0
 key cmd-a
 type "450"
 key enter
 assert plugins.plugin.2.param.0.value == 450 tolerance=0.01
+scroll_into_view eq.band.editor eq.exact.1
 click eq.exact.1
 key cmd-a
 type "2.5"
 key enter
 assert plugins.plugin.2.param.1.value == 2.5 tolerance=0.01
+scroll_into_view eq.band.editor eq.exact.2
 click eq.exact.2
 key cmd-a
 type "4"

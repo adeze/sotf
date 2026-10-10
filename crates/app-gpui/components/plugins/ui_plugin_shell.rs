@@ -14,115 +14,94 @@ use gpui::*;
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use sotf_audio_player::PluginType;
 
-/// Get the accent color for a plugin type from the theme
-pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
-    match plugin_type {
-        PluginType::EQ | PluginType::AnalogEq => theme.plugin_palette.plugin_colors.eq,
-        PluginType::Gain | PluginType::Dither => theme.plugin_palette.plugin_colors.gain,
-        PluginType::AAE => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::Upmixer => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::Compressor | PluginType::AnalogCompressor => {
-            theme.plugin_palette.plugin_colors.compressor
-        }
-        PluginType::Limiter | PluginType::AnalogLimiter => {
-            theme.plugin_palette.plugin_colors.limiter
-        }
-        PluginType::Gate => theme.plugin_palette.plugin_colors.gate,
-        PluginType::Expander => theme.plugin_palette.plugin_colors.gate,
-        PluginType::MultibandCompressor => theme.plugin_palette.plugin_colors.compressor,
-        PluginType::MultibandExpander => theme.plugin_palette.plugin_colors.gate,
-        PluginType::LoudnessCompensation => theme.plugin_palette.plugin_colors.loudness,
-        PluginType::FletcherMunson => theme.plugin_palette.plugin_colors.loudness,
-        PluginType::BinauralDecoder => theme.plugin_palette.plugin_colors.binaural,
-        PluginType::Convolution => theme.plugin_palette.plugin_colors.convolution,
-        PluginType::LoudnessMonitor => theme.plugin_palette.plugin_colors.monitor,
-        PluginType::SpectrumAnalyzer => theme.plugin_palette.plugin_colors.spectrum,
-        PluginType::ChannelMuteSolo => theme.plugin_palette.plugin_colors.mute_solo,
-        PluginType::Matrix => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::XTC => theme.plugin_palette.plugin_colors.binaural,
-        PluginType::Denoiser => theme.plugin_palette.plugin_colors.eq,
-        PluginType::Declick => theme.plugin_palette.plugin_colors.eq,
-        PluginType::HissReducer => theme.plugin_palette.plugin_colors.eq,
-        PluginType::SpeechDenoiser => theme.plugin_palette.plugin_colors.eq,
-        PluginType::Pnd => theme.plugin_palette.plugin_colors.eq,
-        PluginType::ABCompare => theme.plugin_palette.plugin_colors.compressor,
-        PluginType::Crossover => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::BandSplit => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::BandMerge => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::Downmix => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::MonoToStereo => theme.plugin_palette.plugin_colors.binaural,
-        PluginType::Crossfeed => theme.plugin_palette.plugin_colors.binaural,
-        PluginType::Delay => theme.plugin_palette.plugin_colors.eq,
-        PluginType::Aec => theme.plugin_palette.plugin_colors.eq,
-        PluginType::Beamformer => theme.plugin_palette.plugin_colors.binaural,
-        PluginType::AmbisonicsDecoder => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::StereoImager => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::DeEsser => theme.plugin_palette.plugin_colors.compressor,
-        PluginType::TransientShaper => theme.plugin_palette.plugin_colors.compressor,
-        PluginType::Saturation => theme.plugin_palette.plugin_colors.eq,
-        PluginType::DynamicEq => theme.plugin_palette.plugin_colors.compressor,
-        PluginType::LinearPhaseEq => theme.plugin_palette.plugin_colors.eq,
-        PluginType::SpectralCompressor => theme.plugin_palette.plugin_colors.compressor,
-        PluginType::External => theme.plugin_palette.plugin_colors.upmixer,
+/// Get the category accent color from the active theme.
+pub fn plugin_category_color(category: &str, theme: &Theme) -> Rgba {
+    let colors = &theme.plugin_palette.plugin_colors;
+    match category {
+        "Dynamics" => colors.compressor,
+        "EQ & Tone" => colors.eq,
+        "Denoising" => colors.gain,
+        "Spatial" => colors.upmixer,
+        "Analysis" => colors.loudness,
+        "Routing" => colors.limiter,
+        _ => theme.text_muted,
     }
 }
 
-/// Get the icon for a plugin type.
+/// Get the category accent color for a plugin.
+pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
+    let category = sotf_audio_player::plugin_categories::category_of(plugin_type).unwrap_or(
+        match plugin_type {
+            // Legacy loudness EQ and external plugins are not in the picker.
+            PluginType::FletcherMunson => "EQ & Tone",
+            PluginType::External => "Spatial",
+            _ => "",
+        },
+    );
+    plugin_category_color(category, theme)
+}
+
+/// Get the supplied artwork for a plugin type.
 ///
-/// For LoudnessMonitor, pass `is_input_mon` / `is_output_mon` to pick a
-/// directional arrow; otherwise the generic monitor icon is used.
+/// Input and output monitors use the directional device artwork. Plugins
+/// without dedicated artwork retain an appropriate generic icon.
 pub fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> IconName {
     match plugin_type {
-        PluginType::EQ
-        | PluginType::AnalogEq
-        | PluginType::DynamicEq
-        | PluginType::LinearPhaseEq => IconName::SlidersHorizontal,
-        PluginType::Gain | PluginType::LoudnessCompensation => IconName::Volume2,
-        PluginType::Dither => IconName::AudioWaveform,
-        PluginType::AAE | PluginType::Convolution | PluginType::Delay => IconName::Repeat,
-        PluginType::Upmixer
-        | PluginType::Matrix
-        | PluginType::Crossover
-        | PluginType::BandSplit
-        | PluginType::BandMerge
-        | PluginType::Downmix
-        | PluginType::StereoImager
-        | PluginType::AmbisonicsDecoder => IconName::Speaker,
-        PluginType::Compressor
-        | PluginType::Limiter
-        | PluginType::Gate
-        | PluginType::Expander
-        | PluginType::MultibandCompressor
-        | PluginType::MultibandExpander
-        | PluginType::DeEsser
-        | PluginType::TransientShaper
-        | PluginType::SpectralCompressor
-        | PluginType::AnalogLimiter
-        | PluginType::AnalogCompressor => IconName::AudioWaveform,
-        PluginType::FletcherMunson
-        | PluginType::BinauralDecoder
-        | PluginType::XTC
-        | PluginType::Crossfeed => IconName::Headphones,
+        PluginType::EQ => IconName::PluginEq,
+        PluginType::AnalogEq => IconName::PluginAnalogEq,
+        PluginType::DynamicEq => IconName::PluginDynamicEq,
+        PluginType::LinearPhaseEq => IconName::PluginLinearPhaseEq,
+        PluginType::Gain => IconName::PluginGain,
+        PluginType::Dither => IconName::PluginDither,
+        PluginType::AAE => IconName::PluginAae,
+        PluginType::Upmixer => IconName::PluginUpmixer,
+        PluginType::Compressor | PluginType::MultibandCompressor => {
+            IconName::PluginMultibandCompressor
+        }
+        PluginType::Expander | PluginType::MultibandExpander => IconName::PluginMultibandExpander,
+        PluginType::Limiter => IconName::PluginLimiter,
+        PluginType::Gate => IconName::PluginGate,
+        PluginType::AnalogCompressor => IconName::PluginAnalogCompressor,
+        PluginType::AnalogLimiter => IconName::PluginAnalogLimiter,
+        PluginType::LoudnessCompensation | PluginType::FletcherMunson => {
+            IconName::PluginLoudnessCompensation
+        }
+        PluginType::BinauralDecoder => IconName::PluginBinaural,
+        PluginType::Convolution => IconName::PluginConvolution,
+        PluginType::ChannelMuteSolo => IconName::PluginChannelMuteSolo,
+        PluginType::Matrix => IconName::PluginMatrix,
+        PluginType::XTC => IconName::PluginXtc,
+        PluginType::Denoiser => IconName::PluginDenoiser,
+        PluginType::Declick => IconName::PluginDeclick,
+        PluginType::HissReducer => IconName::PluginHissReducer,
+        PluginType::SpeechDenoiser => IconName::PluginSpeechDenoiser,
+        PluginType::Pnd => IconName::PluginPnd,
+        PluginType::ABCompare => IconName::PluginAbCompare,
+        PluginType::Crossover => IconName::PluginCrossover,
+        PluginType::BandSplit => IconName::PluginBandSplit,
+        PluginType::BandMerge => IconName::PluginBandMerge,
+        PluginType::Downmix => IconName::PluginDownmix,
+        PluginType::MonoToStereo => IconName::PluginMonoToStereo,
+        PluginType::Crossfeed => IconName::PluginCrossfeed,
+        PluginType::Delay => IconName::PluginDelay,
+        PluginType::Aec => IconName::PluginAec,
+        PluginType::Beamformer => IconName::PluginBeamformer,
+        PluginType::AmbisonicsDecoder => IconName::PluginAmbisonics,
+        PluginType::StereoImager => IconName::PluginStereoImager,
+        PluginType::DeEsser => IconName::PluginDeEsser,
+        PluginType::TransientShaper => IconName::PluginTransientShaper,
+        PluginType::Saturation => IconName::PluginSaturation,
+        PluginType::SpectralCompressor => IconName::PluginSpectralCompressor,
         PluginType::LoudnessMonitor => {
             if is_input_mon {
-                IconName::ChevronLeft
+                IconName::PluginHalInput
             } else if is_output_mon {
-                IconName::ChevronRight
+                IconName::PluginHalOutput
             } else {
                 IconName::Volume2
             }
         }
         PluginType::SpectrumAnalyzer => IconName::AudioWaveform,
-        PluginType::ChannelMuteSolo | PluginType::MonoToStereo => IconName::SlidersHorizontal,
-        PluginType::Denoiser
-        | PluginType::Declick
-        | PluginType::HissReducer
-        | PluginType::SpeechDenoiser
-        | PluginType::Pnd
-        | PluginType::Aec
-        | PluginType::Beamformer => IconName::Brain,
-        PluginType::ABCompare => IconName::Repeat,
-        PluginType::Saturation => IconName::AudioWaveform,
         PluginType::External => IconName::Plug,
     }
 }

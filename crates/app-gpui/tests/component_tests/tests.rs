@@ -6085,10 +6085,10 @@ fn headphone_eq_discovery_controls_are_rendered_fixture_targets() {
 }
 
 #[test]
-fn now_playing_disclosures_default_collapsed() {
+fn now_playing_disclosures_default_expanded() {
     let playback = sotf_audio_player_gpui::app::state::PlaybackState::default();
-    assert!(!playback.track_information_open);
-    assert!(!playback.signal_path_open);
+    assert!(playback.track_information_open);
+    assert!(playback.signal_path_open);
 }
 
 #[test]
@@ -6098,4 +6098,67 @@ fn now_playing_signal_path_toggle_is_rendered_fixture_target() {
     assert!(now_playing.contains("\"now-playing.signal-path-toggle\""));
     assert!(now_playing.contains("\"now-playing.signal-path\""));
     assert!(now_playing.contains("signal_path_open"));
+}
+
+#[test]
+fn plugin_artwork_paths_exist_for_every_picker_plugin() {
+    use sotf_audio_player_gpui::components::plugins::ui_plugin_shell::plugin_icon;
+
+    let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+    for category in sotf_audio_player::plugin_categories::CATEGORIES {
+        for plugin in category.plugins {
+            let icon = plugin_icon(plugin, false, false);
+            assert!(
+                assets.join(icon.path()).is_file(),
+                "{plugin:?} artwork is missing"
+            );
+            if !matches!(
+                plugin,
+                sotf_audio_player::PluginType::LoudnessMonitor
+                    | sotf_audio_player::PluginType::SpectrumAnalyzer
+            ) {
+                assert!(
+                    icon.path().starts_with("icons/sotf-plugin-"),
+                    "{plugin:?} must use supplied plugin artwork"
+                );
+            }
+        }
+    }
+    for (input, output) in [(true, false), (false, true)] {
+        let icon = plugin_icon(
+            &sotf_audio_player::PluginType::LoudnessMonitor,
+            input,
+            output,
+        );
+        assert!(assets.join(icon.path()).is_file());
+        assert!(icon.path().starts_with("icons/sotf-plugin-hal-"));
+    }
+}
+
+#[test]
+fn plugin_category_colors_are_consistent_and_distinct() {
+    use sotf_audio_player_gpui::components::plugins::ui_plugin_shell::{
+        plugin_accent_color, plugin_category_color,
+    };
+    use sotf_audio_player_gpui::theme::Theme;
+
+    for theme in [Theme::dark(), Theme::light(), Theme::onyx()] {
+        let mut colors = Vec::new();
+        for category in sotf_audio_player::plugin_categories::CATEGORIES {
+            let color = plugin_category_color(category.name, &theme);
+            assert!(
+                !colors.contains(&color),
+                "{} repeats another category color",
+                category.name
+            );
+            for plugin in category.plugins {
+                assert_eq!(
+                    plugin_accent_color(plugin, &theme),
+                    color,
+                    "{plugin:?} must use its category color"
+                );
+            }
+            colors.push(color);
+        }
+    }
 }

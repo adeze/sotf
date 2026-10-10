@@ -12,15 +12,14 @@ wait_until playback.is_playing == true timeout=4s
 focus NowPlaying
 wait_until now_playing.signal_ready == true timeout=15s
 wait_idle 2s
+assert now_playing.signal_open == true
+assert_visible now-playing.signal-path
+click now-playing.signal-path-toggle
 assert now_playing.signal_open == false
 assert_absent now-playing.signal-path
 click now-playing.signal-path-toggle
-assert now_playing.signal_open == true
 assert_visible now-playing.signal-path
 assert_visible now-playing.view-album
-assert now_playing.details_open == false
-assert_absent now-playing.track-information
-click now-playing.details-toggle
 assert now_playing.details_open == true
 assert_visible now-playing.track-information
 key enter
