@@ -1,0 +1,19 @@
+[package]
+name = "sotf-report-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Thin offline host for the shared AutoEQ HTML/WASM report"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+uuid.workspace = true
+url.workspace = true
+rust-embed = { workspace = true, features = ["include-exclude", "debug-embed"] }
+
+[dev-dependencies]
+reqwest = { workspace = true, features = ["blocking"] }

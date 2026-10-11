@@ -1,0 +1,21 @@
+# Clipped input is a quality warning with retained capture evidence, so the
+# user can review and accept it or record the channel again.
+focus       recording
+assert      recording.step == "Capture"
+click       recording.capture_all
+wait_until recording.review_count == 1 timeout=30s
+assert      recording.review_count == 1
+assert      recording.quality_count == 1
+assert      recording.take.0.evidence_complete == true
+assert      recording.take.0.quality_present == true
+assert      recording.take.0.clipping_status == "Warning"
+assert      recording.take.0.clipping_measured > 0
+assert      recording.status_severity == "Warning"
+screenshot  recording-clipping-review
+click       recording.accept_take_0
+wait_until  recording.review_count == 1 timeout=30s
+assert      recording.take.1.evidence_complete == true
+scroll      recording.content -600
+click       recording.accept_take_1
+wait_until  recording.done_count == 2 timeout=30s
+assert      recording.done_count == 2

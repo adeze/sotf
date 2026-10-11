@@ -80,10 +80,37 @@ pub struct RecordingState {
 #[derive(Debug, Clone)]
 pub struct QaFakeCapture {
     pub points: usize,
+    pub profile: QaFakeCaptureProfile,
     /// A one-shot deterministic failure injected after the visible Capture
     /// action. Taking it on the first attempt makes Retry exercise the same
     /// UI control and then succeed.
     pub fault: Option<QaFakeCaptureFault>,
+}
+
+/// Signal profile used by the dev-only emulated recording backend.
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum QaFakeCaptureProfile {
+    #[default]
+    Clean,
+    HighThd,
+    LowSnr,
+    UnknownEvidence,
+    Clipping,
+}
+
+#[cfg(feature = "dev-api")]
+impl QaFakeCaptureProfile {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "clean" => Some(Self::Clean),
+            "high-thd" => Some(Self::HighThd),
+            "low-snr" => Some(Self::LowSnr),
+            "unknown-evidence" => Some(Self::UnknownEvidence),
+            "clipping" => Some(Self::Clipping),
+            _ => None,
+        }
+    }
 }
 
 /// Failure modes that the dev-only recording fixture can reproduce.

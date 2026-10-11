@@ -1,0 +1,57 @@
+# Complete the shared ear-training session through the visible TUI controls.
+key T
+assert screen.focused == "Tools"
+key enter
+assert screen.focused == "EarTraining"
+
+# Use ten trials so the normal completion action persists a compact session.
+key t
+key t
+assert learning.config_trial_count == 10
+key s
+wait_until learning.session_active == true timeout=3s
+key 2
+assert learning.filtered_audition == true
+assert learning.selected_path == 1
+key 1
+assert learning.filtered_audition == false
+assert learning.selected_path == 0
+
+# Submit and advance ten generated questions through the normal key handler.
+key right
+key enter
+assert learning.session_answered == true
+key enter
+key right
+key enter
+key enter
+key right
+key enter
+key enter
+key right
+key enter
+key enter
+key right
+key enter
+key enter
+key right
+key enter
+key enter
+key right
+key enter
+key enter
+key right
+key enter
+key enter
+key right
+key enter
+key enter
+key right
+key enter
+key enter
+
+assert learning.session_trial_count == 10
+assert learning.progress_total_attempts == 10
+assert learning.progress_persisted == true
+query learning.progress_accuracy
+assert learning.session_active == true

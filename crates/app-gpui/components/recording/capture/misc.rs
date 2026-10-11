@@ -27,6 +27,13 @@ macro_rules! dev_track {
     }};
 }
 
+#[cfg(feature = "dev-api")]
+#[derive(Clone, Copy)]
+struct QaCaptureRun {
+    profile: crate::app::types::recording::QaFakeCaptureProfile,
+    fault: Option<crate::app::types::recording::QaFakeCaptureFault>,
+}
+
 impl PlayerView {
     /// Render the capture step UI
     pub(crate) fn render_recording_capture_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -616,7 +623,7 @@ impl PlayerView {
                                     let view = view.clone();
                                     let theme = theme.clone();
                                     let label = translations.recording_stop_recording;
-                                    stack.child(
+                                    stack.child(dev_track!(
                                         Button::new("stop_recording", label)
                                             .variant(ButtonVariant::Destructive)
                                             .size(ButtonSize::Sm)
@@ -629,7 +636,8 @@ impl PlayerView {
                                                     });
                                                 }
                                             }),
-                                    )
+                                        "recording.stop"
+                                    ))
                                 }),
                         ),
                 )
@@ -888,34 +896,13 @@ impl PlayerView {
                                 )
                                 .child(div().flex_1())
                                 .child(
-                                    Button::new(
-                                        SharedString::from(format!(
-                                            "record_speaker_{}",
-                                            first_vec_idx
-                                        )),
-                                        button_label,
-                                    )
-                                    .variant(ButtonVariant::Secondary)
-                                    .size(ButtonSize::Xs)
-                                    .disabled(is_recording || any_recording)
-                                    .theme(theme.to_button_theme())
-                                    .on_click({
-                                        let view = view.clone();
-                                        move |_, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.start_recording_channel(first_vec_idx, cx);
-                                            });
-                                        }
-                                    }),
-                                )
-                                .when(any_review, |row| {
-                                    row.child(
+                                    dev_track!(
                                         Button::new(
                                             SharedString::from(format!(
-                                                "accept_take_{}",
+                                                "record_speaker_{}",
                                                 first_vec_idx
                                             )),
-                                            recording_text.accept_anyway,
+                                            button_label,
                                         )
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Xs)
@@ -925,42 +912,73 @@ impl PlayerView {
                                             let view = view.clone();
                                             move |_, cx| {
                                                 view.update(cx, |this, cx| {
-                                                    let accepted =
-                                                        this.state.update(cx, |state, _cx| {
-                                                            let accepted = state
-                                                                .app
-                                                                .measurement_state
-                                                                .recording_state
-                                                                .accept_review_needed_for(
-                                                                    speaker_idx,
-                                                                    mic_position,
-                                                                );
-                                                            if accepted > 0 {
-                                                                state
-                                                                    .app
-                                                                    .measurement_state
-                                                                    .recording_state
-                                                                    .status_message =
-                                                                    recording_text
-                                                                        .accepted_takes(accepted)
-                                                                        .to_string();
-                                                                    state.app.measurement_state.recording_state.status_severity =
-                                                                        crate::app::types::recording::RecordingStatusSeverity::Success;
-                                                            }
-                                                            accepted
-                                                        });
-                                                    if accepted > 0 {
-                                                        // Resume a batch parked by the
-                                                        // quality gate (task-9 review R1).
-                                                        this.resume_batch_after_review_accept(
-                                                            mic_position,
-                                                            cx,
-                                                        );
-                                                    }
-                                                    cx.notify();
+                                                    this.start_recording_channel(first_vec_idx, cx);
                                                 });
                                             }
                                         }),
+                                        format!("recording.record_speaker_{first_vec_idx}")
+                                    ),
+                                )
+                                .when(any_review, |row| {
+                                    row.child(
+                                        dev_track!(
+                                            Button::new(
+                                                SharedString::from(format!(
+                                                    "accept_take_{}",
+                                                    first_vec_idx
+                                                )),
+                                                recording_text.accept_anyway,
+                                            )
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Xs)
+                                            .disabled(is_recording || any_recording)
+                                            .theme(theme.to_button_theme())
+                                            .on_click({
+                                                let view = view.clone();
+                                                move |_, cx| {
+                                                    view.update(cx, |this, cx| {
+                                                        let accepted = this.state.update(
+                                                            cx,
+                                                            |state, _cx| {
+                                                                let accepted = state
+                                                                    .app
+                                                                    .measurement_state
+                                                                    .recording_state
+                                                                    .accept_review_needed_for(
+                                                                        speaker_idx,
+                                                                        mic_position,
+                                                                    );
+                                                                if accepted > 0 {
+                                                                    state
+                                                                        .app
+                                                                        .measurement_state
+                                                                        .recording_state
+                                                                        .status_message =
+                                                                        recording_text
+                                                                            .accepted_takes(
+                                                                                accepted,
+                                                                            )
+                                                                            .to_string();
+                                                                    state.app.measurement_state.recording_state.status_severity =
+                                                                        crate::app::types::recording::RecordingStatusSeverity::Success;
+                                                                }
+                                                                accepted
+                                                            },
+                                                        );
+                                                        if accepted > 0 {
+                                                            // Resume a batch parked by the
+                                                            // quality gate (task-9 review R1).
+                                                            this.resume_batch_after_review_accept(
+                                                                mic_position,
+                                                                cx,
+                                                            );
+                                                        }
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            }),
+                                            format!("recording.accept_take_{first_vec_idx}")
+                                        ),
                                     )
                                 }),
                         );
@@ -1142,10 +1160,6 @@ impl PlayerView {
         if !self.require_capture_routing(None, cx) {
             return;
         }
-        #[cfg(feature = "dev-api")]
-        if self.complete_qa_fake_capture(cx) {
-            return;
-        }
 
         // Enable auto-record mode and clear all previous results upfront
         // so the evaluating graphs don't show stale data from a prior session.
@@ -1170,98 +1184,6 @@ impl PlayerView {
         self.start_recording_channel(0, cx);
 
         log::info!("Starting auto-record mode - all channels will be recorded sequentially");
-    }
-
-    /// Complete the deterministic debug fixture only after the user has
-    /// activated the same Capture control as a production recording session.
-    #[cfg(feature = "dev-api")]
-    fn complete_qa_fake_capture(&mut self, cx: &mut Context<Self>) -> bool {
-        let completed = self.state.update(cx, |state, _| {
-            let recording = &mut state.app.measurement_state.recording_state;
-            let Some(fixture) = recording.qa_fake_capture.as_mut() else {
-                return false;
-            };
-            let points = fixture.points;
-            if let Some(fault) = fixture.fault.take() {
-                for channel in &mut recording.channel_recordings {
-                    channel.state = ChannelRecordingState::Error;
-                    channel.result = None;
-                }
-                recording.recording_progress = 0.0;
-                recording.current_recording_channel = None;
-                recording.auto_record_remaining = false;
-                recording.set_status(
-                    fault.status_message(),
-                    crate::app::types::recording::RecordingStatusSeverity::Error,
-                );
-                return true;
-            }
-            recording.take_review.clear();
-            let frequencies = (0..points)
-                .map(|index| {
-                    let fraction = index as f32 / (fixture.points - 1) as f32;
-                    20.0 * 1000.0_f32.powf(fraction)
-                })
-                .collect::<Vec<_>>();
-            let Some(directory) = recording.recording_directory.clone() else {
-                recording.set_status(
-                    "QA capture has no output directory",
-                    crate::app::types::recording::RecordingStatusSeverity::Error,
-                );
-                return true;
-            };
-            let csv = frequencies
-                .iter()
-                .map(|frequency| format!("{frequency},0,0\n"))
-                .collect::<String>();
-            for channel in &mut recording.channel_recordings {
-                let path = std::path::Path::new(&directory).join(format!(
-                    "capture-{}-{}-{}.csv",
-                    channel.channel_index, channel.mic_index, channel.mic_position_index
-                ));
-                if let Err(error) = std::fs::write(&path, &csv) {
-                    channel.state = ChannelRecordingState::Error;
-                    channel.result = None;
-                    recording.set_status(
-                        format!("QA capture could not write measurement: {error}"),
-                        crate::app::types::recording::RecordingStatusSeverity::Error,
-                    );
-                    return true;
-                }
-                channel.state = ChannelRecordingState::Done;
-                channel.result = Some(RecordingResult {
-                    sample_rate_hz: None,
-                    channel: channel.channel_index,
-                    wav_path: None,
-                    csv_path: Some(path.to_string_lossy().into_owned()),
-                    frequencies: frequencies.clone(),
-                    magnitude_db: vec![0.0; points],
-                    phase_deg: vec![0.0; points],
-                    impulse_response: None,
-                    impulse_time_ms: None,
-                    thd_percent: None,
-                    harmonic_distortion_db: None,
-                    excess_group_delay_ms: None,
-                    rt60_ms: None,
-                    clarity_c50_db: None,
-                    clarity_c80_db: None,
-                    spectrogram_db: None,
-                    quality: None,
-                });
-            }
-            recording.recording_progress = 1.0;
-            recording.current_recording_channel = None;
-            recording.auto_record_remaining = false;
-            recording.set_status(
-                "QA fixture captured through the Recording workflow",
-                crate::app::types::recording::RecordingStatusSeverity::Success,
-            );
-            true
-        });
-        if completed {
-            cx.notify();
-        }
-        completed
     }
 
     /// Start recording a speaker (all mics captured simultaneously).
@@ -1353,7 +1275,21 @@ impl PlayerView {
             mics: Vec<MicInfo>,
             ctc_strategy: crate::app::types::CtcMatrixExportStrategy,
             num_sweeps: u16,
+            #[cfg(feature = "dev-api")]
+            qa_capture: Option<QaCaptureRun>,
         }
+
+        #[cfg(feature = "dev-api")]
+        let qa_capture = self.state.update(cx, |state, _| {
+            let recording = &mut state.app.measurement_state.recording_state;
+            let Some(fixture) = recording.qa_fake_capture.as_mut() else {
+                return None;
+            };
+            Some(QaCaptureRun {
+                profile: fixture.profile,
+                fault: fixture.fault.take(),
+            })
+        });
 
         let params = {
             let state = self.state.read(cx);
@@ -1472,6 +1408,8 @@ impl PlayerView {
                     rec_state.recording_config.ctc_matrix_strategy
                 },
                 num_sweeps: rec_state.num_sweeps,
+                #[cfg(feature = "dev-api")]
+                qa_capture,
             }
         };
 
@@ -1717,89 +1655,215 @@ impl PlayerView {
         let input_device = params.input_device.clone();
         let sample_rate = params.sample_rate;
         let num_sweeps = params.num_sweeps;
+        #[cfg(feature = "dev-api")]
+        let qa_capture = params.qa_capture;
 
         cx.spawn(async move |_, cx| {
             use sotf_audio_player::recording_helpers::{
                 check_low_measured_level, dropout_warning, low_measured_level_warning,
                 summarize_take_quality, take_verdict_text,
             };
-            use sotf_audio_player::signal_recorder::SignalType;
+            let capture_mics = mics.clone();
+            let capture_wav_paths = wav_paths.clone();
+            let capture_csv_paths = csv_paths.clone();
+            let capture_speaker_name = speaker_name.clone();
+            let capture_sweep_start_freq = sweep_start_freq;
+            let capture_sweep_end_freq = sweep_end_freq;
+            let capture_executor = cx.background_executor();
+            let results = capture_executor
+                .spawn(async move {
+                    use sotf_audio_player::signal_recorder::SignalType;
 
-            let sweep_range = if signal_type == SignalType::Sweep {
-                Some((sweep_start_freq, sweep_end_freq))
-            } else {
-                None
-            };
+                    let sweep_range = if signal_type == SignalType::Sweep {
+                        Some((capture_sweep_start_freq, capture_sweep_end_freq))
+                    } else {
+                        None
+                    };
+                    let out_dev = if output_device.is_empty() {
+                        None
+                    } else {
+                        Some(output_device.as_str())
+                    };
+                    let in_dev = if input_device.is_empty() {
+                        None
+                    } else {
+                        Some(input_device.as_str())
+                    };
+                    let num_mics = capture_mics.len();
+                    log::info!(
+                        "Starting recording: speaker={}, output_ch={}, {} mics, input_chs={:?}",
+                        capture_speaker_name,
+                        output_channel,
+                        num_mics,
+                        input_channels,
+                    );
 
-            let out_dev = if output_device.is_empty() {
-                None
-            } else {
-                Some(output_device.as_str())
-            };
-            let in_dev = if input_device.is_empty() {
-                None
-            } else {
-                Some(input_device.as_str())
-            };
+                    // Keep production and QA runs on the same analysis path.
+                    // The feature-gated wire replaces only the device boundary.
+                    macro_rules! capture_with_native_devices {
+                        () => {{
+                            if num_mics <= 1 {
+                                use sotf_audio_player::EnginePlayback;
+                                use sotf_audio_player::signal_recorder::record_and_analyze_with;
+                                record_and_analyze_with(
+                                    &mut EnginePlayback::new(true, "record_and_analyze"),
+                                    &temp_wav_path,
+                                    &capture_wav_paths[0],
+                                    &reference_signal,
+                                    sample_rate,
+                                    &capture_csv_paths[0],
+                                    output_channel,
+                                    input_channels[0],
+                                    out_dev,
+                                    in_dev,
+                                    mic_calibrations[0].as_deref(),
+                                    sweep_range,
+                                    num_sweeps,
+                                    Some(cancel_flag),
+                                )
+                                .map(|capture| vec![capture])
+                            } else {
+                                use sotf_audio_player::EnginePlayback;
+                                use sotf_audio_player::signal_recorder::record_and_analyze_with_multi;
+                                record_and_analyze_with_multi(
+                                    &mut EnginePlayback::new(false, "record_and_analyze_multi"),
+                                    &temp_wav_path,
+                                    &capture_wav_paths,
+                                    &reference_signal,
+                                    sample_rate,
+                                    &capture_csv_paths,
+                                    output_channel,
+                                    &input_channels,
+                                    out_dev,
+                                    in_dev,
+                                    &mic_calibrations,
+                                    sweep_range,
+                                    num_sweeps,
+                                    Some(cancel_flag),
+                                )
+                            }
+                        }};
+                    }
 
-            let num_mics = mics.len();
-            log::info!(
-                "Starting recording: speaker={}, output_ch={}, {} mics, input_chs={:?}",
-                speaker_name,
-                output_channel,
-                num_mics,
-                input_channels,
-            );
+                    #[cfg(all(feature = "dev-api", not(target_os = "ios")))]
+                    let results: Result<Vec<_>, String> = if let Some(qa_capture) = qa_capture {
+                        use sotf_audio_player::signal_recorder::{
+                            FakeAudioConfig, FakeAudioProfile, VirtualWire,
+                            record_and_analyze_with_multi_recorder,
+                            record_and_analyze_with_recorder,
+                        };
+                        let mut profile = match qa_capture.profile {
+                            crate::app::types::recording::QaFakeCaptureProfile::Clean => {
+                                FakeAudioProfile::Clean
+                            }
+                            crate::app::types::recording::QaFakeCaptureProfile::HighThd => {
+                                FakeAudioProfile::HighThd
+                            }
+                            crate::app::types::recording::QaFakeCaptureProfile::LowSnr => {
+                                FakeAudioProfile::LowSnr
+                            }
+                            crate::app::types::recording::QaFakeCaptureProfile::UnknownEvidence => {
+                                FakeAudioProfile::UnknownEvidence
+                            }
+                            crate::app::types::recording::QaFakeCaptureProfile::Clipping => {
+                                FakeAudioProfile::Clipping
+                            }
+                        };
+                        if qa_capture.fault
+                            == Some(crate::app::types::recording::QaFakeCaptureFault::Clipping)
+                        {
+                            profile = FakeAudioProfile::Clipping;
+                        }
+                        let mut config = FakeAudioConfig::for_profile(profile);
+                        config.input_channels = input_channels
+                            .iter()
+                            .map(|channel| *channel as usize + 1)
+                            .max()
+                            .unwrap_or(1);
+                        config.output_channels = output_channel as usize + 1;
+                        config.input_devices = if input_device.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![input_device.clone()]
+                        };
+                        config.output_devices = if output_device.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![output_device.clone()]
+                        };
+                        config.has_default_input = input_device.is_empty();
+                        config.has_default_output = output_device.is_empty();
+                        match qa_capture.fault {
+                            Some(crate::app::types::recording::QaFakeCaptureFault::DeviceLost) => {
+                                config.fail_input_start = Some(
+                                    "Recording error: capture device was disconnected".into(),
+                                );
+                            }
+                            Some(crate::app::types::recording::QaFakeCaptureFault::IoFailure) => {
+                                config.fail_input_stop = Some(
+                                    "Recording error: unable to write capture data".into(),
+                                );
+                            }
+                            Some(crate::app::types::recording::QaFakeCaptureFault::Clipping)
+                            | None => {}
+                        }
+                        let wire = VirtualWire::new(config);
+                        let mut playback = wire.playback("qa_recording");
+                        let mut recorder = wire.recorder("qa_recording");
+                        if num_mics <= 1 {
+                            record_and_analyze_with_recorder(
+                                &mut playback,
+                                &mut recorder,
+                                &temp_wav_path,
+                                &capture_wav_paths[0],
+                                &reference_signal,
+                                sample_rate,
+                                &capture_csv_paths[0],
+                                output_channel,
+                                input_channels[0],
+                                out_dev,
+                                in_dev,
+                                mic_calibrations[0].as_deref(),
+                                sweep_range,
+                                num_sweeps,
+                                Some(cancel_flag),
+                            )
+                            .map(|capture| vec![capture])
+                        } else {
+                            record_and_analyze_with_multi_recorder(
+                                &mut playback,
+                                &mut recorder,
+                                &temp_wav_path,
+                                &capture_wav_paths,
+                                &reference_signal,
+                                sample_rate,
+                                &capture_csv_paths,
+                                output_channel,
+                                &input_channels,
+                                out_dev,
+                                in_dev,
+                                &mic_calibrations,
+                                sweep_range,
+                                num_sweeps,
+                                Some(cancel_flag),
+                            )
+                        }
+                    } else {
+                        capture_with_native_devices!()
+                    };
 
-            // Use multi-channel recording when multiple mics, single-channel otherwise
-            #[cfg(not(target_os = "ios"))]
-            let results: Result<Vec<_>, String> = if num_mics <= 1 {
-                use sotf_audio_player::EnginePlayback;
-                use sotf_audio_player::signal_recorder::record_and_analyze_with;
-                record_and_analyze_with(
-                    &mut EnginePlayback::new(true, "record_and_analyze"),
-                    &temp_wav_path,
-                    &wav_paths[0],
-                    &reference_signal,
-                    sample_rate,
-                    &csv_paths[0],
-                    output_channel,
-                    input_channels[0],
-                    out_dev,
-                    in_dev,
-                    mic_calibrations[0].as_deref(),
-                    sweep_range,
-                    num_sweeps,
-                    Some(cancel_flag),
-                )
-                .map(|r| vec![r])
-            } else {
-                use sotf_audio_player::EnginePlayback;
-                use sotf_audio_player::signal_recorder::record_and_analyze_with_multi;
-                record_and_analyze_with_multi(
-                    &mut EnginePlayback::new(false, "record_and_analyze_multi"),
-                    &temp_wav_path,
-                    &wav_paths,
-                    &reference_signal,
-                    sample_rate,
-                    &csv_paths,
-                    output_channel,
-                    &input_channels,
-                    out_dev,
-                    in_dev,
-                    &mic_calibrations,
-                    sweep_range,
-                    num_sweeps,
-                    Some(cancel_flag),
-                )
-            };
+                    #[cfg(all(not(feature = "dev-api"), not(target_os = "ios")))]
+                    let results: Result<Vec<_>, String> = capture_with_native_devices!();
 
-            #[cfg(target_os = "ios")]
-            let results: Result<Vec<sotf_audio::signal_recorder::CaptureAnalysis>, String> = {
-                let _ = &cancel_flag;
-                let _ = num_sweeps;
-                Err("Recording not available on iOS".to_string())
-            };
+                    #[cfg(target_os = "ios")]
+                    let results: Result<Vec<sotf_audio::signal_recorder::CaptureAnalysis>, String> = {
+                        let _ = &cancel_flag;
+                        let _ = num_sweeps;
+                        Err("Recording not available on iOS".to_string())
+                    };
+                    results
+                })
+                .await;
 
             // Update state with results
             let Some(state_entity) = weak_state.upgrade() else { return; };
@@ -1841,6 +1905,11 @@ impl PlayerView {
                                 // moving the analysis result; untrustworthy
                                 // takes are parked as ReviewNeeded.
                                 let quality = summarize_take_quality(&capture);
+                                log::info!(
+                                    "Recording quality summary for {}: {}",
+                                    mics[mic_i].safe_name,
+                                    take_verdict_text(&quality)
+                                );
                                 let needs_review = !quality.trustworthy;
                                 let analysis_result = capture.result;
                                 let mic = &mics[mic_i];
@@ -2134,7 +2203,12 @@ impl PlayerView {
                         cx.notify();
                     });
                 }
-                BatchNextAction::Hold => {}
+                BatchNextAction::Hold => {
+                    // ReviewNeeded and terminal-error states are written on
+                    // the background capture completion path. Notify GPUI so
+                    // their Accept/retry controls are rendered immediately.
+                    let _ = weak_view.update(cx, |_view, cx| cx.notify());
+                }
             }
 
             drop(temp_wav);
@@ -2493,48 +2567,54 @@ impl PlayerView {
         };
 
         // Get recordings, recording directory, configuration, and convert to RoomConfig format
-        let (room_config, recording_dir, ctc_raw_fallback, save_inputs) = if let Some(
-            configuration,
-        ) = imported_config
-        {
-            let state = self.state.read(cx);
-            (
-                configuration,
-                recording_dir,
-                false,
-                state
-                    .app
-                    .measurement_state
-                    .recording_state
-                    .model
-                    .save_input_snapshot(),
-            )
-        } else {
-            let state = self.state.read(cx);
-            let rec_state = &state.app.measurement_state.recording_state;
-            let recordings = &rec_state.channel_recordings;
+        let (room_config, recording_dir, ctc_raw_fallback, save_inputs, quality_entries) =
+            if let Some(configuration) = imported_config {
+                let state = self.state.read(cx);
+                let rec_state = &state.app.measurement_state.recording_state;
+                let channel_names: Vec<String> = rec_state
+                    .playback_config
+                    .channel_mappings
+                    .iter()
+                    .map(|mapping| mapping.group_name.clone())
+                    .collect();
+                let quality_entries =
+                    sotf_audio_player::recording_helpers::recording_quality_entries_for_sources(
+                        &rec_state.channel_recordings,
+                        &channel_names,
+                    );
+                (
+                    configuration,
+                    recording_dir,
+                    false,
+                    rec_state.model.save_input_snapshot(),
+                    quality_entries,
+                )
+            } else {
+                let state = self.state.read(cx);
+                let rec_state = &state.app.measurement_state.recording_state;
+                let recordings = &rec_state.channel_recordings;
 
-            let channel_names: Vec<String> = rec_state
-                .playback_config
-                .channel_mappings
-                .iter()
-                .map(|m| m.group_name.clone())
-                .collect();
-            let mic_names = vec!["left_ear".to_string(), "right_ear".to_string()];
-            let ctc_strategy = rec_state.recording_config.ctc_matrix_strategy;
-            let mut ctc_reference_sweep = None;
-            let mut ctc_raw_sweep_range = None;
-            let mut ctc_raw_fallback = false;
-            let mut ctc_measurements = if ctc_strategy
-                == crate::app::types::CtcMatrixExportStrategy::RawSweep
-            {
-                ctc_reference_sweep = rec_state.ctc_reference_sweep_path.as_ref().map(|path| {
-                    std::path::Path::new(path)
-                        .strip_prefix(&recording_dir)
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|_| std::path::PathBuf::from(path))
-                });
-                match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
+                let channel_names: Vec<String> = rec_state
+                    .playback_config
+                    .channel_mappings
+                    .iter()
+                    .map(|m| m.group_name.clone())
+                    .collect();
+                let mic_names = vec!["left_ear".to_string(), "right_ear".to_string()];
+                let ctc_strategy = rec_state.recording_config.ctc_matrix_strategy;
+                let mut ctc_reference_sweep = None;
+                let mut ctc_raw_sweep_range = None;
+                let mut ctc_raw_fallback = false;
+                let mut ctc_measurements = if ctc_strategy
+                    == crate::app::types::CtcMatrixExportStrategy::RawSweep
+                {
+                    ctc_reference_sweep = rec_state.ctc_reference_sweep_path.as_ref().map(|path| {
+                        std::path::Path::new(path)
+                            .strip_prefix(&recording_dir)
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(|_| std::path::PathBuf::from(path))
+                    });
+                    match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
                     recordings,
                     &channel_names,
                     &mic_names,
@@ -2574,124 +2654,131 @@ impl PlayerView {
                         None
                     }
                 }
-            } else {
-                None
-            };
-            if ctc_measurements.is_none() {
-                ctc_measurements =
-                    match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+                } else {
+                    None
+                };
+                if ctc_measurements.is_none() {
+                    ctc_measurements =
+                        match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+                            recordings,
+                            &channel_names,
+                            &mic_names,
+                            rec_state.recording_config.sample_rate,
+                            std::path::Path::new(&recording_dir),
+                        ) {
+                            Ok(measurements) => measurements,
+                            Err(e) => {
+                                log::warn!("Could not export CTC transfer matrix: {}", e);
+                                None
+                            }
+                        };
+                    ctc_reference_sweep = None;
+                }
+
+                // Build recording configuration from current state via the
+                // shared builder (B4/B1): sets every field explicitly, persists
+                // probe / bass-anchor / SPL results, and only writes the GD-Opt
+                // sweep metadata when the actual stimulus is a sweep generated
+                // with the same values (see `capture_signal_params` at capture
+                // time).
+                let recording_config =
+                    rec_state.build_recording_configuration(Some(&recording_dir));
+
+                // Group every completed (channel × mic × position) take by
+                // channel_index so each output channel produces exactly one
+                // SpeakerConfig — multi-mic / multi-position takes become a
+                // MeasurementSource::Multiple that roomeq averages into one
+                // EQ chain per real channel.
+                let speakers = build_speakers_from_recordings(
+                    recordings,
+                    &channel_names,
+                    rec_state.channel_speakers_map_for_save().as_ref(),
+                );
+                let quality_entries =
+                    sotf_audio_player::recording_helpers::recording_quality_entries_for_sources(
                         recordings,
                         &channel_names,
-                        &mic_names,
-                        rec_state.recording_config.sample_rate,
-                        std::path::Path::new(&recording_dir),
-                    ) {
-                        Ok(measurements) => measurements,
-                        Err(e) => {
-                            log::warn!("Could not export CTC transfer matrix: {}", e);
-                            None
-                        }
-                    };
-                ctc_reference_sweep = None;
-            }
+                    );
 
-            // Build recording configuration from current state via the
-            // shared builder (B4/B1): sets every field explicitly, persists
-            // probe / bass-anchor / SPL results, and only writes the GD-Opt
-            // sweep metadata when the actual stimulus is a sweep generated
-            // with the same values (see `capture_signal_params` at capture
-            // time).
-            let recording_config = rec_state.build_recording_configuration(Some(&recording_dir));
-
-            // Group every completed (channel × mic × position) take by
-            // channel_index so each output channel produces exactly one
-            // SpeakerConfig — multi-mic / multi-position takes become a
-            // MeasurementSource::Multiple that roomeq averages into one
-            // EQ chain per real channel.
-            let speakers = build_speakers_from_recordings(
-                recordings,
-                &channel_names,
-                rec_state.channel_speakers_map_for_save().as_ref(),
-            );
-
-            if speakers.is_empty() {
-                log::warn!("No completed recordings to save");
-                return;
-            }
-
-            let ctc = ctc_measurements.map(|measurements| {
-                let raw = ctc_reference_sweep.is_some();
-                autoeq::roomeq::CtcConfig {
-                    // Off by default — binaural CTC is opt-in, the
-                    // CTC stanza is written so the user can flip it
-                    // on later without re-recording, but roomeq must
-                    // not run the CTC solver until they do.
-                    enabled: false,
-                    matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
-                    measurements: Some(measurements),
-                    reference_sweep: ctc_reference_sweep,
-                    sweep_duration_s: if raw {
-                        // Actual duration of the persisted reference sweep,
-                        // recorded at capture time (B1): the octave-scaled
-                        // sweep is self-timed, so `signal_duration_secs`
-                        // would misdescribe the WAV. `None` (unknown, e.g.
-                        // after loading a session) rather than a lie.
-                        rec_state.ctc_reference_sweep_duration_s.map(f64::from)
-                    } else {
-                        None
-                    },
-                    sweep_start_hz: if raw {
-                        ctc_raw_sweep_range.map(|(start, _)| start as f64)
-                    } else {
-                        None
-                    },
-                    sweep_end_hz: if raw {
-                        ctc_raw_sweep_range.map(|(_, end)| end as f64)
-                    } else {
-                        None
-                    },
-                    ..Default::default()
+                if speakers.is_empty() {
+                    log::warn!("No completed recordings to save");
+                    return;
                 }
-            });
-            // Always emit the system (logical role) map from the
-            // recorded speakers, independent of CTC enable state.
-            // roomeq uses it to interpret the layout (LFE/sub
-            // detection, bass-management routing). Flipping CTC on
-            // later does not require re-recording.
-            let has_bass_output = speakers
-                .keys()
-                .any(|name| room_eq_channel_is_bass_output(name));
-            let bass_management_crossover =
-                has_bass_output.then(|| DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY.to_string());
-            let system = ctc_system_config_for_speaker_names(
-                speakers.keys().map(String::as_str),
-                bass_management_crossover,
-            );
-            let crossovers = has_bass_output.then(default_bass_management_crossovers);
 
-            // Build RoomConfig
-            let room_config = RoomConfig {
-                version: "1.1.0".to_string(),
-                system,
-                speakers,
-                crossovers,
-                target_curve: None,
-                optimizer: OptimizerConfig::default(),
-                provenance: Default::default(),
-                recording_config: Some(recording_config),
-                measured_impulse_responses: Default::default(),
-                ctc,
-                reporting: None,
-                cea2034_cache: None,
+                let ctc = ctc_measurements.map(|measurements| {
+                    let raw = ctc_reference_sweep.is_some();
+                    autoeq::roomeq::CtcConfig {
+                        // Off by default — binaural CTC is opt-in, the
+                        // CTC stanza is written so the user can flip it
+                        // on later without re-recording, but roomeq must
+                        // not run the CTC solver until they do.
+                        enabled: false,
+                        matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
+                        measurements: Some(measurements),
+                        reference_sweep: ctc_reference_sweep,
+                        sweep_duration_s: if raw {
+                            // Actual duration of the persisted reference sweep,
+                            // recorded at capture time (B1): the octave-scaled
+                            // sweep is self-timed, so `signal_duration_secs`
+                            // would misdescribe the WAV. `None` (unknown, e.g.
+                            // after loading a session) rather than a lie.
+                            rec_state.ctc_reference_sweep_duration_s.map(f64::from)
+                        } else {
+                            None
+                        },
+                        sweep_start_hz: if raw {
+                            ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                        } else {
+                            None
+                        },
+                        sweep_end_hz: if raw {
+                            ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                        } else {
+                            None
+                        },
+                        ..Default::default()
+                    }
+                });
+                // Always emit the system (logical role) map from the
+                // recorded speakers, independent of CTC enable state.
+                // roomeq uses it to interpret the layout (LFE/sub
+                // detection, bass-management routing). Flipping CTC on
+                // later does not require re-recording.
+                let has_bass_output = speakers
+                    .keys()
+                    .any(|name| room_eq_channel_is_bass_output(name));
+                let bass_management_crossover =
+                    has_bass_output.then(|| DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY.to_string());
+                let system = ctc_system_config_for_speaker_names(
+                    speakers.keys().map(String::as_str),
+                    bass_management_crossover,
+                );
+                let crossovers = has_bass_output.then(default_bass_management_crossovers);
+
+                // Build RoomConfig
+                let room_config = RoomConfig {
+                    version: "1.1.0".to_string(),
+                    system,
+                    speakers,
+                    crossovers,
+                    target_curve: None,
+                    optimizer: OptimizerConfig::default(),
+                    provenance: Default::default(),
+                    recording_config: Some(recording_config),
+                    measured_impulse_responses: Default::default(),
+                    ctc,
+                    reporting: None,
+                    cea2034_cache: None,
+                };
+
+                (
+                    room_config,
+                    recording_dir,
+                    ctc_raw_fallback,
+                    rec_state.model.save_input_snapshot(),
+                    quality_entries,
+                )
             };
-
-            (
-                room_config,
-                recording_dir,
-                ctc_raw_fallback,
-                rec_state.model.save_input_snapshot(),
-            )
-        };
 
         // Save to recording directory (no dialog needed). B5: canonical
         // session filename shared by all frontends.
@@ -2711,6 +2798,16 @@ impl PlayerView {
                             crate::app::types::recording::RecordingStatusSeverity::Error;
                     });
                 } else {
+                    let quality_save_error =
+                        sotf_audio_player::recording_helpers::save_recording_quality_sidecar(
+                            &json_path,
+                            json.as_bytes(),
+                            quality_entries,
+                        )
+                        .err();
+                    if let Some(error) = &quality_save_error {
+                        log::warn!("Failed to save recording quality evidence: {error}");
+                    }
                     log::info!("Recordings saved to {:?}", json_path);
                     self.state.update(cx, |state, _| {
                         state
@@ -2724,10 +2821,18 @@ impl PlayerView {
                         } else {
                             ""
                         };
-                        state.app.measurement_state.recording_state.status_message =
-                            format!("Saved to {}{}", json_path.display(), suffix);
+                        let quality_suffix = quality_save_error
+                            .as_ref()
+                            .map(|error| format!(" (quality evidence not saved: {error})"))
+                            .unwrap_or_default();
+                        state.app.measurement_state.recording_state.status_message = format!(
+                            "Saved to {}{}{}",
+                            json_path.display(),
+                            suffix,
+                            quality_suffix
+                        );
                         state.app.measurement_state.recording_state.status_severity =
-                            if ctc_raw_fallback {
+                            if ctc_raw_fallback || quality_save_error.is_some() {
                                 crate::app::types::recording::RecordingStatusSeverity::Warning
                             } else {
                                 crate::app::types::recording::RecordingStatusSeverity::Success
@@ -2816,6 +2921,20 @@ impl PlayerView {
         file_path: &std::path::Path,
         file_dir: Option<std::path::PathBuf>,
     ) {
+        let quality_sidecar =
+            match sotf_audio_player::recording_helpers::load_recording_quality_sidecar(
+                file_path,
+                json.as_bytes(),
+            ) {
+                Ok(sidecar) => sidecar,
+                Err(error) => {
+                    log::warn!(
+                        "Could not load recording quality evidence for {}: {error}",
+                        file_path.display()
+                    );
+                    None
+                }
+            };
         let imported = sotf_audio_player::recording_types::RecordingImport::from_json(
             json,
             file_dir.as_deref(),
@@ -2840,7 +2959,18 @@ impl PlayerView {
                         cx.notify();
                         return;
                     }
-                    let recordings = imported.recordings();
+                    let mut recordings = imported.recordings();
+                    if let Some(sidecar) = quality_sidecar.as_ref() {
+                        for recording in &mut recordings {
+                            let (Some(source), Some(result)) = (
+                                recording.imported_source.as_ref(),
+                                recording.result.as_mut(),
+                            ) else {
+                                continue;
+                            };
+                            result.quality = sidecar.quality_for(source).cloned();
+                        }
+                    }
                     let count = recordings.len();
                     rec.take_review.clear();
                     rec.channel_recordings = recordings;

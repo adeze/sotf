@@ -166,6 +166,8 @@ impl PlayerView {
         let graph_settings = room_eq.review_graph_settings.clone();
         let view = cx.entity().clone();
         let window_width = state.app.ui_state.window_width;
+        let shared_report_text =
+            crate::app::i18n::SharedReportText::for_language(state.app.ui_state.language);
 
         // Score Summary card is intentionally omitted here: the
         // "Optimization Summary" card below already shows Score Before /
@@ -174,6 +176,38 @@ impl PlayerView {
 
         VStack::new()
             .spacing(StackSpacing::Md)
+            .child({
+                let button =
+                    gpui_ui_kit::Button::new("roomeq-shared-report", shared_report_text.open)
+                        .aria_label(shared_report_text.open)
+                        .disabled(!room_eq.result_is_current())
+                        .theme(theme.to_button_theme())
+                        .on_click_event(
+                            cx.listener(|view, _, _, cx| view.open_shared_room_eq_report(cx)),
+                        );
+                #[cfg(feature = "dev-api")]
+                let button = {
+                    use crate::app::dev_api::DevTrackExt;
+                    button.dev_track("roomeq.report.open")
+                };
+                button
+            })
+            .child({
+                let button =
+                    gpui_ui_kit::Button::new("roomeq-save-report", shared_report_text.save)
+                        .aria_label(shared_report_text.save)
+                        .disabled(!room_eq.result_is_current())
+                        .theme(theme.to_button_theme())
+                        .on_click_event(
+                            cx.listener(|view, _, _, cx| view.save_shared_room_eq_report(cx)),
+                        );
+                #[cfg(feature = "dev-api")]
+                let button = {
+                    use crate::app::dev_api::DevTrackExt;
+                    button.dev_track("roomeq.report.save")
+                };
+                button
+            })
             .child(
                 Text::new(translations.roomeq_review_results)
                     .weight(TextWeight::Bold)

@@ -350,6 +350,16 @@ fn run_one(
             .context("applying scenario UI environment")?;
         }
 
+        if scenario.mock_playback {
+            post_json(
+                &client,
+                &base_url,
+                "/qa/playback/output",
+                json!({ "enabled": true }),
+            )
+            .context("enabling isolated playback output")?;
+        }
+
         if scenario.seed_demo_audio {
             post_json(
                 &client,
@@ -361,18 +371,38 @@ fn run_one(
         }
 
         if let Some(fake) = &scenario.fake_recording {
-            post_json(
-                &client,
-                &base_url,
-                "/qa/recording/fake-capture",
-                json!({
-                    "channels": fake.channels,
-                    "points": fake.points,
-                    "fault": fake.fault,
-                    "import_json": fake.import_json,
-                }),
-            )
-            .context("installing fake recording capture")?;
+            if runner_uses_tui(&runner.app_bin) {
+                if fake.fault.is_some() {
+                    bail!("TUI virtual capture does not support one-shot recording faults");
+                }
+                post_json(
+                    &client,
+                    &base_url,
+                    "/qa/capture/virtual",
+                    json!({
+                        "profile": fake.profile.as_deref().unwrap_or("clean"),
+                        "output_directory": qa_dir
+                            .join("recordings")
+                            .to_string_lossy()
+                            .into_owned(),
+                    }),
+                )
+                .context("installing TUI virtual capture profile")?;
+            } else {
+                post_json(
+                    &client,
+                    &base_url,
+                    "/qa/recording/fake-capture",
+                    json!({
+                        "channels": fake.channels,
+                        "points": fake.points,
+                        "profile": fake.profile,
+                        "fault": fake.fault,
+                        "import_json": fake.import_json,
+                    }),
+                )
+                .context("installing fake recording capture")?;
+            }
         }
 
         if let Some(config) = &scenario.headphone_discovery {
@@ -528,9 +558,22 @@ fn run_one(
     Ok(ScenarioOutcome::Passed)
 }
 
+fn runner_uses_tui(app_bin: &Path) -> bool {
+    app_bin
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().contains("sotf-tui"))
+}
+
 #[cfg(test)]
 mod report_tests {
     use super::*;
+
+    #[test]
+    fn identifies_tui_binary_for_virtual_capture_routing() {
+        assert!(runner_uses_tui(Path::new("target/debug/sotf-tui")));
+        assert!(runner_uses_tui(Path::new("/opt/sotf-tui")));
+        assert!(!runner_uses_tui(Path::new("target/debug/sotf-desktop")));
+    }
 
     fn outcomes() -> Vec<serde_json::Value> {
         vec![

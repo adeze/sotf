@@ -149,11 +149,13 @@ pub(super) fn set_recording_field_from_string(app: &mut App) {
         SweepStart => {
             if let Ok(v) = buf.parse::<f32>() {
                 app.recording.model.sweep_start_freq = v.clamp(10.0, 1000.0);
+                sync_channel_sweep_range(app);
             }
         }
         SweepEnd => {
             if let Ok(v) = buf.parse::<f32>() {
                 app.recording.model.sweep_end_freq = v.clamp(1000.0, 24000.0);
+                sync_channel_sweep_range(app);
             }
         }
         NumRecordingChannels => {
@@ -309,11 +311,24 @@ pub(crate) fn init_recording_channels(app: &mut App) {
             }
         }
         app.recording.model.channel_recordings = recordings;
+        sync_channel_sweep_range(app);
         app.recording.model.transfer_matrix_loopbacks.clear();
         app.recording.model.ctc_reference_sweep_path = None;
         app.recording.model.ctc_reference_sweep_duration_s = None;
         app.recording.model.current_recording_channel =
             if expected_count > 0 { Some(0) } else { None };
+    }
+}
+
+/// Apply the recording form's global sweep range to every take. Per-channel
+/// ranges from loaded sessions stay intact until the user edits either global
+/// sweep control.
+pub(crate) fn sync_channel_sweep_range(app: &mut App) {
+    let start = app.recording.model.sweep_start_freq;
+    let end = app.recording.model.sweep_end_freq;
+    for channel in &mut app.recording.model.channel_recordings {
+        channel.sweep_start_freq = start;
+        channel.sweep_end_freq = end;
     }
 }
 
@@ -569,6 +584,11 @@ pub(crate) fn save_recordings(app: &mut App) {
     // name (task 10 removed the vestigial save-name validation that
     // guarded a path the name never reached).
     let path = std::path::PathBuf::from(&dir).join(RECORDINGS_FILENAME);
+    let quality_entries =
+        sotf_audio_player::recording_helpers::recording_quality_entries_for_sources(
+            &app.recording.model.channel_recordings,
+            &channel_names,
+        );
 
     // Serialize + write on a background thread — JSON for a
     // multi-position multichannel session can be megabytes, and the
@@ -587,10 +607,23 @@ pub(crate) fn save_recordings(app: &mut App) {
 
     std::thread::spawn(move || {
         let result = match serde_json::to_string_pretty(&room_config) {
-            Ok(json) => match std::fs::write(&path, json) {
-                Ok(()) => Ok(()),
-                Err(e) => Err(format!("Write error: {}", e)),
-            },
+            Ok(json) => {
+                let write_result =
+                    sotf_audio_player::recording_helpers::save_recording_session_json(
+                        &path,
+                        json.as_bytes(),
+                    )
+                    .map_err(|error| format!("Write error: {error}"))
+                    .and_then(|()| {
+                        sotf_audio_player::recording_helpers::save_recording_quality_sidecar(
+                            &path,
+                            json.as_bytes(),
+                            quality_entries,
+                        )
+                        .map_err(|error| format!("Could not save recording quality: {error}"))
+                    });
+                write_result
+            }
             Err(e) => Err(format!("Serialize error: {}", e)),
         };
         let _ = tx.send(result);

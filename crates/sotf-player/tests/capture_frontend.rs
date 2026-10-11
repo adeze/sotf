@@ -53,6 +53,10 @@ fn fixture() -> (Golden, RawCaptureManifest, Vec<f32>, Vec<f32>) {
     let manifest = RawCaptureManifest {
         version: 1,
         plan: session.plan().clone(),
+        // This fixture has no loopback, probe, or bass-anchor acquisition.
+        loopback_files: vec![],
+        probe_pass: None,
+        bass_anchor_pass: None,
         stimulus: stimulus.layout,
         timing_reference_output_channel: Some(0),
         status: RawCaptureStatus::RawComplete,

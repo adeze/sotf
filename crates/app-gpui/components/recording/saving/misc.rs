@@ -26,6 +26,71 @@ fn filter_speakers(catalog: &[String], query: &str, limit: usize) -> Vec<String>
 }
 
 impl PlayerView {
+    fn run_room_eq_from_saved_recording(&mut self, cx: &mut Context<Self>) {
+        let Some(saved_path) = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .recording_state
+            .take_review
+            .saved_to
+            .as_ref()
+            .map(|path| std::path::PathBuf::from(path.as_str()))
+        else {
+            return;
+        };
+
+        let state_entity = self.state.clone();
+        let weak_state = self.state.downgrade();
+        let weak_view = cx.weak_entity();
+        cx.spawn(async move |_, cx| {
+            let json = match std::fs::read_to_string(&saved_path) {
+                Ok(json) => json,
+                Err(error) => {
+                    if let Some(state_entity) = weak_state.upgrade() {
+                        state_entity.update(&mut cx.clone(), |state, cx| {
+                            state.app.measurement_state.recording_state.set_status(
+                                format!("Failed to read saved RoomEQ session: {error}"),
+                                crate::app::types::recording::RecordingStatusSeverity::Error,
+                            );
+                            cx.notify();
+                        });
+                    }
+                    return;
+                }
+            };
+
+            let parent = saved_path.parent().map(std::path::Path::to_path_buf);
+            Self::load_recordings_internal(
+                state_entity,
+                &mut cx.clone(),
+                &json,
+                &saved_path,
+                parent,
+            );
+
+            let Some(view) = weak_view.upgrade() else {
+                return;
+            };
+            view.update(&mut cx.clone(), |this, cx| {
+                let imported = this
+                    .state
+                    .read(cx)
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .imported_session
+                    .is_some();
+                if imported {
+                    this.load_room_eq_from_recording(cx);
+                    this.switch_screen(crate::app::Screen::RoomEq, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
     /// Render the saving step UI
     pub(crate) fn render_recording_saving_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         // IMPORTANT: render paths run INSIDE a GPUI entity update, so any
@@ -374,8 +439,22 @@ impl PlayerView {
             && (recording_dir.is_some() || recording.named_recording_directory().is_some())
             && !recording.workflow_is_busy()
             && recording.session_metadata_is_valid();
+        let saved_room_eq_path = recording
+            .take_review
+            .saved_to
+            .as_deref()
+            .map(std::path::Path::new);
+        let can_run_room_eq = can_save
+            && matches!(
+                recording.save_status(),
+                sotf_audio_player::ui_models::take_review::RecordingSaveStatus::Current
+            )
+            && saved_room_eq_path.is_some_and(std::path::Path::is_file);
         let save_view = cx.entity().clone();
         let load_view = cx.entity().clone();
+        let room_eq_view = cx.entity().clone();
+        let workflow_text =
+            crate::app::i18n::RoomEqWorkflowTranslations::for_language(state.app.ui_state.language);
         let save_button = Button::new("save_recordings", translations.recording_save_all)
             .variant(ButtonVariant::Primary)
             .size(ButtonSize::Md)
@@ -392,6 +471,27 @@ impl PlayerView {
                 crate::app::dev_api::DevElementState::default().enabled(can_save),
             )
         };
+        let run_room_eq_button = Button::new(
+            "run_room_eq_from_recording",
+            workflow_text.run_from_recording,
+        )
+        .variant(ButtonVariant::Secondary)
+        .size(ButtonSize::Md)
+        .disabled(!can_run_room_eq)
+        .theme(theme.to_button_theme())
+        .on_click(move |_, cx| {
+            room_eq_view.update(cx, |this, cx| {
+                this.run_room_eq_from_saved_recording(cx);
+            });
+        });
+        #[cfg(feature = "dev-api")]
+        let run_room_eq_button = {
+            use crate::app::dev_api::DevTrackExt;
+            run_room_eq_button.dev_track_with_state(
+                "recording.run_room_eq",
+                crate::app::dev_api::DevElementState::default().enabled(can_run_room_eq),
+            )
+        };
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
@@ -400,6 +500,7 @@ impl PlayerView {
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(save_button)
+                        .child(run_room_eq_button)
                         .child(
                             Button::new("load_recordings", translations.recording_load_previous)
                                 .variant(ButtonVariant::Secondary)

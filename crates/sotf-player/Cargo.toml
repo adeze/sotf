@@ -12,9 +12,9 @@ repository.workspace = true
 [features]
 default = []
 # Enable this feature to bypass security validation in tests (for integration tests)
-testing = []
+testing = ["sotf-capture/test-util", "sotf-engine/test-util"]
 # Fixtures used by the `dev-api` server feature in UI shells.
-dev-api = []
+dev-api = ["sotf-capture/test-util", "sotf-engine/test-util"]
 # Enable HAL audio input support (macOS only)
 hal = ["sotf-engine/hal"]
 streaming = ["sotf-engine/streaming"]

@@ -1,0 +1,97 @@
+# Capture real synthetic samples through the normal wizard, save RoomConfig,
+# import that persisted session through the RoomEQ screen, then optimize/export/apply.
+focus       recording
+assert      recording.step == "Capture"
+click       recording.capture_all
+wait_until  recording.review_count == 1 timeout=30s
+assert      recording.take.0.state == "ReviewNeeded"
+assert_visible recording.accept_take_0
+click       recording.accept_take_0
+wait_until  recording.review_count == 1 timeout=30s
+assert      recording.take.1.state == "ReviewNeeded"
+assert_visible recording.accept_take_1
+scroll      recording.content -600
+click       recording.accept_take_1
+wait_until  recording.done_count == 2 timeout=30s
+assert      recording.quality_count == 2
+assert      recording.evidence_complete == true
+
+# Complete the visible calibration and analysis stages before saving.
+click       recording.back
+assert      recording.step == "SplCalibration"
+click       recording.spl_start
+wait_idle   2s
+click       recording.spl_meter
+key         cmd-a
+type        "75"
+key         enter
+assert      recording.spl_ready == true
+click       recording.next
+assert      recording.step == "Capture"
+click       recording.next
+assert      recording.step == "Probe"
+click       recording.probe_run
+wait_idle   2s
+assert      recording.probe_complete == true
+click       recording.next
+assert      recording.step == "BassAnchor"
+click       recording.bass_anchor_run
+wait_idle   2s
+assert      recording.bass_anchor_complete == true
+click       recording.next
+assert      recording.step == "Evaluating"
+click       recording.accept.0
+click       recording.accept.1
+click       recording.next
+assert      recording.step == "Saving"
+
+# Persist actual capture evidence, then use the new production handoff button.
+scroll      recording.content -600
+assert_enabled recording.save == true
+click       recording.save
+wait_until  recording.save_status == "Current" timeout=10s
+assert      recording.saved_path != null
+assert_enabled recording.run_room_eq == true
+screenshot  recording-capture-saved
+click       recording.run_room_eq
+wait_until  roomeq.measurement_count == 2 timeout=15s
+assert      roomeq.step == "LoadData"
+assert      roomeq.speaker_config_count == 2
+assert      roomeq.error == null
+assert      roomeq.source_quality_visible == true
+assert      roomeq.source_quality_warning_count == 2
+
+# Continue through the normal optimizer, export, and apply UI.
+click       roomeq.next
+assert      roomeq.step == "Delay"
+click       roomeq.next
+assert      roomeq.step == "Process"
+click       roomeq.select_simple
+assert      roomeq.step == "Configure"
+click       roomeq.next
+assert      roomeq.step == "Optimize"
+click       roomeq.optimize_start
+wait_until  roomeq.optimization_status == "Completed" timeout=150s
+assert      roomeq.result_count == 2
+assert      roomeq.has_dsp_output == true
+assert      roomeq.step == "Review"
+click       roomeq.next
+assert      roomeq.step == "Export"
+scroll      roomeq.content -600
+click       roomeq.export_file
+wait_idle   2s
+assert      roomeq.export.exists == true
+assert      roomeq.export.channel_count == 2
+assert      roomeq.export.plugin_count > 0
+assert      roomeq.export.filter_count >= 2
+assert      roomeq.export.version != null
+scroll      roomeq.content 600
+assert_visible roomeq.apply_to_player
+click       roomeq.apply_to_player
+wait_until  roomeq.application_status == "Applied" timeout=10s
+assert      roomeq.error == null
+assert      plugins.user_count > 0
+screenshot  recording-roomeq-applied
+click       roomeq.back
+assert      roomeq.step == "Review"
+click       roomeq.report.open

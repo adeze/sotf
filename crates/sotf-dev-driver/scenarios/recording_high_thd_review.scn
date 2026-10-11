@@ -1,0 +1,51 @@
+# High-THD samples run through the real recorder and analyzer, then use the
+# normal warning, review, retake, and accept controls.
+focus       recording
+assert      recording.step == "Capture"
+assert      recording.all_done == false
+click       recording.capture_all
+wait_until recording.review_count == 1 timeout=30s
+assert      recording.take.0.state == "ReviewNeeded"
+assert_visible recording.accept_take_0
+assert      recording.review_count == 1
+assert      recording.quality_count == 1
+assert      recording.max_thd_percent > 1.0
+assert      recording.take.0.evidence_complete == true
+assert      recording.status_severity == "Warning"
+screenshot  recording-high-thd-review
+
+# Acknowledging the first measured warning resumes the remaining batch.
+click       recording.accept_take_0
+wait_until recording.review_count == 1 timeout=30s
+assert      recording.take.1.state == "ReviewNeeded"
+assert_visible recording.accept_take_1
+assert      recording.take.1.evidence_complete == true
+assert      recording.take.1.quality_present == true
+scroll      recording.content -600
+click       recording.accept_take_1
+wait_until recording.done_count == 2 timeout=30s
+assert      recording.evidence_complete == true
+assert      recording.take.1.source_identity == "R|channel=1|mic=0|position=0"
+assert      recording.take.0.max_thd_percent > 10.0
+assert      recording.take.1.max_thd_percent > 10.0
+
+# Keep session-wide capture settings unchanged: editing the global signal level
+# resets all channel states/results. Retake only L through its visible action;
+# the unchanged R retains
+# its warning/evidence and original WAV timestamp, while L receives a fresh
+# analyzed take and is reviewed again.
+scroll      recording.content 600
+assert_visible recording.record_speaker_0
+click       recording.record_speaker_0
+wait_until recording.review_count == 1 timeout=30s
+assert      recording.take.0.state == "ReviewNeeded"
+assert_visible recording.accept_take_0
+assert      recording.review_count == 1
+assert      recording.take.0.max_thd_percent > 10.0
+assert      recording.take.1.max_thd_percent > 10.0
+assert      recording.take.0.mtime_after.1 == true
+assert      recording.take.1.evidence_complete == true
+assert      recording.take.1.quality_present == true
+assert      recording.take.1.source_identity == "R|channel=1|mic=0|position=0"
+click       recording.accept_take_0
+wait_until recording.done_count == 2 timeout=3s

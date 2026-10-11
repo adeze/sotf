@@ -1,0 +1,62 @@
+# The suite fixture only pre-fills the LoadData path. Every domain transition
+# below comes from a normal TUI key and runs the production parser/optimizer.
+focus configure
+key 3
+assert configure.sub_screen == "RoomEq"
+assert roomeq.step == "LoadData"
+assert roomeq.step_tab_focused == false
+key e
+assert roomeq.editing_file_path == true
+key enter
+query roomeq.file_path
+assert roomeq.file_path != ""
+query roomeq.error
+assert roomeq.error == ""
+wait_until roomeq.measurement_count >= 2 timeout=5s
+assert roomeq.quality_sidecar_count == 0
+assert roomeq.quality_review_entry_count >= 2
+assert roomeq.quality_unknown_count >= 2
+assert roomeq.unknown_finding_count == 0
+assert roomeq.quality_sidecar_warning != ""
+query roomeq.quality_review_entries
+wait_until roomeq.measurement_count >= 2 timeout=5s
+
+# Visit the real optimizer step through the step tabs; selecting it starts the
+# shared optimizer worker with the parsed fixture measurements.
+key esc
+key right
+key right
+key right
+key right
+assert roomeq.step == "Optimize"
+wait_until roomeq.optimization_status == "Completed" timeout=150s
+assert roomeq.result_count >= 2
+assert roomeq.has_dsp_output == true
+assert roomeq.result_filter_count > 0
+assert roomeq.result_nonzero_gain_count > 0
+
+# Review results, advance to Export, write a real file, and apply to the rack.
+# The JSON export preserves the optimizer's PEQ result list. Rack application
+# uses the optimizer's generated DspChainOutput and separates broadband from
+# main Room EQ stages, so its applied filter set is checked against that DSP
+# boundary rather than assuming it equals the export PEQ list.
+key right
+assert roomeq.step == "Review"
+key down
+assert roomeq.result_count >= 2
+key esc
+key right
+assert roomeq.step == "Export"
+key down
+key enter
+type "$SOTF_QA_DIR/roomeq-export.json"
+key enter
+wait_until roomeq.export_exists == true timeout=5s
+assert roomeq.export_filter_count > 0
+key a
+assert roomeq.apply_error == ""
+query roomeq.apply_status
+query roomeq.applied_eq_filters
+assert roomeq.applied_eq_filter_count > 0
+assert roomeq.applied_eq_nonzero_gain_count > 0
+assert roomeq.applied_eq_parameters_match_dsp_output == true

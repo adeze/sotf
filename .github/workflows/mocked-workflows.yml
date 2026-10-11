@@ -1,0 +1,94 @@
+name: Mocked workflow contracts
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: sotf
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: sotf
+      # Cargo path dependencies and embedded report resources need the sibling
+      # workspace layout. WORKSPACE_READ_TOKEN supplies access to private peers.
+      # Ref variables allow companion PR branches before their changes merge.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-capture
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN || github.token }}
+          ref: ${{ vars.SOTF_CAPTURE_REF }}
+          path: sotf-capture
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-daw
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN || github.token }}
+          ref: ${{ vars.SOTF_DAW_REF }}
+          path: sotf-daw
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/autoeq
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN || github.token }}
+          ref: ${{ vars.AUTOEQ_REF }}
+          path: autoeq
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/math-audio
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN || github.token }}
+          path: math-audio
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/gpui-toolkit
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN || github.token }}
+          ref: ${{ vars.GPUI_TOOLKIT_REF }}
+          path: gpui-toolkit
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sofa-reader
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN || github.token }}
+          path: sofa-reader
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/symphonia-add-ons
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN || github.token }}
+          path: symphonia-add-ons
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build and report dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang mold libasound2-dev libssl-dev pkg-config python3-numpy
+          cargo install just --locked
+      - name: Run deterministic workflow contracts
+        run: |
+          mkdir -p ../workflow-artifacts
+          just cargo=cargo test-workflow-contracts 2>&1 | tee ../workflow-artifacts/contracts.log
+      - name: Run shared report contracts
+        run: just cargo=cargo test-shared-report 2>&1 | tee ../workflow-artifacts/report.log
+      - name: Preserve contract logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mocked-workflow-contracts-${{ github.sha }}
+          path: workflow-artifacts/
+          if-no-files-found: warn

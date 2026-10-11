@@ -304,6 +304,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let reference_signal = signal;
     let temp_wav_path = temp_wav.path().to_path_buf();
     let num_sweeps = app.recording.model.num_sweeps;
+    #[cfg(feature = "dev-api")]
+    let virtual_capture_profile = app.recording.virtual_capture_profile.clone();
 
     // R8: reset the cancel flag so a stale request cannot abort this run,
     // then hand a clone to the capture thread (mirrors
@@ -317,6 +319,10 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         use sotf_audio_player::recording_types::RecordingResult;
         use sotf_audio_player::signal_recorder::{
             record_and_analyze_with, record_and_analyze_with_multi,
+        };
+        #[cfg(feature = "dev-api")]
+        use sotf_capture::signal_recorder::{
+            record_and_analyze_with_multi_recorder, record_and_analyze_with_recorder,
         };
 
         let sweep_range = if signal_type == SignalType::Sweep {
@@ -336,6 +342,20 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             Some(input_device.as_str())
         };
 
+        #[cfg(feature = "dev-api")]
+        let fake_profile = virtual_capture_profile
+            .as_deref()
+            .and_then(|profile| match profile {
+                "clean" => Some(sotf_capture::signal_recorder::FakeAudioProfile::Clean),
+                "high-thd" => Some(sotf_capture::signal_recorder::FakeAudioProfile::HighThd),
+                "low-snr" => Some(sotf_capture::signal_recorder::FakeAudioProfile::LowSnr),
+                "unknown-evidence" => {
+                    Some(sotf_capture::signal_recorder::FakeAudioProfile::UnknownEvidence)
+                }
+                "clipping" => Some(sotf_capture::signal_recorder::FakeAudioProfile::Clipping),
+                _ => None,
+            });
+
         let result = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
             let mut wav_paths = capture_wav_paths.clone();
             let mut csv_paths = capture_csv_paths.clone();
@@ -347,7 +367,48 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 input_channels.push(loopback_input as u16);
                 calibrations.push(None);
             }
-            record_and_analyze_with_multi(
+            #[cfg(feature = "dev-api")]
+            let captures = if let Some(profile) = fake_profile {
+                let wire = sotf_capture::signal_recorder::VirtualWire::for_profile(profile);
+                let mut playback = wire.playback("tui_record_and_analyze_multi");
+                let mut recorder = wire.recorder("tui_record_and_analyze_multi");
+                record_and_analyze_with_multi_recorder(
+                    &mut playback,
+                    &mut recorder,
+                    &temp_wav_path,
+                    &wav_paths,
+                    &reference_signal,
+                    sample_rate,
+                    &csv_paths,
+                    output_channel,
+                    &input_channels,
+                    out_dev,
+                    in_dev,
+                    &calibrations,
+                    sweep_range,
+                    num_sweeps,
+                    Some(cancel_flag.clone()),
+                )
+            } else {
+                record_and_analyze_with_multi(
+                    &mut EnginePlayback::new(false, "record_and_analyze_multi"),
+                    &temp_wav_path,
+                    &wav_paths,
+                    &reference_signal,
+                    sample_rate,
+                    &csv_paths,
+                    output_channel,
+                    &input_channels,
+                    None,
+                    None,
+                    &calibrations,
+                    sweep_range,
+                    num_sweeps,
+                    Some(cancel_flag.clone()),
+                )
+            };
+            #[cfg(not(feature = "dev-api"))]
+            let captures = record_and_analyze_with_multi(
                 &mut EnginePlayback::new(false, "record_and_analyze_multi"),
                 &temp_wav_path,
                 &wav_paths,
@@ -362,15 +423,56 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 sweep_range,
                 num_sweeps,
                 Some(cancel_flag.clone()),
-            )
-            .map(|mut results| {
+            );
+            captures.map(|mut results| {
                 if loopback_input.is_some() {
                     let _ = results.pop();
                 }
                 results
             })
         } else {
-            record_and_analyze_with(
+            #[cfg(feature = "dev-api")]
+            let capture = if let Some(profile) = fake_profile {
+                let wire = sotf_capture::signal_recorder::VirtualWire::for_profile(profile);
+                let mut playback = wire.playback("tui_record_and_analyze");
+                let mut recorder = wire.recorder("tui_record_and_analyze");
+                record_and_analyze_with_recorder(
+                    &mut playback,
+                    &mut recorder,
+                    &temp_wav_path,
+                    &recorded_wav_path,
+                    &reference_signal,
+                    sample_rate,
+                    &csv_path,
+                    output_channel,
+                    input_channel,
+                    None,
+                    None,
+                    mic_calibration.as_deref(),
+                    sweep_range,
+                    num_sweeps,
+                    Some(cancel_flag),
+                )
+            } else {
+                record_and_analyze_with(
+                    &mut EnginePlayback::new(true, "record_and_analyze"),
+                    &temp_wav_path,
+                    &recorded_wav_path,
+                    &reference_signal,
+                    sample_rate,
+                    &csv_path,
+                    output_channel,
+                    input_channel,
+                    out_dev,
+                    in_dev,
+                    mic_calibration.as_deref(),
+                    sweep_range,
+                    num_sweeps,
+                    Some(cancel_flag),
+                )
+            };
+            #[cfg(not(feature = "dev-api"))]
+            let capture = record_and_analyze_with(
                 &mut EnginePlayback::new(true, "record_and_analyze"),
                 &temp_wav_path,
                 &recorded_wav_path,
@@ -385,8 +487,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 sweep_range,
                 num_sweeps,
                 Some(cancel_flag),
-            )
-            .map(|result| vec![result])
+            );
+            capture.map(|result| vec![result])
         };
 
         let mapped = result

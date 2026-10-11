@@ -341,6 +341,31 @@ impl PlayerHandle {
         })
     }
 
+    /// QA-only view of the most recently published engine snapshot.
+    ///
+    /// This deliberately reads the actor-published immutable snapshot instead
+    /// of requesting engine state from the UI/query thread.
+    #[cfg(feature = "dev-api")]
+    pub(crate) fn engine_diagnostics(&self) -> serde_json::Value {
+        let snapshot = self.latest_snapshot.read();
+        let Some(snapshot) = snapshot.as_ref() else {
+            return serde_json::Value::Null;
+        };
+        let Some(engine) = snapshot.external_engine_state.as_ref() else {
+            return serde_json::Value::Null;
+        };
+
+        serde_json::json!({
+            "snapshot_sequence": snapshot.sequence,
+            "playback_epoch": engine.playback_epoch,
+            "playback_state": format!("{:?}", engine.playback_state),
+            "playback_frames_received": engine.playback_frames_received,
+            "playback_frames_written": engine.playback_frames_written,
+            "output_peak_linear": engine.output_peak_linear,
+            "sample_rate": engine.sample_rate,
+        })
+    }
+
     #[cfg(feature = "dev-api")]
     pub(crate) fn profile_action_diagnostics(&self) -> serde_json::Value {
         let latest = self.latest_snapshot.read().clone();
@@ -622,6 +647,17 @@ impl PlayerHandle {
     ) -> Result<PlayerCommandReceipt, PlayerCommandError> {
         self.enqueue_with_receipt("update_plugins", move |player| {
             player.update_plugins(plugins)
+        })
+    }
+
+    /// Configure this actor's development output before starting playback.
+    #[cfg(feature = "dev-api")]
+    pub(crate) fn set_test_output_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<PlayerCommandReceipt, PlayerCommandError> {
+        self.enqueue_with_receipt("set_test_output_enabled", move |player| {
+            player.set_test_output_enabled(enabled)
         })
     }
 

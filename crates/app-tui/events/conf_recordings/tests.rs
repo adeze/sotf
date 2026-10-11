@@ -252,6 +252,48 @@ fn right_on_config_adjusts_field() {
     );
 }
 
+#[test]
+fn visible_sweep_edits_update_the_channel_range_used_by_capture() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    let mut app = make_app();
+    init_recording_channels(&mut app);
+    let key = |code| KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    };
+
+    app.recording.selected_field = 6;
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+    for _ in 0..2 {
+        handle_recording_keys(&mut app, key(KeyCode::Backspace));
+    }
+    for character in ['5', '0', '0'] {
+        handle_recording_keys(&mut app, key(KeyCode::Char(character)));
+    }
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+
+    app.recording.selected_field = 7;
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+    for _ in 0..5 {
+        handle_recording_keys(&mut app, key(KeyCode::Backspace));
+    }
+    for character in ['8', '0', '0', '0'] {
+        handle_recording_keys(&mut app, key(KeyCode::Char(character)));
+    }
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+
+    let selected = &app.recording.model.channel_recordings[0];
+    assert_eq!(app.recording.model.sweep_start_freq, 500.0);
+    assert_eq!(app.recording.model.sweep_end_freq, 8000.0);
+    // start_recording_channel forwards these selected per-channel values to
+    // prepare_measurement_signal and the capture backend.
+    assert_eq!(selected.sweep_start_freq, 500.0);
+    assert_eq!(selected.sweep_end_freq, 8000.0);
+}
+
 fn done_recording_result(mag_db: f32) -> RecordingResult {
     RecordingResult {
         sample_rate_hz: None,
@@ -451,7 +493,10 @@ fn poll_recording_sets_and_clears_low_level_warning() {
     // Very low transfer-function level → warning set and surfaced.
     *slot.lock().unwrap() = Some((
         app.recording.model.capture_generation,
-        Ok((vec![(0, done_recording_result(-80.0))], None)),
+        Ok((
+            vec![(0, result_with_quality(-80.0, quality_summary(true, 1.0)))],
+            None,
+        )),
     ));
     assert!(poll_recording(&mut app));
     assert_eq!(
@@ -479,7 +524,10 @@ fn poll_recording_sets_and_clears_low_level_warning() {
     app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
     *slot.lock().unwrap() = Some((
         app.recording.model.capture_generation,
-        Ok((vec![(0, done_recording_result(-10.0))], None)),
+        Ok((
+            vec![(0, result_with_quality(-10.0, quality_summary(true, 1.0)))],
+            None,
+        )),
     ));
     assert!(poll_recording(&mut app));
     assert!(app.recording.model.noise_floor_warning.is_none());
@@ -583,6 +631,7 @@ fn quality_summary(
         } else {
             vec!["low coherence".to_string()]
         },
+        findings: Vec::new(),
         mean_coherence: Some(0.71),
         median_snr_db: Some(18.2),
         clip_fraction: 0.0,
@@ -731,7 +780,10 @@ fn poll_recording_discards_stale_generation_result() {
     // The in-flight capture's own result (current generation) is applied.
     *slot.lock().unwrap() = Some((
         app.recording.model.capture_generation,
-        Ok((vec![(0, done_recording_result(-10.0))], None)),
+        Ok((
+            vec![(0, result_with_quality(-10.0, quality_summary(true, 1.0)))],
+            None,
+        )),
     ));
     assert!(poll_recording(&mut app));
     assert_eq!(

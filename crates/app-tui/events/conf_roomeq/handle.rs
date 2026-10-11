@@ -170,6 +170,9 @@ fn handle_load_data_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
         KeyCode::Up => {
             app.room_eq.step_tab_focused = true;
         }
+        KeyCode::Char('e') => {
+            app.room_eq.editing_file_path = true;
+        }
         KeyCode::Enter => {
             let start = app.room_eq.file_path.clone();
             app.open_file_explorer(

@@ -12,11 +12,13 @@ fn parses_suite_with_scenario_alias() {
             name = "smoke"
             path = "crates/sotf-dev-driver/scenarios/smoke.scn"
             seed_demo_audio = true
+            mock_playback = true
             tags = ["smoke"]
 
 [scenario.fake_recording]
 channels = 2
 points = 48
+            profile = "high-thd"
 fault = "clipping"
 
             [scenario.room_eq]
@@ -35,9 +37,11 @@ fault = "clipping"
     assert_eq!(suite.scenarios.len(), 1);
     assert_eq!(suite.scenarios[0].name, "smoke");
     assert!(suite.scenarios[0].seed_demo_audio);
+    assert!(suite.scenarios[0].mock_playback);
     let fake = suite.scenarios[0].fake_recording.as_ref().unwrap();
     assert_eq!(fake.channels, 2);
     assert_eq!(fake.points, 48);
+    assert_eq!(fake.profile.as_deref(), Some("high-thd"));
     assert_eq!(fake.fault.as_deref(), Some("clipping"));
     let room_eq = suite.scenarios[0].room_eq.as_ref().unwrap();
     assert_eq!(room_eq.target, "NearField");
@@ -65,7 +69,7 @@ fn checked_in_suites_parse() {
     assert_eq!(roomeq.scenarios.len(), 24);
 
     let tui: SuiteFile = toml::from_str(include_str!("../../suites/tui.toml")).unwrap();
-    assert_eq!(tui.scenarios.len(), 19);
+    assert_eq!(tui.scenarios.len(), 24);
 
     let full: SuiteFile = toml::from_str(include_str!("../../suites/full_matrix.toml")).unwrap();
     assert_eq!(full.scenarios.len(), 23);

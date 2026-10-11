@@ -271,8 +271,16 @@ impl PlayerView {
         let include_level_meters = include_rack_data;
         let can_update_autogain = !structural_update_pending;
         let poll_external_diagnostics = frame_count.is_multiple_of(10);
-        let include_external_diagnostics =
-            poll_external_diagnostics && state.app.plugin_state.has_external_plugins();
+        let listening_runtime_active = state
+            .app
+            .plugin_state
+            .listening_test_state
+            .ab_test
+            .view()
+            .runtime_active;
+        let include_external_diagnostics = poll_external_diagnostics
+            && (state.app.plugin_state.has_external_plugins()
+                || (cfg!(feature = "dev-api") && listening_runtime_active));
 
         let was_playing = state.app.playback.is_playing;
         let (

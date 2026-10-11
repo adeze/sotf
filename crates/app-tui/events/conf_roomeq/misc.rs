@@ -197,6 +197,8 @@ pub(super) fn adjust_room_eq_field(app: &mut App, delta: i32) {
 pub(crate) fn load_room_eq_measurements(app: &mut App) {
     use sotf_audio_player::room_eq_types::RoomEqMeasurementsFile;
 
+    app.room_eq.quality_review_entries.clear();
+    app.room_eq.quality_sidecar_warning = None;
     let path = &app.room_eq.file_path;
     if path.is_empty() {
         app.room_eq.load_error = Some("No file path specified".to_string());
@@ -207,7 +209,29 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
 
     match std::fs::read_to_string(path) {
         Ok(contents) => match RoomEqMeasurementsFile::load_from_json(&contents, base_dir) {
-            Ok(channels) => {
+            Ok(mut channels) => {
+                let quality_sidecar =
+                    sotf_audio_player::recording_helpers::load_recording_quality_sidecar(
+                        std::path::Path::new(path),
+                        contents.as_bytes(),
+                    );
+                let sidecar = match quality_sidecar {
+                    Ok(Some(sidecar)) => Some(sidecar),
+                    Ok(None) => {
+                        app.room_eq.quality_sidecar_warning = Some(
+                            "Quality evidence unavailable (unknown): no current recording-quality.json sidecar".into(),
+                        );
+                        None
+                    }
+                    Err(error) => {
+                        app.room_eq.quality_sidecar_warning = Some(format!(
+                            "Quality evidence unavailable (unknown): could not read recording-quality.json: {error}"
+                        ));
+                        None
+                    }
+                };
+                app.room_eq.quality_review_entries =
+                    attach_quality_sidecar(&mut channels, sidecar.as_ref());
                 app.room_eq.model.ctc_config =
                     serde_json::from_str::<autoeq::RoomConfig>(&contents)
                         .ok()
@@ -264,6 +288,74 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
             app.room_eq.model.speaker_configs.clear();
         }
     }
+}
+
+fn attach_quality_sidecar(
+    channels: &mut [sotf_audio_player::room_eq_types::ChannelMeasurement],
+    sidecar: Option<&sotf_audio_player::recording_helpers::RecordingQualitySidecar>,
+) -> Vec<crate::app::RoomEqQualityReviewEntry> {
+    use sotf_audio_player::recording_types::RecordingSourceIdentity;
+
+    let mut entries = Vec::new();
+    for channel in channels {
+        if channel.is_group {
+            for (driver_index, driver) in channel.driver_measurement_sets.iter_mut().enumerate() {
+                let driver_label = driver.name.clone();
+                let measurements = std::iter::once(&mut driver.measurement)
+                    .chain(driver.multi_mic_measurements.iter_mut());
+                for (measurement_index, measurement) in measurements.enumerate() {
+                    let source = RecordingSourceIdentity {
+                        speaker: channel.channel_name.clone(),
+                        driver_index: Some(driver_index),
+                        measurement_index,
+                    };
+                    let quality = sidecar
+                        .and_then(|sidecar| sidecar.quality_for(&source))
+                        .cloned();
+                    measurement.quality = quality.clone();
+                    let source_label = driver
+                        .provenance
+                        .get(measurement_index)
+                        .and_then(|item| item.name.clone())
+                        .or_else(|| driver_label.clone());
+                    entries.push(crate::app::RoomEqQualityReviewEntry {
+                        source,
+                        source_label,
+                        quality,
+                    });
+                }
+            }
+            if let Some(first_driver) = channel.driver_measurement_sets.first() {
+                channel.measurement.quality = first_driver.measurement.quality.clone();
+            }
+            continue;
+        }
+
+        let channel_name = channel.channel_name.clone();
+        let measurements = std::iter::once(&mut channel.measurement)
+            .chain(channel.multi_mic_measurements.iter_mut());
+        for (measurement_index, measurement) in measurements.enumerate() {
+            let source = RecordingSourceIdentity {
+                speaker: channel_name.clone(),
+                driver_index: None,
+                measurement_index,
+            };
+            let quality = sidecar
+                .and_then(|sidecar| sidecar.quality_for(&source))
+                .cloned();
+            measurement.quality = quality.clone();
+            let source_label = channel
+                .provenance
+                .get(measurement_index)
+                .and_then(|item| item.name.clone());
+            entries.push(crate::app::RoomEqQualityReviewEntry {
+                source,
+                source_label,
+                quality,
+            });
+        }
+    }
+    entries
 }
 
 pub(crate) fn export_room_eq_results(app: &mut App) {

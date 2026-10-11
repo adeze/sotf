@@ -81,7 +81,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(3), // file path
-                    Constraint::Length(3), // status/error
+                    Constraint::Length(5), // status and source quality evidence
                     Constraint::Min(3),    // loaded channels
                     Constraint::Length(1), // help
                 ])
@@ -116,16 +116,78 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     );
                 f.render_widget(err_para, inner[1]);
             } else if !s.model.channel_measurements.is_empty() {
-                let status = Paragraph::new(i18n.dynamic(format!(
-                    " {} channels loaded",
+                let (passed, review, unknown) = quality_review_counts(&s.quality_review_entries);
+                let mut status_lines = vec![format!(
+                    "{} channels loaded • quality: {passed} pass, {review} review, {unknown} unknown",
                     s.model.channel_measurements.len()
-                )))
-                .style(Style::default().fg(app.theme.accent_success))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(i18n.ui("Status")),
-                );
+                )];
+                if let Some(warning) = &s.quality_sidecar_warning {
+                    status_lines.push(warning.clone());
+                }
+                for entry in s
+                    .quality_review_entries
+                    .iter()
+                    .filter(|entry| {
+                        !entry
+                            .quality
+                            .as_ref()
+                            .is_some_and(|quality| quality.trustworthy)
+                    })
+                    .take(2)
+                {
+                    let driver = entry
+                        .source
+                        .driver_index
+                        .map(|index| format!(" / driver {}", index + 1))
+                        .unwrap_or_default();
+                    let label = entry
+                        .source_label
+                        .as_deref()
+                        .map(|name| format!(" ({name})"))
+                        .unwrap_or_default();
+                    let verdict = entry.quality.as_ref().map_or_else(
+                        || "quality evidence unavailable (unknown)".to_string(),
+                        sotf_audio_player::recording_helpers::take_verdict_text,
+                    );
+                    status_lines.push(format!(
+                        "{}{} / take {}{}: {verdict}",
+                        entry.source.speaker,
+                        driver,
+                        entry.source.measurement_index + 1,
+                        label
+                    ));
+                }
+                if status_lines.len() == 1
+                    && let Some(entry) = s.quality_review_entries.first()
+                {
+                    let label = entry
+                        .source_label
+                        .as_deref()
+                        .map(|name| format!(" ({name})"))
+                        .unwrap_or_default();
+                    let verdict = entry.quality.as_ref().map_or_else(
+                        || "quality evidence unavailable (unknown)".to_string(),
+                        sotf_audio_player::recording_helpers::take_verdict_text,
+                    );
+                    status_lines.push(format!(
+                        "{} / take {}{}: {verdict}",
+                        entry.source.speaker,
+                        entry.source.measurement_index + 1,
+                        label
+                    ));
+                }
+                let status = Paragraph::new(i18n.dynamic(status_lines.join("\n")))
+                    .style(Style::default().fg(if unknown > 0 || review > 0 {
+                        app.theme.accent_warning
+                    } else {
+                        app.theme.accent_success
+                    }))
+                    .wrap(ratatui::widgets::Wrap { trim: true })
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Status and measurement quality")),
+                    );
                 f.render_widget(status, inner[1]);
             } else {
                 let status = Paragraph::new(i18n.ui(" No data loaded"))
@@ -191,7 +253,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 if s.editing_file_path {
                     " Enter=confirm  F2=browse  Tab=autocomplete  Esc=cancel"
                 } else {
-                    " Enter=browse for JSON  Tab=next step"
+                    " e=edit path  Enter=browse for JSON  Tab=next step"
                 }
                 .to_string(),
             );
@@ -930,6 +992,27 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             }
         }
     }
+}
+
+fn quality_review_counts(
+    entries: &[crate::app::RoomEqQualityReviewEntry],
+) -> (usize, usize, usize) {
+    entries
+        .iter()
+        .fold((0, 0, 0), |(passed, review, unknown), entry| {
+            match entry.quality.as_ref() {
+                None => (passed, review, unknown + 1),
+                Some(quality) if quality.trustworthy => (passed + 1, review, unknown),
+                Some(quality)
+                    if sotf_audio_player::recording_helpers::take_verdict_text(quality)
+                        .to_ascii_lowercase()
+                        .contains("unknown") =>
+                {
+                    (passed, review, unknown + 1)
+                }
+                Some(_) => (passed, review + 1, unknown),
+            }
+        })
 }
 
 /// Render the "Delay" wizard step — simplified to just a read-only table

@@ -9,7 +9,7 @@ use super::with::with_app_state;
 use super::with::with_player_view;
 use crate::app::types::headphone_eq::HeadphoneMeasurementSource;
 #[cfg(feature = "dev-api")]
-use crate::app::types::recording::{QaFakeCapture, QaFakeCaptureFault};
+use crate::app::types::recording::{QaFakeCapture, QaFakeCaptureFault, QaFakeCaptureProfile};
 use crate::app::types::{
     ChannelMapping, ChannelRecording, ChannelRecordingState, RecordingState, RecordingStep,
     RoomEqStep,
@@ -161,6 +161,24 @@ pub(super) fn qa_seed(
     })
 }
 
+pub(super) fn qa_playback_output(
+    payload: serde_json::Value,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<crate::app::player_handle::PlayerCommandReceipt> {
+    let enabled = payload
+        .get("enabled")
+        .and_then(serde_json::Value::as_bool)
+        .ok_or_else(|| anyhow!("playback output payload needs `enabled` boolean"))?;
+
+    with_app_state(window, cx, |state| {
+        state
+            .player
+            .set_test_output_enabled(enabled)
+            .map_err(|error| anyhow!("configuring isolated playback output: {error}"))
+    })
+}
+
 pub(super) fn qa_recording_fake_capture(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -182,6 +200,15 @@ pub(super) fn qa_recording_fake_capture(
         .ok()
         .filter(|points| (2..=4096).contains(points))
         .ok_or_else(|| anyhow!("fake recording `points` must be between 2 and 4096"))?;
+
+    let profile = match payload.get("profile").and_then(|value| value.as_str()) {
+        None => QaFakeCaptureProfile::Clean,
+        Some(value) => QaFakeCaptureProfile::parse(value).ok_or_else(|| {
+            anyhow!(
+                "fake recording `profile` must be one of `clean`, `high-thd`, `low-snr`, `unknown-evidence`, or `clipping`"
+            )
+        })?,
+    };
 
     let fault = match payload.get("fault").and_then(|value| value.as_str()) {
         None => None,
@@ -223,9 +250,18 @@ pub(super) fn qa_recording_fake_capture(
         .collect();
     recording.model.recording_config.num_channels = 1;
     recording.model.recording_config.channel_mappings = vec![0];
+    // Keep the UI-driven E2E fixture short while retaining a full-band sweep
+    // and running the same recorder and analyzer over actual captured samples.
+    recording.model.signal_duration_secs = 1.0;
+    recording.model.bass_octave_duration_s = 1.0;
+    recording.model.num_sweeps = 1;
     recording.model.step = RecordingStep::Capture;
     recording.model.init_channel_recordings();
-    recording.qa_fake_capture = Some(QaFakeCapture { points, fault });
+    recording.qa_fake_capture = Some(QaFakeCapture {
+        points,
+        profile,
+        fault,
+    });
 
     let import = payload
         .get("import_json")

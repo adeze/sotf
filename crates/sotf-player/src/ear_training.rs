@@ -227,7 +227,15 @@ impl EqTrainingQuestion {
     }
 
     pub fn plugin_parameters(&self) -> serde_json::Value {
-        serde_json::json!({ "filters": [self.filter()] })
+        let filter = self.filter();
+        // EQFilter is a saved player setting; the DSP plugin uses a different schema.
+        serde_json::json!({ "filters": [{
+            "filter_type": filter.filter_type.long_name().to_lowercase(),
+            "freq": filter.frequency,
+            "q": filter.q,
+            "db_gain": filter.gain_db,
+            "order": filter.order,
+        }] })
     }
 
     pub fn correct_answer(&self, exercise: EqTrainingExercise) -> usize {
@@ -841,7 +849,12 @@ mod tests {
         let filter = question.filter();
         assert_eq!(filter.filter_type, BiquadFilterType::Peak);
         assert_eq!(filter.gain_db, -6.0);
-        assert_eq!(question.plugin_parameters()["filters"][0]["gain_db"], -6.0);
+        let parameters = question.plugin_parameters();
+        let plugin_params: sotf_plugins::plugin_eq::EqPluginParams =
+            serde_json::from_value(parameters.clone()).unwrap();
+        assert_eq!(plugin_params.filters[0].freq, question.center_frequency_hz);
+        assert_eq!(plugin_params.filters[0].db_gain, -6.0);
+        assert!(sotf_plugins::create_plugin("eq", &parameters, 2, 48_000.0).is_ok());
         assert_eq!(question.preview_curve(64).len(), 64);
     }
 
