@@ -2185,7 +2185,7 @@ impl PlayerView {
                     });
                 }
                 BatchNextAction::Save => {
-                    log::info!("Auto-recording complete - all channels recorded, saving JSON");
+                    log::info!("Auto-recording complete - all channels captured");
                     let _ = weak_view.update(cx, |view, cx| {
                         view.state.update(cx, |state, _| {
                             state
@@ -2193,10 +2193,6 @@ impl PlayerView {
                                 .measurement_state
                                 .recording_state
                                 .auto_record_remaining = false;
-                            state.app.measurement_state.recording_state.status_message =
-                                "All channels recorded, saving...".to_string();
-                            state.app.measurement_state.recording_state.status_severity =
-                                crate::app::types::recording::RecordingStatusSeverity::Working;
                         });
                         // Auto-save recordings.json with all channel data
                         view.save_recordings(cx);
@@ -3364,9 +3360,6 @@ impl PlayerView {
                 }
                 BatchNextAction::Save => {
                     rec_state.auto_record_remaining = false;
-                    rec_state.status_message = "All channels recorded, saving...".to_string();
-                    rec_state.status_severity =
-                        crate::app::types::recording::RecordingStatusSeverity::Working;
                 }
                 _ => {}
             }

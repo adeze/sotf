@@ -58,6 +58,34 @@ assert      recording.done_count == 2
 assert      recording.all_done == true
 assert      recording.quality_count == 2
 assert      recording.evidence_complete == true
-wait_until  recording.status_severity == "Success" timeout=10s
+assert      recording.review_count == 0
+assert      recording.status_severity == "Success"
+
+# Finish the ordinary calibration, review, and save stages so a successful
+# retry proves the captures are accepted and persisted through the real flow.
+click       recording.next
+assert      recording.step == "Probe"
+click       recording.probe_run
+wait_idle   2s
+assert      recording.probe_complete == true
+click       recording.next
+assert      recording.step == "BassAnchor"
+click       recording.bass_anchor_run
+wait_idle   2s
+assert      recording.bass_anchor_complete == true
+click       recording.next
+assert      recording.step == "Evaluating"
+click       recording.accept.0
+click       recording.accept.1
+click       recording.next
+assert      recording.step == "Saving"
+scroll      recording.content -600
+assert_enabled recording.save == true
+click       recording.save
+wait_until  recording.save_status == "Current" timeout=10s
+assert      recording.saved_path != null
+assert      recording.status_severity == "Success"
+assert      recording.error_count == 0
+screenshot  recording-capture-retry-saved
 assert      recording.status_severity == "Success"
 screenshot  recording-capture-retry
