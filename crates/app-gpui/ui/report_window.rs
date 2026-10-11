@@ -6,6 +6,40 @@ use super::PlayerView;
 use gpui::{prelude::*, *};
 use sotf_report_host::{GeneratedReport, ReportServer};
 
+/// Counts initialized shared report views for read-only workflow verification.
+#[cfg(feature = "dev-api")]
+pub(crate) fn shared_report_window_count(cx: &mut App) -> usize {
+    #[cfg(all(
+        feature = "report-webview",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    {
+        cx.windows()
+            .into_iter()
+            .filter(|handle| {
+                handle
+                    .update(cx, |root, _, cx| {
+                        root.downcast::<SharedReportWindow>()
+                            .map(|entity| {
+                                let report = entity.read(cx);
+                                report.webview.is_some() && report.error.is_none()
+                            })
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false)
+            })
+            .count()
+    }
+    #[cfg(not(all(
+        feature = "report-webview",
+        any(target_os = "macos", target_os = "windows")
+    )))]
+    {
+        let _ = cx;
+        0
+    }
+}
+
 impl PlayerView {
     pub(crate) fn open_shared_room_eq_report(&mut self, cx: &mut Context<Self>) {
         self.prepare_shared_room_eq_report(false, cx);
@@ -95,6 +129,7 @@ impl PlayerView {
     }
 
     fn report_error(&mut self, error: String, cx: &mut Context<Self>) {
+        log::error!("Shared AutoEQ report failed: {error}");
         self.state.update(cx, |state, _| {
             state.app.measurement_state.room_eq_state.error_message = Some(error.clone());
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(error));
@@ -367,10 +402,13 @@ impl SharedReportWindow {
             });
         let (webview, error) = match builder.build_as_child(&*window) {
             Ok(view) => (Some(view), None),
-            Err(error) => (
-                None,
-                Some(format!("Cannot create shared report view: {error}")),
-            ),
+            Err(error) => {
+                log::error!("Cannot create shared report view: {error}");
+                (
+                    None,
+                    Some(format!("Cannot create shared report view: {error}")),
+                )
+            }
         };
         let subscription = cx.observe_window_bounds(window, |this, window, cx| {
             if let Some(view) = &this.webview

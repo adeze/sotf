@@ -15,6 +15,11 @@ use crate::ui::PlayerView;
 use super::performance;
 
 pub fn resolve(path: &str, window: AnyWindowHandle, cx: &mut App) -> Result<Value> {
+    if path == "roomeq.report_window_count" {
+        return Ok(json!(crate::ui::report_window::shared_report_window_count(
+            cx
+        )));
+    }
     window
         .update(cx, |any_view, window, cx| {
             let viewport = window.viewport_size();

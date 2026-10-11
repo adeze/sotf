@@ -1,4 +1,4 @@
-//! Delegates report production to the unchanged AutoEQ producer.
+//! Delegates dashboard data and document assembly to shared AutoEQ APIs.
 
 // Rust guideline compliant 2026-02-21
 
@@ -14,10 +14,6 @@ use std::time::{Duration, Instant};
 #[folder = "../../../autoeq/scripts/src/"]
 #[include = "*.py"]
 struct AutoEqProducer;
-
-#[derive(RustEmbed)]
-#[folder = "../../../autoeq/crates/autoeq-report-wasm/dist/"]
-struct AutoEqWasm;
 
 /// Generated document and its private working directory.
 #[derive(Debug)]
@@ -96,28 +92,14 @@ pub fn generate_report_with_quality(
         std::fs::create_dir_all(target.parent().context("Report asset has no directory")?)?;
         std::fs::write(target, bytes.data.as_ref())?;
     }
-    for name in AutoEqWasm::iter() {
-        let bytes = AutoEqWasm::get(&name).context("Missing embedded AutoEQ WASM asset")?;
-        let target = directory
-            .path()
-            .join("autoeq/crates/autoeq-report-wasm/dist")
-            .join(name.as_ref());
-        std::fs::create_dir_all(target.parent().context("Report asset has no directory")?)?;
-        std::fs::write(target, bytes.data.as_ref())?;
-    }
-    let shell = directory
-        .path()
-        .join("autoeq/crates/autoeq-report-wasm/shell");
-    std::fs::create_dir_all(&shell)?;
-    std::fs::write(
-        shell.join("template.html"),
-        include_bytes!("../../../../autoeq/crates/autoeq-report-wasm/shell/template.html"),
-    )?;
+    // The canonical payload producer reads the workspace version for its
+    // provenance header; retain that context without staging renderer assets.
     std::fs::write(
         directory.path().join("autoeq/Cargo.toml"),
         include_bytes!("../../../../autoeq/Cargo.toml"),
     )?;
     let json_path = directory.path().join("result.json");
+    let payload_path = directory.path().join("report.json");
     let html_path = directory.path().join("report.html");
     std::fs::write(&json_path, serde_json::to_vec(result)?)?;
     if let Some(root) = artifact_root {
@@ -145,8 +127,8 @@ pub fn generate_report_with_quality(
         .unwrap_or(Path::new("python3"));
     let mut child = Command::new(interpreter)
         .arg("-I").arg("-c")
-        .arg("import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); from src.loaders import load_roomeq_json; from src.report import create_html_report; create_html_report(load_roomeq_json(Path(sys.argv[2])),Path(sys.argv[3]))")
-        .arg(producer).arg(&json_path).arg(&html_path)
+        .arg("import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); from src.loaders import load_roomeq_json; from src.report import build_report_payload; import json; Path(sys.argv[3]).write_text(json.dumps(build_report_payload(load_roomeq_json(Path(sys.argv[2]))),ensure_ascii=False,allow_nan=False),encoding=\"utf-8\")")
+        .arg(producer).arg(&json_path).arg(&payload_path)
         .stdin(Stdio::null()).stdout(stdout).stderr(stderr)
         .spawn().context("Starting AutoEQ report producer; install/configure Python with NumPy")?;
     let started = Instant::now();
@@ -167,58 +149,32 @@ pub fn generate_report_with_quality(
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    anyhow::ensure!(html_path.is_file(), "AutoEQ producer did not emit a report");
-    if let Some(quality) = quality {
-        append_quality_dashboard(&html_path, quality)?;
-    }
+    anyhow::ensure!(
+        payload_path.is_file(),
+        "AutoEQ producer did not emit a payload"
+    );
+    let mut payload: serde_json::Value = serde_json::from_slice(&std::fs::read(payload_path)?)?;
+    // Validation and dashboard grouping belong to the same upstream library
+    // used by standalone Rust producers and WASM consumers.
+    let empty_quality = autoeq_report_wasm::capture_quality::CaptureQualityReport::default();
+    autoeq_report_wasm::capture_quality::append_capture_quality_section_to_value(
+        &mut payload,
+        quality.unwrap_or(&empty_quality),
+    )?;
+    let title = payload["title"]
+        .as_str()
+        .context("Report title is missing")?;
+    let assets = autoeq_report_wasm::assemble::checked_in_assets().map_err(anyhow::Error::msg)?;
+    let html = autoeq_report_wasm::assemble::assemble_html(
+        title,
+        &serde_json::to_string(&payload)?,
+        &assets,
+    );
+    std::fs::write(&html_path, html)?;
     Ok(GeneratedReport {
         directory,
         html_path,
     })
-}
-
-fn append_quality_dashboard(
-    html_path: &Path,
-    quality: &autoeq_report_wasm::capture_quality::CaptureQualityReport,
-) -> anyhow::Result<()> {
-    use autoeq_report_wasm::{assemble, capture_quality, schema};
-    if quality.sources.is_empty() {
-        return Ok(());
-    }
-    let html = std::fs::read_to_string(html_path)?;
-    let json = html
-        .split_once("<script id=\"report-payload\" type=\"application/json\">")
-        .and_then(|(_, content)| content.split_once("</script>"))
-        .map(|(json, _)| json)
-        .context("Shared report payload is missing")?;
-    // Preserve additive upstream fields (bucket, subpage and layout metadata)
-    // instead of round-tripping the complete document through an older schema.
-    let mut payload: serde_json::Value = serde_json::from_str(json)?;
-    anyhow::ensure!(
-        payload["schema"] == schema::SCHEMA_VERSION,
-        "Unsupported shared report payload"
-    );
-    let title = payload["title"]
-        .as_str()
-        .context("Report title is missing")?
-        .to_owned();
-    let mut evidence = schema::ReportPayload::new(&title);
-    capture_quality::append_capture_quality_section(&mut evidence, quality)?;
-    let sections = payload["sections"]
-        .as_array_mut()
-        .context("Report sections are missing")?;
-    for section in evidence.sections {
-        let mut section = serde_json::to_value(section)?;
-        // Existing shell grouping is upstream-owned; use its DSP bucket while
-        // retaining all original dashboards and their data unchanged.
-        section["bucket"] = "DSP analysis".into();
-        section["subhead"] = "Capture quality".into();
-        sections.push(section);
-    }
-    let assets = assemble::checked_in_assets().map_err(anyhow::Error::msg)?;
-    let html = assemble::assemble_html(&title, &serde_json::to_string(&payload)?, &assets);
-    std::fs::write(html_path, html)?;
-    Ok(())
 }
 
 fn copy_artifacts(source: &Path, target: &Path) -> std::io::Result<()> {
@@ -306,7 +262,13 @@ mod tests {
             .unwrap()
         };
         let original = read_payload(&report.read_html().unwrap());
-        append_quality_dashboard(report.path(), &quality).unwrap();
+        let report = generate_report_with_quality(
+            &result,
+            None,
+            python.is_file().then_some(python.as_path()),
+            Some(&quality),
+        )
+        .unwrap();
         let enriched = read_payload(&report.read_html().unwrap());
         let old_sections = original["sections"].as_array().unwrap();
         let new_sections = enriched["sections"].as_array().unwrap();

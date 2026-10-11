@@ -62,9 +62,18 @@ upstream renderer, run `just refresh-shared-report` and rebuild SOTF to embed
 the refreshed bundle. This delegates to AutoEQ's stable 2D WASM build; it does
 not introduce a second dashboard source tree.
 
+The canonical `build_report_payload` API emits dashboard JSON without loading
+renderer assets. The host validates and enriches it through the shared upstream
+Rust API, then assembles the HTML through that same library for every report.
+Dashboard grouping and capture-quality sections no longer live in the host.
+Python remains responsible for derived dashboard summaries until numerical
+parity permits replacing them upstream.
+
 Generation runs on a background worker and uses the optimizer's artifact
 directory to resolve response and impulse-response sidecars. If inputs change
-while generation runs, GPUI rejects the obsolete result. The native browser
+while generation runs, GPUI rejects the obsolete result. Each optimization has an owned artifact directory. Reloaded captures do not
+use the application working directory as an output or report-support folder.
+Artifacts remain available for later FIR/convolution exports. The native browser
 loads one immutable document from an ephemeral loopback origin. Closing the
 window drops the webview, stops its server and releases temporary files.
 Navigation is scoped to that document. IPC messages are bounded and bound to
@@ -164,11 +173,10 @@ flows in the UI tier.
 The dedicated `Mocked workflow contracts` CI workflow checks out sibling
 repositories before running the contract and report tiers; it does not assume
 that a standalone SOTF checkout contains them. Configure
-`WORKSPACE_READ_TOKEN` if the runner's normal token cannot read the private
-siblings. `SOTF_CAPTURE_REF`, `SOTF_DAW_REF`, `AUTOEQ_REF` and
-`GPUI_TOOLKIT_REF` repository variables can select compatible companion
-revisions until those changes merge. This job
-installs NumPy on the runner and preserves both contract logs on failure.
+`WORKSPACE_READ_TOKEN` with read access to the private siblings. The workflow
+pins the compatible capture, DAW and AutoEQ review commits; update those pins as
+the companion changes merge. This job installs NumPy on the runner and
+preserves both contract logs on failure.
 Native UI suites remain a separate desktop/terminal tier and retain their
 own screenshots, state snapshots and app logs.
 
@@ -208,6 +216,7 @@ AutoEQ implementation rather than adding native dashboard copies.
 | Quality findings disappeared between recording review and RoomEQ import | Persist source-bound evidence in a versioned sidecar and show it in the import UI | Warning and Unknown decisions survive save/reload without attaching to another source |
 | Recording save and review actions could fall below smaller viewports | Keep primary Save/Retake/Continue actions in a stable wizard footer; make dense evidence panels scroll independently | Complete the same flow at narrow and short window sizes without losing access to the primary action |
 | TUI step-tab focus and file editing were easy to confuse | Show the current focus level and context-specific key hints from the existing keybinding catalog | Keyboard-only import and export tests assert focus transitions before typing or navigation |
+| Reloaded captures cleared the wizard output folder, making RoomEQ fall back to the application working directory and fail report staging on unrelated symlinks | Give each optimization an owned artifact directory and wait for an initialized native report view in the E2E handoff | Report generation completes after actual capture/save/reload/optimization without copying unrelated worktree files |
 | Old RoomEQ fixtures used a retired schema | Keep fixtures in the current RoomConfig format and drive the current import UI | Real optimization succeeds and exported correction is usable |
 
 Follow-up work should retain these boundaries. First make report generation

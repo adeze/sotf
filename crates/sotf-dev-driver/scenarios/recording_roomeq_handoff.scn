@@ -94,4 +94,9 @@ assert      plugins.user_count > 0
 screenshot  recording-roomeq-applied
 click       roomeq.back
 assert      roomeq.step == "Review"
+assert      roomeq.report_window_count == 0
 click       roomeq.report.open
+wait_idle   2s
+assert      roomeq.error == null
+wait_until  roomeq.report_window_count == 1 timeout=30s
+assert      roomeq.error == null
