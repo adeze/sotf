@@ -47,6 +47,7 @@ visual-qa = [
 
 [dependencies]
 sotf-report-host = { path = "../sotf-report-host" }
+sha2.workspace = true
 hound = { workspace = true, optional = true }
 # GPUI framework
 gpui = { workspace = true }

@@ -89,8 +89,128 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
 
         // Recording
         "recording.step" => json!(format!("{:?}", app.recording.model.step)),
+        "recording.step_tab_focused" => json!(app.recording.step_tab_focused),
+        "recording.editing_path" => json!(
+            app.recording.editing_output_dir || app.recording.editing_mic_cal_channel.is_some()
+        ),
+        "recording.focus_context" => json!(if app.recording.editing_output_dir
+            || app.recording.editing_mic_cal_channel.is_some()
+        {
+            "PathEdit"
+        } else if app.recording.step_tab_focused {
+            "StepTabs"
+        } else {
+            "Content"
+        }),
         "recording.selected_field" => json!(app.recording.selected_field),
         "recording.signal_duration_secs" => json!(app.recording.model.signal_duration_secs),
+        "recording.bass_octave_duration_s" => {
+            json!(app.recording.model.bass_octave_duration_s)
+        }
+        "recording.duration_control_kind" => json!(if app.recording.model.signal_type
+            == sotf_audio_player::recording_types::RecordingSignalType::Sweep
+        {
+            "BassOctaveDuration"
+        } else if app.recording.model.signal_type
+            == sotf_audio_player::recording_types::RecordingSignalType::Mls
+        {
+            "SequenceDefined"
+        } else {
+            "SignalDuration"
+        }),
+        "recording.signal_type" => json!(app.recording.model.signal_type.as_str()),
+        "recording.effective_acquisition" => {
+            json!(crate::app::recording_acquisition_config(&app.recording.model).ok())
+        }
+        "recording.effective_playback_duration_secs" => json!(
+            crate::app::recording_acquisition_config(&app.recording.model)
+                .ok()
+                .map(|config| config.playback_duration_secs)
+        ),
+        "recording.duration_control_applies" => json!(
+            crate::app::recording_acquisition_config(&app.recording.model)
+                .ok()
+                .map(|config| config.duration_control_applies)
+        ),
+        "recording.stimulus_configs" => {
+            let speaker_names = app
+                .recording
+                .model
+                .playback_config
+                .channel_mappings
+                .iter()
+                .map(|mapping| mapping.group_name.clone())
+                .collect::<Vec<_>>();
+            json!(
+                sotf_audio_player::recording_helpers::recording_stimulus_entries_from_sources(
+                    &app.recording.model.channel_recordings,
+                    &speaker_names
+                )
+            )
+        }
+        "recording.stimulus_config_count" => {
+            let speaker_names = app
+                .recording
+                .model
+                .playback_config
+                .channel_mappings
+                .iter()
+                .map(|mapping| mapping.group_name.clone())
+                .collect::<Vec<_>>();
+            json!(
+                sotf_audio_player::recording_helpers::recording_stimulus_entries_from_sources(
+                    &app.recording.model.channel_recordings,
+                    &speaker_names
+                )
+                .len()
+            )
+        }
+        "recording.stimulus_levels_vary" => {
+            let mut levels = app
+                .recording
+                .model
+                .channel_recordings
+                .iter()
+                .filter_map(|channel| {
+                    channel
+                        .result
+                        .as_ref()?
+                        .stimulus_config
+                        .as_ref()?
+                        .level_dbfs
+                })
+                .collect::<Vec<_>>();
+            levels.sort_by(f32::total_cmp);
+            json!(
+                matches!((levels.first(), levels.last()), (Some(min), Some(max)) if *max - *min > 0.01)
+            )
+        }
+        "recording.stimulus_config_matches_current" => {
+            let mut saw_completed = false;
+            let matches = app
+                .recording
+                .model
+                .channel_recordings
+                .iter()
+                .filter(|channel| channel.result.is_some())
+                .all(|channel| {
+                    let Some(actual) = channel
+                        .result
+                        .as_ref()
+                        .and_then(|result| result.stimulus_config.as_ref())
+                    else {
+                        return false;
+                    };
+                    saw_completed = true;
+                    crate::app::recording_acquisition_config_for_range(
+                        &app.recording.model,
+                        channel.sweep_start_freq,
+                        channel.sweep_end_freq,
+                    )
+                    .is_ok_and(|expected| &expected == actual)
+                });
+            json!(saw_completed && matches)
+        }
         "recording.signal_level_db" => json!(app.recording.model.signal_level_db),
         "recording.sweep_start_hz" => json!(app.recording.model.sweep_start_freq),
         "recording.sweep_end_hz" => json!(app.recording.model.sweep_end_freq),
@@ -376,6 +496,15 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "roomeq.step" => json!(format!("{:?}", app.room_eq.model.step)),
         "roomeq.step_tab_focused" => json!(app.room_eq.step_tab_focused),
         "roomeq.editing_file_path" => json!(app.room_eq.editing_file_path),
+        "roomeq.focus_context" => json!(if app.room_eq.editing_file_path
+            && app.room_eq.model.step == sotf_audio_player::room_eq_types::RoomEqStep::LoadData
+        {
+            "FilePathEdit"
+        } else if app.room_eq.step_tab_focused {
+            "StepTabs"
+        } else {
+            "Content"
+        }),
         "roomeq.measurement_count" => json!(app.room_eq.model.channel_measurements.len()),
         "roomeq.speaker_config_count" => json!(app.room_eq.model.channel_measurements.len()),
         "roomeq.optimization_status" => {
@@ -424,6 +553,20 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
                 .and_then(|value| value.as_array().map(Vec::len))
                 .unwrap_or(0)
         ),
+        "roomeq.export_filter_count_matches_result" => {
+            let exported_count = std::fs::read_to_string(&app.room_eq.export_path)
+                .ok()
+                .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
+                .and_then(|value| value.as_array().map(Vec::len));
+            let result_count = app
+                .room_eq
+                .model
+                .channel_results
+                .iter()
+                .map(|result| result.eq_filters.len())
+                .sum::<usize>();
+            json!(exported_count == Some(result_count))
+        }
         "roomeq.result_filter_count" => json!(
             app.room_eq
                 .model
@@ -495,6 +638,67 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "roomeq.quality_review_entry_count" => {
             json!(app.room_eq.quality_review_entries.len())
         }
+        "roomeq.stimulus_configs" => json!(
+            app.room_eq
+                .quality_review_entries
+                .iter()
+                .filter_map(|entry| entry
+                    .stimulus_config
+                    .as_ref()
+                    .map(|config| (&entry.source, config)))
+                .collect::<Vec<_>>()
+        ),
+        "roomeq.stimulus_config_count" => json!(
+            app.room_eq
+                .quality_review_entries
+                .iter()
+                .filter(|entry| entry.stimulus_config.is_some())
+                .count()
+        ),
+        "roomeq.capture_level_review_note" => {
+            let levels = app
+                .room_eq
+                .quality_review_entries
+                .iter()
+                .filter_map(|entry| {
+                    let level = entry.stimulus_config.as_ref()?.level_dbfs?;
+                    Some((
+                        entry.source.speaker.clone(),
+                        entry.source.measurement_index + 1,
+                        level,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            json!(crate::ui::capture_level_review_notes(&levels).join("\n"))
+        }
+        "roomeq.stimulus_configs_match_recording" => {
+            let speaker_names = app
+                .recording
+                .model
+                .playback_config
+                .channel_mappings
+                .iter()
+                .map(|mapping| mapping.group_name.clone())
+                .collect::<Vec<_>>();
+            let recorded =
+                sotf_audio_player::recording_helpers::recording_stimulus_entries_from_sources(
+                    &app.recording.model.channel_recordings,
+                    &speaker_names,
+                );
+            let mut matched = 0usize;
+            let all_match = app.room_eq.quality_review_entries.iter().all(|entry| {
+                let Some(config) = entry.stimulus_config.as_ref() else {
+                    return false;
+                };
+                let same_source = recorded
+                    .iter()
+                    .find(|recorded| recorded.source == entry.source);
+                let is_match = same_source.is_some_and(|recorded| &recorded.config == config);
+                matched += usize::from(is_match);
+                is_match
+            });
+            json!(matched > 0 && all_match)
+        }
         "roomeq.quality_unknown_count" => json!(
             app.room_eq
                 .quality_review_entries
@@ -539,6 +743,7 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
                         "source": entry.source,
                         "source_label": entry.source_label,
                         "quality": entry.quality,
+                        "stimulus_config": entry.stimulus_config,
                         "verdict": entry.quality.as_ref().map(
                             sotf_audio_player::recording_helpers::take_verdict_text
                         ),

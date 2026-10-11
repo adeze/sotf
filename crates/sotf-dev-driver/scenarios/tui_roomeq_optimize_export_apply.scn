@@ -5,9 +5,12 @@ key 3
 assert configure.sub_screen == "RoomEq"
 assert roomeq.step == "LoadData"
 assert roomeq.step_tab_focused == false
+assert roomeq.focus_context == "Content"
 key e
 assert roomeq.editing_file_path == true
+assert roomeq.focus_context == "FilePathEdit"
 key enter
+assert roomeq.focus_context == "Content"
 query roomeq.file_path
 assert roomeq.file_path != ""
 query roomeq.error
@@ -24,6 +27,13 @@ wait_until roomeq.measurement_count >= 2 timeout=5s
 # Visit the real optimizer step through the step tabs; selecting it starts the
 # shared optimizer worker with the parsed fixture measurements.
 key esc
+assert roomeq.step_tab_focused == true
+assert roomeq.focus_context == "StepTabs"
+key down
+assert roomeq.step_tab_focused == false
+assert roomeq.focus_context == "Content"
+key esc
+assert roomeq.focus_context == "StepTabs"
 key right
 key right
 key right

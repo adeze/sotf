@@ -1,3 +1,4 @@
+use sotf_audio_player::recording_helpers::EffectiveAcquisitionConfig;
 use sotf_audio_player::recording_types::{RecordingSourceIdentity, TakeQualitySummary};
 use sotf_audio_player::room_eq_types::{RoomEqEasyLayout, validate_room_eq_easy_layout};
 use sotf_audio_player::ui_models::room_eq::RoomEqScreenModel;
@@ -13,6 +14,8 @@ pub struct RoomEqQualityReviewEntry {
     /// Read-only provenance label retained from the source measurement name.
     pub source_label: Option<String>,
     pub quality: Option<TakeQualitySummary>,
+    /// Per-take generator settings restored from the exact-session sidecar.
+    pub stimulus_config: Option<EffectiveAcquisitionConfig>,
 }
 
 /// TUI-specific UI state for the Room EQ wizard.

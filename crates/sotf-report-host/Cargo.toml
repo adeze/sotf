@@ -14,6 +14,7 @@ tempfile.workspace = true
 uuid.workspace = true
 url.workspace = true
 rust-embed = { workspace = true, features = ["include-exclude", "debug-embed"] }
+autoeq-report-wasm = { path = "../../../autoeq/crates/autoeq-report-wasm" }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }

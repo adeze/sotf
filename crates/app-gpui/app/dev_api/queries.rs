@@ -1049,6 +1049,10 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .recording_state
                 .all_channels_recorded()
         ),
+        "recording.all_takes_accepted" => {
+            let recording = &app.measurement_state.recording_state;
+            json!(recording.take_review.all_accepted(&recording.channel_recordings))
+        }
         "recording.channel_count" => json!(
             app.measurement_state
                 .recording_state
@@ -1100,6 +1104,31 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .filter(|recording| recording.result.as_ref().is_some_and(|result| result.quality.is_some()))
                 .count()
         ),
+        "recording.stimulus_config_count" => json!(
+            app.measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter(|recording| recording.result.as_ref().is_some_and(|result| result.stimulus_config.is_some()))
+                .count()
+        ),
+        "recording.config_edit_confirmation_pending" => json!(
+            app.measurement_state
+                .recording_state
+                .config_change_confirmation_pending
+        ),
+        "recording.mixed_stimulus_levels" => {
+            let levels = app
+                .measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter_map(|recording| recording.result.as_ref()?.stimulus_config.as_ref()?.level_dbfs)
+                .collect::<Vec<_>>();
+            json!(levels
+                .first()
+                .is_some_and(|first| levels.iter().any(|level| (level - first).abs() > 0.01)))
+        }
         "recording.evidence_complete" => json!(
             !app.measurement_state.recording_state.channel_recordings.is_empty()
                 && app.measurement_state.recording_state.channel_recordings.iter().all(|recording| {

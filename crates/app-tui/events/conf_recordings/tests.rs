@@ -236,6 +236,8 @@ fn right_on_config_adjusts_field() {
 
     let mut app = make_app();
     app.recording.selected_field = 4; // signal_duration_secs (numerical)
+    app.recording.model.signal_type =
+        sotf_audio_player::recording_types::RecordingSignalType::WhiteNoise;
     let before = app.recording.model.signal_duration_secs;
     let right_key = KeyEvent {
         code: KeyCode::Right,
@@ -250,6 +252,57 @@ fn right_on_config_adjusts_field() {
         app.recording.model.step,
         sotf_audio_player::recording_types::RecordingStep::Config
     );
+}
+
+#[test]
+fn duration_control_edits_octave_sweep_precision_when_sweep_is_selected() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    let mut app = make_app();
+    app.recording.selected_field = 4;
+    app.recording.model.signal_type =
+        sotf_audio_player::recording_types::RecordingSignalType::Sweep;
+    let generic_duration = app.recording.model.signal_duration_secs;
+    let bass_duration = app.recording.model.bass_octave_duration_s;
+    handle_recording_keys(
+        &mut app,
+        KeyEvent {
+            code: KeyCode::Right,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        },
+    );
+
+    assert_eq!(app.recording.model.signal_duration_secs, generic_duration);
+    assert_eq!(
+        app.recording.model.bass_octave_duration_s,
+        bass_duration + 1.0
+    );
+}
+
+#[test]
+fn duration_control_is_read_only_for_sequence_defined_mls() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    let mut app = make_app();
+    app.recording.selected_field = 4;
+    app.recording.model.signal_type = sotf_audio_player::recording_types::RecordingSignalType::Mls;
+    let generic_duration = app.recording.model.signal_duration_secs;
+    let bass_duration = app.recording.model.bass_octave_duration_s;
+    let key = |code| KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    };
+
+    handle_recording_keys(&mut app, key(KeyCode::Right));
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+
+    assert_eq!(app.recording.model.signal_duration_secs, generic_duration);
+    assert_eq!(app.recording.model.bass_octave_duration_s, bass_duration);
+    assert!(!app.recording.editing_value);
 }
 
 #[test]
@@ -313,6 +366,7 @@ fn done_recording_result(mag_db: f32) -> RecordingResult {
         clarity_c80_db: None,
         spectrogram_db: None,
         quality: None,
+        stimulus_config: None,
     }
 }
 

@@ -580,6 +580,40 @@ impl PlayerView {
             .measurement_state
             .recording_state
             .session_quality_lines();
+        let recording = &state.app.measurement_state.recording_state;
+        let (captured_label, unknown_label, next_label) = match state.app.ui_state.language {
+            crate::app::i18n::Language::French => (
+                "Niveau enregistré",
+                "niveau indisponible",
+                "Niveau de la prochaine prise",
+            ),
+            crate::app::i18n::Language::German => (
+                "Aufnahmepegel",
+                "Pegel nicht verfügbar",
+                "Pegel der nächsten Aufnahme",
+            ),
+            crate::app::i18n::Language::Spanish => (
+                "Nivel grabado",
+                "nivel no disponible",
+                "Nivel de la próxima toma",
+            ),
+            _ => ("Captured level", "level unavailable", "Next capture level"),
+        };
+        let captured_level_lines = recording
+            .channel_recordings
+            .iter()
+            .filter_map(|take| {
+                let result = take.result.as_ref()?;
+                let level = result
+                    .stimulus_config
+                    .as_ref()
+                    .and_then(|config| config.level_dbfs)
+                    .map(|level| format!("{level:.1} dBFS"))
+                    .unwrap_or_else(|| unknown_label.to_string());
+                Some(format!("{}: {captured_label} {level}", take.channel_name))
+            })
+            .collect::<Vec<_>>();
+        let next_capture_level = format!("{next_label}: {:.1} dBFS", recording.signal_level_db);
         let _ = state;
 
         let view = cx.entity().clone();
@@ -642,7 +676,7 @@ impl PlayerView {
                         ),
                 )
                 .child(self.render_channel_list(cx))
-                .when(!quality_lines.is_empty(), |stack| {
+                .when(!quality_lines.is_empty() || !captured_level_lines.is_empty(), |stack| {
                     let theme = theme.clone();
                     stack.child(
                         div()
@@ -666,7 +700,14 @@ impl PlayerView {
                                             _ => theme.text_secondary,
                                         };
                                         Text::caption(line.clone()).color(color)
-                                    })),
+                                    }))
+                                    .children(
+                                        captured_level_lines
+                                            .iter()
+                                            .cloned()
+                                            .map(|line| Text::caption(line)),
+                                    )
+                                    .child(Text::caption(next_capture_level.clone())),
                             ),
                     )
                 })
@@ -1573,6 +1614,18 @@ impl PlayerView {
             }
         };
 
+        let stimulus_config = sotf_audio_player::recording_helpers::effective_acquisition_config(
+            params.signal_type,
+            &sig_params,
+            params.duration_secs,
+            params.sample_rate,
+        )
+        .map_err(|error| {
+            log::warn!("Could not snapshot effective recording stimulus: {error}");
+            error
+        })
+        .ok();
+
         let temp_wav = match write_temp_wav(&signal, params.sample_rate, 1) {
             Ok(f) => f,
             Err(e) => {
@@ -1655,6 +1708,7 @@ impl PlayerView {
         let input_device = params.input_device.clone();
         let sample_rate = params.sample_rate;
         let num_sweeps = params.num_sweeps;
+        let captured_stimulus_config = stimulus_config.clone();
         #[cfg(feature = "dev-api")]
         let qa_capture = params.qa_capture;
 
@@ -1956,6 +2010,7 @@ impl PlayerView {
                                     clarity_c80_db: Some(analysis_result.clarity_c80_db),
                                     spectrogram_db: Some(analysis_result.spectrogram_db),
                                     quality: Some(quality.clone()),
+                                    stimulus_config: captured_stimulus_config.clone(),
                                 };
 
                                 if mic.is_loopback {
@@ -2563,54 +2618,66 @@ impl PlayerView {
         };
 
         // Get recordings, recording directory, configuration, and convert to RoomConfig format
-        let (room_config, recording_dir, ctc_raw_fallback, save_inputs, quality_entries) =
-            if let Some(configuration) = imported_config {
-                let state = self.state.read(cx);
-                let rec_state = &state.app.measurement_state.recording_state;
-                let channel_names: Vec<String> = rec_state
-                    .playback_config
-                    .channel_mappings
-                    .iter()
-                    .map(|mapping| mapping.group_name.clone())
-                    .collect();
-                let quality_entries =
-                    sotf_audio_player::recording_helpers::recording_quality_entries_for_sources(
-                        &rec_state.channel_recordings,
-                        &channel_names,
-                    );
-                (
-                    configuration,
-                    recording_dir,
-                    false,
-                    rec_state.model.save_input_snapshot(),
-                    quality_entries,
-                )
-            } else {
-                let state = self.state.read(cx);
-                let rec_state = &state.app.measurement_state.recording_state;
-                let recordings = &rec_state.channel_recordings;
+        let (
+            room_config,
+            recording_dir,
+            ctc_raw_fallback,
+            save_inputs,
+            quality_entries,
+            stimulus_entries,
+        ) = if let Some(configuration) = imported_config {
+            let state = self.state.read(cx);
+            let rec_state = &state.app.measurement_state.recording_state;
+            let channel_names: Vec<String> = rec_state
+                .playback_config
+                .channel_mappings
+                .iter()
+                .map(|mapping| mapping.group_name.clone())
+                .collect();
+            let quality_entries =
+                sotf_audio_player::recording_helpers::recording_quality_entries_for_sources(
+                    &rec_state.channel_recordings,
+                    &channel_names,
+                );
+            let stimulus_entries =
+                sotf_audio_player::recording_helpers::recording_stimulus_entries_from_sources(
+                    &rec_state.channel_recordings,
+                    &channel_names,
+                );
+            (
+                configuration,
+                recording_dir,
+                false,
+                rec_state.model.save_input_snapshot(),
+                quality_entries,
+                stimulus_entries,
+            )
+        } else {
+            let state = self.state.read(cx);
+            let rec_state = &state.app.measurement_state.recording_state;
+            let recordings = &rec_state.channel_recordings;
 
-                let channel_names: Vec<String> = rec_state
-                    .playback_config
-                    .channel_mappings
-                    .iter()
-                    .map(|m| m.group_name.clone())
-                    .collect();
-                let mic_names = vec!["left_ear".to_string(), "right_ear".to_string()];
-                let ctc_strategy = rec_state.recording_config.ctc_matrix_strategy;
-                let mut ctc_reference_sweep = None;
-                let mut ctc_raw_sweep_range = None;
-                let mut ctc_raw_fallback = false;
-                let mut ctc_measurements = if ctc_strategy
-                    == crate::app::types::CtcMatrixExportStrategy::RawSweep
-                {
-                    ctc_reference_sweep = rec_state.ctc_reference_sweep_path.as_ref().map(|path| {
-                        std::path::Path::new(path)
-                            .strip_prefix(&recording_dir)
-                            .map(|p| p.to_path_buf())
-                            .unwrap_or_else(|_| std::path::PathBuf::from(path))
-                    });
-                    match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
+            let channel_names: Vec<String> = rec_state
+                .playback_config
+                .channel_mappings
+                .iter()
+                .map(|m| m.group_name.clone())
+                .collect();
+            let mic_names = vec!["left_ear".to_string(), "right_ear".to_string()];
+            let ctc_strategy = rec_state.recording_config.ctc_matrix_strategy;
+            let mut ctc_reference_sweep = None;
+            let mut ctc_raw_sweep_range = None;
+            let mut ctc_raw_fallback = false;
+            let mut ctc_measurements = if ctc_strategy
+                == crate::app::types::CtcMatrixExportStrategy::RawSweep
+            {
+                ctc_reference_sweep = rec_state.ctc_reference_sweep_path.as_ref().map(|path| {
+                    std::path::Path::new(path)
+                        .strip_prefix(&recording_dir)
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|_| std::path::PathBuf::from(path))
+                });
+                match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
                     recordings,
                     &channel_names,
                     &mic_names,
@@ -2650,131 +2717,136 @@ impl PlayerView {
                         None
                     }
                 }
-                } else {
-                    None
-                };
-                if ctc_measurements.is_none() {
-                    ctc_measurements =
-                        match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
-                            recordings,
-                            &channel_names,
-                            &mic_names,
-                            rec_state.recording_config.sample_rate,
-                            std::path::Path::new(&recording_dir),
-                        ) {
-                            Ok(measurements) => measurements,
-                            Err(e) => {
-                                log::warn!("Could not export CTC transfer matrix: {}", e);
-                                None
-                            }
-                        };
-                    ctc_reference_sweep = None;
-                }
-
-                // Build recording configuration from current state via the
-                // shared builder (B4/B1): sets every field explicitly, persists
-                // probe / bass-anchor / SPL results, and only writes the GD-Opt
-                // sweep metadata when the actual stimulus is a sweep generated
-                // with the same values (see `capture_signal_params` at capture
-                // time).
-                let recording_config =
-                    rec_state.build_recording_configuration(Some(&recording_dir));
-
-                // Group every completed (channel × mic × position) take by
-                // channel_index so each output channel produces exactly one
-                // SpeakerConfig — multi-mic / multi-position takes become a
-                // MeasurementSource::Multiple that roomeq averages into one
-                // EQ chain per real channel.
-                let speakers = build_speakers_from_recordings(
-                    recordings,
-                    &channel_names,
-                    rec_state.channel_speakers_map_for_save().as_ref(),
-                );
-                let quality_entries =
-                    sotf_audio_player::recording_helpers::recording_quality_entries_for_sources(
+            } else {
+                None
+            };
+            if ctc_measurements.is_none() {
+                ctc_measurements =
+                    match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
                         recordings,
                         &channel_names,
-                    );
+                        &mic_names,
+                        rec_state.recording_config.sample_rate,
+                        std::path::Path::new(&recording_dir),
+                    ) {
+                        Ok(measurements) => measurements,
+                        Err(e) => {
+                            log::warn!("Could not export CTC transfer matrix: {}", e);
+                            None
+                        }
+                    };
+                ctc_reference_sweep = None;
+            }
 
-                if speakers.is_empty() {
-                    log::warn!("No completed recordings to save");
-                    return;
-                }
+            // Build recording configuration from current state via the
+            // shared builder (B4/B1): sets every field explicitly, persists
+            // probe / bass-anchor / SPL results, and only writes the GD-Opt
+            // sweep metadata when the actual stimulus is a sweep generated
+            // with the same values (see `capture_signal_params` at capture
+            // time).
+            let recording_config = rec_state.build_recording_configuration(Some(&recording_dir));
 
-                let ctc = ctc_measurements.map(|measurements| {
-                    let raw = ctc_reference_sweep.is_some();
-                    autoeq::roomeq::CtcConfig {
-                        // Off by default — binaural CTC is opt-in, the
-                        // CTC stanza is written so the user can flip it
-                        // on later without re-recording, but roomeq must
-                        // not run the CTC solver until they do.
-                        enabled: false,
-                        matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
-                        measurements: Some(measurements),
-                        reference_sweep: ctc_reference_sweep,
-                        sweep_duration_s: if raw {
-                            // Actual duration of the persisted reference sweep,
-                            // recorded at capture time (B1): the octave-scaled
-                            // sweep is self-timed, so `signal_duration_secs`
-                            // would misdescribe the WAV. `None` (unknown, e.g.
-                            // after loading a session) rather than a lie.
-                            rec_state.ctc_reference_sweep_duration_s.map(f64::from)
-                        } else {
-                            None
-                        },
-                        sweep_start_hz: if raw {
-                            ctc_raw_sweep_range.map(|(start, _)| start as f64)
-                        } else {
-                            None
-                        },
-                        sweep_end_hz: if raw {
-                            ctc_raw_sweep_range.map(|(_, end)| end as f64)
-                        } else {
-                            None
-                        },
-                        ..Default::default()
-                    }
-                });
-                // Always emit the system (logical role) map from the
-                // recorded speakers, independent of CTC enable state.
-                // roomeq uses it to interpret the layout (LFE/sub
-                // detection, bass-management routing). Flipping CTC on
-                // later does not require re-recording.
-                let has_bass_output = speakers
-                    .keys()
-                    .any(|name| room_eq_channel_is_bass_output(name));
-                let bass_management_crossover =
-                    has_bass_output.then(|| DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY.to_string());
-                let system = ctc_system_config_for_speaker_names(
-                    speakers.keys().map(String::as_str),
-                    bass_management_crossover,
+            // Group every completed (channel × mic × position) take by
+            // channel_index so each output channel produces exactly one
+            // SpeakerConfig — multi-mic / multi-position takes become a
+            // MeasurementSource::Multiple that roomeq averages into one
+            // EQ chain per real channel.
+            let speakers = build_speakers_from_recordings(
+                recordings,
+                &channel_names,
+                rec_state.channel_speakers_map_for_save().as_ref(),
+            );
+            let quality_entries =
+                sotf_audio_player::recording_helpers::recording_quality_entries_for_sources(
+                    recordings,
+                    &channel_names,
                 );
-                let crossovers = has_bass_output.then(default_bass_management_crossovers);
+            let stimulus_entries =
+                sotf_audio_player::recording_helpers::recording_stimulus_entries_from_sources(
+                    recordings,
+                    &channel_names,
+                );
 
-                // Build RoomConfig
-                let room_config = RoomConfig {
-                    version: "1.1.0".to_string(),
-                    system,
-                    speakers,
-                    crossovers,
-                    target_curve: None,
-                    optimizer: OptimizerConfig::default(),
-                    provenance: Default::default(),
-                    recording_config: Some(recording_config),
-                    measured_impulse_responses: Default::default(),
-                    ctc,
-                    reporting: None,
-                    cea2034_cache: None,
-                };
+            if speakers.is_empty() {
+                log::warn!("No completed recordings to save");
+                return;
+            }
 
-                (
-                    room_config,
-                    recording_dir,
-                    ctc_raw_fallback,
-                    rec_state.model.save_input_snapshot(),
-                    quality_entries,
-                )
+            let ctc = ctc_measurements.map(|measurements| {
+                let raw = ctc_reference_sweep.is_some();
+                autoeq::roomeq::CtcConfig {
+                    // Off by default — binaural CTC is opt-in, the
+                    // CTC stanza is written so the user can flip it
+                    // on later without re-recording, but roomeq must
+                    // not run the CTC solver until they do.
+                    enabled: false,
+                    matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
+                    measurements: Some(measurements),
+                    reference_sweep: ctc_reference_sweep,
+                    sweep_duration_s: if raw {
+                        // Actual duration of the persisted reference sweep,
+                        // recorded at capture time (B1): the octave-scaled
+                        // sweep is self-timed, so `signal_duration_secs`
+                        // would misdescribe the WAV. `None` (unknown, e.g.
+                        // after loading a session) rather than a lie.
+                        rec_state.ctc_reference_sweep_duration_s.map(f64::from)
+                    } else {
+                        None
+                    },
+                    sweep_start_hz: if raw {
+                        ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                    } else {
+                        None
+                    },
+                    sweep_end_hz: if raw {
+                        ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                }
+            });
+            // Always emit the system (logical role) map from the
+            // recorded speakers, independent of CTC enable state.
+            // roomeq uses it to interpret the layout (LFE/sub
+            // detection, bass-management routing). Flipping CTC on
+            // later does not require re-recording.
+            let has_bass_output = speakers
+                .keys()
+                .any(|name| room_eq_channel_is_bass_output(name));
+            let bass_management_crossover =
+                has_bass_output.then(|| DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY.to_string());
+            let system = ctc_system_config_for_speaker_names(
+                speakers.keys().map(String::as_str),
+                bass_management_crossover,
+            );
+            let crossovers = has_bass_output.then(default_bass_management_crossovers);
+
+            // Build RoomConfig
+            let room_config = RoomConfig {
+                version: "1.1.0".to_string(),
+                system,
+                speakers,
+                crossovers,
+                target_curve: None,
+                optimizer: OptimizerConfig::default(),
+                provenance: Default::default(),
+                recording_config: Some(recording_config),
+                measured_impulse_responses: Default::default(),
+                ctc,
+                reporting: None,
+                cea2034_cache: None,
             };
+
+            (
+                room_config,
+                recording_dir,
+                ctc_raw_fallback,
+                rec_state.model.save_input_snapshot(),
+                quality_entries,
+                stimulus_entries,
+            )
+        };
 
         // Save to recording directory (no dialog needed). B5: canonical
         // session filename shared by all frontends.
@@ -2794,13 +2866,13 @@ impl PlayerView {
                             crate::app::types::recording::RecordingStatusSeverity::Error;
                     });
                 } else {
-                    let quality_save_error =
-                        sotf_audio_player::recording_helpers::save_recording_quality_sidecar(
-                            &json_path,
-                            json.as_bytes(),
-                            quality_entries,
-                        )
-                        .err();
+                    let quality_save_error = sotf_audio_player::recording_helpers::save_recording_quality_sidecar_with_stimuli(
+                        &json_path,
+                        json.as_bytes(),
+                        quality_entries,
+                        stimulus_entries,
+                    )
+                    .err();
                     if let Some(error) = &quality_save_error {
                         log::warn!("Failed to save recording quality evidence: {error}");
                     }
@@ -2966,6 +3038,11 @@ impl PlayerView {
                             };
                             result.quality = sidecar.quality_for(source).cloned();
                         }
+                        sotf_audio_player::recording_helpers::restore_recording_stimuli_from_sidecar(
+                            &mut recordings,
+                            &names,
+                            sidecar,
+                        );
                     }
                     let count = recordings.len();
                     rec.take_review.clear();
@@ -3339,7 +3416,7 @@ impl PlayerView {
     /// No-op when no batch is in progress, a capture is in flight, or
     /// other takes are still parked. Non-destructive: never clears
     /// existing channel results (unlike `start_recording_all_channels`).
-    pub(super) fn resume_batch_after_review_accept(
+    pub(crate) fn resume_batch_after_review_accept(
         &mut self,
         position: usize,
         cx: &mut Context<Self>,

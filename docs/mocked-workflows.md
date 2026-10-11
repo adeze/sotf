@@ -84,10 +84,13 @@ Current integration limitations:
   controls are localized; a complete report theme/locale contract belongs
   upstream so the renderer remains shared.
 - Capture-quality sidecars are shown in recording review and RoomEQ import.
-  The upstream report producer does not yet consume that sidecar. Its curve
-  loader reads response/phase columns and ignores extra THD columns; extending
-  the upstream input contract should carry typed quality rather than adding
-  another dashboard implementation in the app.
+  GPUI adapts the imported measurement snapshots to AutoEQ's version-1
+  `CaptureQualityReport` input. The shared Rust/WASM library builds the full
+  report's Capture quality dashboard, retaining policy, method, band, threshold,
+  Unknown reason, corrective action and per-source stimulus settings. The host
+  preserves the other upstream sections and their additive layout metadata.
+  CSV columns alone do not establish quality evidence: an import without typed
+  findings is shown as Unknown, rather than zero THD or a quality pass.
 
 ## Migration toward a mostly WASM report
 
@@ -98,7 +101,10 @@ report summaries and builds the section payload. Embedding its existing output
 is the first integration step; recreating those calculations in app-gpui would
 create a second implementation.
 
-Coordinate the next steps with the AutoEQ owner:
+The capture-quality input and section builder are implemented upstream in an
+isolated AutoEQ branch; the concurrent STI worktree remains untouched. The
+remaining migration keeps the complete optimizer report and derived summaries
+under that same upstream ownership:
 
 1. Define an upstream report-input contract containing optimization results,
    resolved measurement/IR arrays, capture quality and source identities. The
@@ -119,10 +125,13 @@ Coordinate the next steps with the AutoEQ owner:
    export pass. Extend the thin webview host to Linux without introducing native
    copies of the dashboard components.
 
-Changing session-wide sweep settings currently invalidates all captured takes.
-Selective retake is supported with unchanged settings. Preserving older takes
-across gain changes requires per-take stimulus/configuration provenance and a
-compatibility rule; the UI should explain the reset before applying such edits.
+Each captured take snapshots the effective signal settings and generated/padded
+frame durations. Version-1 quality sidecars additively retain that stimulus
+provenance. GPUI explains settings changes before editing: structural changes
+invalidate takes, while gain-only changes can preserve neighboring takes when
+every take has provenance. Sweep response magnitudes are reference-normalized;
+THD and SNR retain the actual capture level rather than implying one common
+measurement level. TUI shows effective duration and context-specific focus hints.
 Quality sidecars preserve review evidence across save/reload and RoomEQ import,
 so the import screen can show the original Warning or Unknown decision.
 
@@ -145,7 +154,8 @@ reported-path latency handling. They complement UI tests; they do not prove
 that a screen is usable.
 
 The report tier checks upstream dashboard production, export fidelity, stale
-protocol identities, scoped navigation and server shutdown. It needs local
+protocol identities, scoped navigation, server shutdown, the STI dashboard and
+shared capture-quality augmentation without modifying existing sections. It needs local
 socket permission, but no audio hardware. Build both apps with `dev-api` for
 UI suites. UI runs also need a graphical session for GPUI or a terminal for
 TUI. Keep numerical analysis checks in the fast tier and screenshots/keyboard

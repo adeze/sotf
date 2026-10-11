@@ -921,6 +921,7 @@ fn qa_done_recording(
         clarity_c80_db: None,
         spectrogram_db: None,
         quality: None,
+        stimulus_config: None,
     });
     channel
 }

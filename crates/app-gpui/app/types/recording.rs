@@ -39,6 +39,9 @@ pub struct RecordingState {
     pub imported_route_dropdown: Option<(usize, bool)>,
     pub imported_route_highlight: Option<usize>,
     pub take_review: sotf_audio_player::ui_models::take_review::TakeReviewState,
+    /// The user asked to edit acquisition settings while completed takes exist.
+    /// Keep the warning visible until they enter settings or cancel.
+    pub config_change_confirmation_pending: bool,
 
     // === UI State ===
     pub playback_device_dropdown_open: bool,
@@ -168,6 +171,7 @@ impl Default for RecordingState {
             imported_route_dropdown: None,
             imported_route_highlight: None,
             take_review: Default::default(),
+            config_change_confirmation_pending: false,
             model: RecordingScreenModel {
                 recording_base_directory,
                 recording_directory,
@@ -345,6 +349,72 @@ impl RecordingState {
         self.capture_inputs
             .as_ref()
             .is_none_or(|inputs| *inputs == self.model.capture_input_snapshot())
+            || self.capture_inputs_match_except_level()
+    }
+
+    /// Gain changes affect only future captures. Existing physical takes keep
+    /// their own captured stimulus snapshot, so they remain reviewable after a
+    /// level-only adjustment. Older sessions without provenance stay strict.
+    fn capture_inputs_match_except_level(&self) -> bool {
+        let captured_takes = self
+            .model
+            .channel_recordings
+            .iter()
+            .filter(|take| take.result.is_some())
+            .collect::<Vec<_>>();
+        if captured_takes.is_empty()
+            || !captured_takes.iter().all(|take| {
+                take.result
+                    .as_ref()
+                    .is_some_and(|result| result.stimulus_config.is_some())
+            })
+        {
+            return false;
+        }
+        let Some(previous) = self
+            .capture_inputs
+            .as_ref()
+            .and_then(serde_json::Value::as_object)
+        else {
+            return false;
+        };
+        let current = self.model.capture_input_snapshot();
+        let Some(current) = current.as_object() else {
+            return false;
+        };
+        previous
+            .iter()
+            .filter(|(key, _)| key.as_str() != "level")
+            .eq(current.iter().filter(|(key, _)| key.as_str() != "level"))
+    }
+
+    pub fn has_captured_takes(&self) -> bool {
+        self.model.channel_recordings.iter().any(|take| {
+            matches!(
+                take.state,
+                ChannelRecordingState::Done | ChannelRecordingState::ReviewNeeded
+            ) && take.result.is_some()
+        })
+    }
+
+    /// True when all acquisition inputs except output level still match the
+    /// configuration under which this set of takes was initialized.
+    pub fn capture_structure_is_current(&self) -> bool {
+        if self.has_imported_takes() {
+            return true;
+        }
+        self.capture_inputs
+            .as_ref()
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|previous| {
+                let current = self.model.capture_input_snapshot();
+                current.as_object().is_some_and(|current| {
+                    previous
+                        .iter()
+                        .filter(|(key, _)| key.as_str() != "level")
+                        .eq(current.iter().filter(|(key, _)| key.as_str() != "level"))
+                })
+            })
     }
 
     pub fn all_channels_recorded(&self) -> bool {

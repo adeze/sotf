@@ -312,7 +312,11 @@ fn attach_quality_sidecar(
                     let quality = sidecar
                         .and_then(|sidecar| sidecar.quality_for(&source))
                         .cloned();
+                    let stimulus_config = sidecar
+                        .and_then(|sidecar| sidecar.stimulus_for(&source))
+                        .cloned();
                     measurement.quality = quality.clone();
+                    measurement.stimulus_config = stimulus_config.clone();
                     let source_label = driver
                         .provenance
                         .get(measurement_index)
@@ -322,11 +326,14 @@ fn attach_quality_sidecar(
                         source,
                         source_label,
                         quality,
+                        stimulus_config,
                     });
                 }
             }
             if let Some(first_driver) = channel.driver_measurement_sets.first() {
                 channel.measurement.quality = first_driver.measurement.quality.clone();
+                channel.measurement.stimulus_config =
+                    first_driver.measurement.stimulus_config.clone();
             }
             continue;
         }
@@ -343,7 +350,11 @@ fn attach_quality_sidecar(
             let quality = sidecar
                 .and_then(|sidecar| sidecar.quality_for(&source))
                 .cloned();
+            let stimulus_config = sidecar
+                .and_then(|sidecar| sidecar.stimulus_for(&source))
+                .cloned();
             measurement.quality = quality.clone();
+            measurement.stimulus_config = stimulus_config.clone();
             let source_label = channel
                 .provenance
                 .get(measurement_index)
@@ -352,6 +363,7 @@ fn attach_quality_sidecar(
                 source,
                 source_label,
                 quality,
+                stimulus_config,
             });
         }
     }

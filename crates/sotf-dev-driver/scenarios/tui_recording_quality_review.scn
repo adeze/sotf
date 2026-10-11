@@ -3,14 +3,27 @@
 focus configure
 key 2
 assert configure.sub_screen == "Recording"
+assert recording.focus_context == "Content"
+
+# The duration row follows the actual selected signal generator. Sweep uses
+# the capture model's bass-octave precision; changing it must not edit the
+# legacy generic duration field.
+key down
+key down
+key down
+key down
+assert recording.signal_type == "Sweep"
+assert recording.selected_field == 4
+assert recording.duration_control_kind == "BassOctaveDuration"
+key right
+assert recording.bass_octave_duration_s == 4
+assert recording.duration_control_applies == false
+assert recording.effective_playback_duration_secs > 4
+query recording.effective_acquisition
+key down
 
 # Use the same 20–20k single-sweep measurement as the passing GPUI fixture,
 # with a strong but unclipped stimulus for the high-THD virtual loopback.
-key down
-key down
-key down
-key down
-key down
 key enter
 key backspace
 key backspace
@@ -42,7 +55,25 @@ assert recording.sweep_end_hz == 20000
 assert recording.num_sweeps == 1
 assert recording.virtual_capture_profile == "high-thd"
 
+key up
+key up
+key up
+key up
+key up
+assert recording.selected_field == 8
+key enter
+assert recording.editing_path == true
+assert recording.focus_context == "PathEdit"
 key esc
+assert recording.editing_path == false
+assert recording.focus_context == "Content"
+key esc
+assert recording.focus_context == "StepTabs"
+assert recording.step_tab_focused == true
+key down
+assert recording.focus_context == "Content"
+key esc
+assert recording.focus_context == "StepTabs"
 key right
 key right
 assert recording.step == "Capture"
@@ -66,6 +97,31 @@ assert recording.current_state == "ReviewNeeded"
 key a
 assert recording.review_needed_count == 0
 assert recording.done_count == 1
+assert recording.stimulus_config_matches_current == true
+
+# Change the global playback level deliberately before the next speaker. The
+# first source keeps its -6 dBFS snapshot; the next capture must retain -9 dBFS.
+key esc
+key left
+key left
+key down
+key up
+key up
+key up
+assert recording.selected_field == 5
+key enter
+key backspace
+key backspace
+key backspace
+key backspace
+key backspace
+type -9
+key enter
+assert recording.signal_level_db == -9
+key esc
+key right
+key right
+key down
 
 # Record and review the second input channel using the same measured signal.
 key down
@@ -74,6 +130,10 @@ wait_until recording.current_state != "Recording" timeout=10s
 assert recording.current_state == "ReviewNeeded"
 key a
 assert recording.done_count == 2
+assert recording.stimulus_config_count == 2
+assert recording.stimulus_config_matches_current == false
+assert recording.stimulus_levels_vary == true
+query recording.stimulus_configs
 
 # Persist the accepted measurements through the visible Saving step.
 key esc
@@ -109,6 +169,11 @@ assert roomeq.quality_review_entry_count >= 2
 assert roomeq.quality_unknown_count >= 2
 assert roomeq.thd_warning_count > 0
 assert roomeq.max_thd_percent > 10
+assert roomeq.stimulus_config_count >= 2
+assert roomeq.stimulus_configs_match_recording == true
+assert roomeq.capture_level_review_note != ""
+query roomeq.capture_level_review_note
+query roomeq.stimulus_configs
 query roomeq.quality_review_entries
 wait_until roomeq.measurement_count >= 2 timeout=10s
 
@@ -151,9 +216,9 @@ assert roomeq.result_count >= 2
 assert roomeq.has_dsp_output == true
 query roomeq.result_filter_count
 query roomeq.result_nonzero_gain_count
-# This loopback measurement can be flat, so validate optimizer and export
-# without requiring correction filters; rack application is covered separately
-# with the shaped standalone RoomEQ fixture.
+# This loopback has little room coloration; the optimizer may emit neutral
+# PEQs. Verify the exported list preserves the optimizer's exact filter count.
+# The shaped standalone RoomEQ fixture separately proves nonzero DSP application.
 key right
 assert roomeq.step == "Review"
 key down
@@ -167,4 +232,5 @@ type "$SOTF_QA_DIR/roomeq-export.json"
 key enter
 wait_until roomeq.export_exists == true timeout=5s
 query roomeq.export_filter_count
-assert roomeq.export_filter_count == 0
+assert roomeq.export_filter_count_matches_result == true
+query roomeq.result_filter_count

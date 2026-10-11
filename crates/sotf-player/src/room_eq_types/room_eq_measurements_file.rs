@@ -569,6 +569,7 @@ impl RoomEqMeasurementsFile {
                             clarity_c80_db: None,
                             spectrogram_db: None,
                             quality: None,
+                            stimulus_config: None,
                         }
                     })
                     .filter(|res| !res.frequencies.is_empty())
@@ -597,6 +598,7 @@ impl RoomEqMeasurementsFile {
                         clarity_c80_db: None,
                         spectrogram_db: None,
                         quality: None,
+                        stimulus_config: None,
                     },
                     is_group: false,
                     group_drivers: Vec::new(),

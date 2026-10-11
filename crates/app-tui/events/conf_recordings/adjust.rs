@@ -116,10 +116,17 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
             };
             app.recording.model.signal_type = types[new_idx];
         }
-        Duration => {
-            app.recording.model.signal_duration_secs =
-                (app.recording.model.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
-        }
+        Duration => match app.recording.model.signal_type {
+            RecordingSignalType::Sweep => {
+                app.recording.model.bass_octave_duration_s =
+                    (app.recording.model.bass_octave_duration_s + delta as f32).clamp(1.0, 10.0);
+            }
+            RecordingSignalType::Mls => {}
+            _ => {
+                app.recording.model.signal_duration_secs =
+                    (app.recording.model.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
+            }
+        },
         Level => {
             app.recording.model.signal_level_db =
                 (app.recording.model.signal_level_db + delta as f32).clamp(-40.0, 0.0);

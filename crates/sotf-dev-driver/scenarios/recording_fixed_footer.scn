@@ -1,0 +1,77 @@
+# Keep Capture Retake and wizard Continue available while the capture list is
+# taller than a short viewport, then save from the persistent wizard footer.
+focus       recording
+assert      recording.step == "Capture"
+resize      600 560
+scroll_into_view recording.content recording.capture_all
+assert_visible recording.capture_all
+click       recording.capture_all
+wait_until  recording.done_count == 2 timeout=30s
+assert_visible recording.retake_footer
+assert_visible recording.next
+screenshot  recording-short-capture-footer
+click       recording.retake_footer
+wait_until  recording.in_progress == true timeout=5s
+wait_until  recording.in_progress == false timeout=30s
+assert      recording.done_count == 2
+assert      recording.all_done == true
+assert      recording.stimulus_config_count == 2
+click       recording.back
+assert      recording.step == "SplCalibration"
+scroll_into_view recording.content recording.signal_level
+click       recording.signal_level
+key         cmd-a
+type        "-30"
+key         enter
+assert      recording.signal_level_db == -30
+click       recording.back
+assert      recording.config_edit_confirmation_pending == true
+assert_visible recording.config_edit_confirm
+click       recording.config_edit_cancel
+assert      recording.config_edit_confirmation_pending == false
+assert      recording.step == "SplCalibration"
+click       recording.back
+assert      recording.config_edit_confirmation_pending == true
+click       recording.config_edit_confirm
+assert      recording.step == "Config"
+click       recording.next
+assert      recording.step == "SplCalibration"
+assert      recording.done_count == 2
+click       recording.next
+assert      recording.step == "Capture"
+click       recording.retake_footer
+wait_until  recording.in_progress == true timeout=5s
+wait_until  recording.in_progress == false timeout=30s
+assert      recording.done_count == 2
+assert      recording.stimulus_config_count == 2
+assert      recording.mixed_stimulus_levels == true
+assert_visible recording.next
+click       recording.next
+assert      recording.step == "Probe"
+click       recording.probe_run
+wait_idle   2s
+assert      recording.probe_complete == true
+click       recording.next
+assert      recording.step == "BassAnchor"
+click       recording.bass_anchor_run
+wait_idle   2s
+assert      recording.bass_anchor_complete == true
+click       recording.next
+assert      recording.step == "Evaluating"
+scroll_into_view recording.content recording.accept.0
+assert_visible recording.accept.0
+click       recording.accept.0
+scroll_into_view recording.content recording.accept.1
+assert_visible recording.accept.1
+click       recording.accept.1
+wait_until  recording.all_takes_accepted == true timeout=5s
+assert_enabled recording.next == true
+click       recording.next
+wait_until  recording.step == "Saving" timeout=5s
+resize      560 420
+assert_visible recording.save_footer
+click       recording.save_footer
+wait_until  recording.save_status == "Current" timeout=10s
+assert      recording.saved_path != null
+scroll_into_view recording.content recording.save_status
+screenshot  recording-fixed-footer-short-viewport

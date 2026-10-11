@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 // Compile the same producer/assets used by standalone AutoEQ reports. This
 // embeds upstream sources; it does not maintain a second copy or renderer.
 #[derive(RustEmbed)]
-#[folder = "../../../autoeq/ui/display-roomeq/"]
+#[folder = "../../../autoeq/scripts/src/"]
 #[include = "*.py"]
 struct AutoEqProducer;
 
@@ -70,12 +70,28 @@ pub fn generate_report(
     artifact_root: Option<&Path>,
     python: Option<&Path>,
 ) -> anyhow::Result<GeneratedReport> {
+    generate_report_with_quality(result, artifact_root, python, None)
+}
+
+/// Generate the shared dashboards with source-bound capture evidence.
+///
+/// The additional section is assembled by the upstream native/WASM report
+/// library. The host supplies evidence and does not render a dashboard.
+///
+/// # Errors
+/// Returns generation errors or invalid capture-quality evidence.
+pub fn generate_report_with_quality(
+    result: &serde_json::Value,
+    artifact_root: Option<&Path>,
+    python: Option<&Path>,
+    quality: Option<&autoeq_report_wasm::capture_quality::CaptureQualityReport>,
+) -> anyhow::Result<GeneratedReport> {
     let directory = tempfile::Builder::new().prefix("sotf-report-").tempdir()?;
     for name in AutoEqProducer::iter() {
         let bytes = AutoEqProducer::get(&name).context("Missing embedded AutoEQ producer")?;
         let target = directory
             .path()
-            .join("autoeq/ui/display-roomeq")
+            .join("autoeq/scripts/src")
             .join(name.as_ref());
         std::fs::create_dir_all(target.parent().context("Report asset has no directory")?)?;
         std::fs::write(target, bytes.data.as_ref())?;
@@ -113,14 +129,12 @@ pub fn generate_report(
             "AutoEQ report artifact root is not a directory"
         );
         let assets = directory.path().join("result_files");
-        // Use the upstream loader's output-bundle layout. It rehydrates slim
-        // curves and FIR sidecars without changing the signed result payload.
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(root, assets)?;
-        #[cfg(not(unix))]
+        // The canonical loader requires a regular support directory and
+        // rejects symlinked bundle roots. Stage assets in that same layout;
+        // the upstream loader retains responsibility for their validation.
         copy_artifacts(&root, &assets)?;
     }
-    let producer = directory.path().join("autoeq/ui/display-roomeq");
+    let producer = directory.path().join("autoeq/scripts");
     let stderr_path = directory.path().join("producer.stderr");
     let stderr = std::fs::File::create(&stderr_path)?;
     let stdout = std::fs::File::create(directory.path().join("producer.stdout"))?;
@@ -131,7 +145,7 @@ pub fn generate_report(
         .unwrap_or(Path::new("python3"));
     let mut child = Command::new(interpreter)
         .arg("-I").arg("-c")
-        .arg("import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); from loaders import load_roomeq_json; from report import create_html_report; create_html_report(load_roomeq_json(Path(sys.argv[2])),Path(sys.argv[3]))")
+        .arg("import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); from src.loaders import load_roomeq_json; from src.report import create_html_report; create_html_report(load_roomeq_json(Path(sys.argv[2])),Path(sys.argv[3]))")
         .arg(producer).arg(&json_path).arg(&html_path)
         .stdin(Stdio::null()).stdout(stdout).stderr(stderr)
         .spawn().context("Starting AutoEQ report producer; install/configure Python with NumPy")?;
@@ -154,13 +168,59 @@ pub fn generate_report(
         std::thread::sleep(Duration::from_millis(50));
     }
     anyhow::ensure!(html_path.is_file(), "AutoEQ producer did not emit a report");
+    if let Some(quality) = quality {
+        append_quality_dashboard(&html_path, quality)?;
+    }
     Ok(GeneratedReport {
         directory,
         html_path,
     })
 }
 
-#[cfg(not(unix))]
+fn append_quality_dashboard(
+    html_path: &Path,
+    quality: &autoeq_report_wasm::capture_quality::CaptureQualityReport,
+) -> anyhow::Result<()> {
+    use autoeq_report_wasm::{assemble, capture_quality, schema};
+    if quality.sources.is_empty() {
+        return Ok(());
+    }
+    let html = std::fs::read_to_string(html_path)?;
+    let json = html
+        .split_once("<script id=\"report-payload\" type=\"application/json\">")
+        .and_then(|(_, content)| content.split_once("</script>"))
+        .map(|(json, _)| json)
+        .context("Shared report payload is missing")?;
+    // Preserve additive upstream fields (bucket, subpage and layout metadata)
+    // instead of round-tripping the complete document through an older schema.
+    let mut payload: serde_json::Value = serde_json::from_str(json)?;
+    anyhow::ensure!(
+        payload["schema"] == schema::SCHEMA_VERSION,
+        "Unsupported shared report payload"
+    );
+    let title = payload["title"]
+        .as_str()
+        .context("Report title is missing")?
+        .to_owned();
+    let mut evidence = schema::ReportPayload::new(&title);
+    capture_quality::append_capture_quality_section(&mut evidence, quality)?;
+    let sections = payload["sections"]
+        .as_array_mut()
+        .context("Report sections are missing")?;
+    for section in evidence.sections {
+        let mut section = serde_json::to_value(section)?;
+        // Existing shell grouping is upstream-owned; use its DSP bucket while
+        // retaining all original dashboards and their data unchanged.
+        section["bucket"] = "DSP analysis".into();
+        section["subhead"] = "Capture quality".into();
+        sections.push(section);
+    }
+    let assets = assemble::checked_in_assets().map_err(anyhow::Error::msg)?;
+    let html = assemble::assemble_html(&title, &serde_json::to_string(&payload)?, &assets);
+    std::fs::write(html_path, html)?;
+    Ok(())
+}
+
 fn copy_artifacts(source: &Path, target: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(target)?;
     for entry in std::fs::read_dir(source)? {
@@ -214,6 +274,89 @@ mod tests {
         let error =
             generate_report(&result, None, Some(Path::new("/missing/sotf-python"))).unwrap_err();
         assert!(error.to_string().contains("Python with NumPy"));
+    }
+
+    #[test]
+    fn shared_quality_dashboard_preserves_the_existing_payload() {
+        use autoeq_report_wasm::capture_quality::CaptureQualityReport;
+        let quality: CaptureQualityReport = serde_json::from_value(serde_json::json!({"sources":[{
+            "source_id":"take-L-mic-2-position-3", "channel":"L", "mic":"2", "position":"3",
+            "stimulus":{"signal_type":"sweep","sample_rate_hz":48000,"duration_secs":4.25,"level_dbfs":-30.0},
+            "findings":[
+                {"metric":{"kind":"thd"},"status":"warning","value":25.76,"unit":"%",
+                 "policy":"SingleTake","method":"Farina harmonic IR","threshold":{"comparison":"less_than_or_equal","value":10.0,"unit":"%"},
+                 "recommendation":"Lower playback level and retake"},
+                {"metric":{"kind":"broadband_snr"},"status":"unknown","unit":"dB",
+                 "unknown_reason":"Digital silence does not estimate ambient noise"}
+            ]
+        }]})).unwrap();
+        let result = serde_json::json!({"version":"1.0","channels":{},"metadata":{}});
+        let python = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../autoeq/.venv/bin/python");
+        let report =
+            generate_report(&result, None, python.is_file().then_some(python.as_path())).unwrap();
+        let read_payload = |html: &str| -> serde_json::Value {
+            serde_json::from_str(
+                html.split_once("<script id=\"report-payload\" type=\"application/json\">")
+                    .unwrap()
+                    .1
+                    .split_once("</script>")
+                    .unwrap()
+                    .0,
+            )
+            .unwrap()
+        };
+        let original = read_payload(&report.read_html().unwrap());
+        append_quality_dashboard(report.path(), &quality).unwrap();
+        let enriched = read_payload(&report.read_html().unwrap());
+        let old_sections = original["sections"].as_array().unwrap();
+        let new_sections = enriched["sections"].as_array().unwrap();
+        assert_eq!(&new_sections[..old_sections.len()], old_sections.as_slice());
+        assert_eq!(new_sections.len(), old_sections.len() + 1);
+        let evidence = new_sections.last().unwrap()["html"].as_str().unwrap();
+        for label in [
+            "Capture quality",
+            "Warning",
+            "Unknown",
+            "25.76",
+            "SingleTake",
+            "Farina harmonic IR",
+            "Digital silence",
+            "-30",
+        ] {
+            assert!(
+                evidence.contains(label),
+                "Missing retained evidence {label}"
+            );
+        }
+        assert_eq!(new_sections.last().unwrap()["bucket"], "DSP analysis");
+        if let Some(destination) = std::env::var_os("SOTF_REPORT_QA_HTML") {
+            report.save(Path::new(&destination)).unwrap();
+        }
+    }
+
+    #[test]
+    fn upstream_sti_dashboard_retains_measured_basis_and_missing_evidence() {
+        let result = serde_json::json!({
+            "version":"1.0", "metadata":{}, "channels":{
+                "L":{"plugins":[], "speech_transmission":{
+                    "method":"iec_60268_16_2020_indirect_ir_only_v1",
+                    "basis":"measured_room_ir", "sti":0.625,
+                    "sample_rate_hz":48000, "duration_s":2.0,
+                    "octave_centers_hz":[125,250,500,1000,2000,4000,8000],
+                    "modulation_frequencies_hz":[0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.15,4.0,5.0,6.3,8.0,10.0,12.5],
+                    "mti":vec![0.625; 7],
+                    "modulation_transfer":vec![vec![0.625; 7]; 14]
+                }},
+                "R":{"plugins":[]}
+            }
+        });
+        let python = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../autoeq/.venv/bin/python");
+        let report =
+            generate_report(&result, None, python.is_file().then_some(python.as_path())).unwrap();
+        let html = report.read_html().unwrap();
+        assert!(html.contains("Full STI (IR-only): 0.625"));
+        assert!(html.contains("STI unavailable"));
+        assert!(html.contains("not a post-EQ prediction"));
     }
 
     #[test]

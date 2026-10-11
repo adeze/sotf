@@ -1337,6 +1337,7 @@ mod tests {
             clarity_c80_db: None,
             spectrogram_db: None,
             quality: None,
+            stimulus_config: None,
         }
     }
 

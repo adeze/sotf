@@ -9971,6 +9971,7 @@ dependencies = [
  "rustfft",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "signal-hook",
  "smol",
  "sotf-cast",
@@ -11469,6 +11470,7 @@ name = "sotf-report-host"
 version = "0.7.14"
 dependencies = [
  "anyhow",
+ "autoeq-report-wasm",
  "reqwest",
  "rust-embed",
  "serde",

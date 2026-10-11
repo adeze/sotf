@@ -12,6 +12,7 @@ mod app_scanner;
 mod app_tree;
 mod app_volume;
 mod parameters;
+mod recording_duration;
 #[cfg(test)]
 #[path = "../tests/test_app.rs"]
 mod test;
@@ -19,6 +20,9 @@ mod types;
 
 pub use app_impl::{App, FederationScanResult};
 pub use parameters::{TuiEditablePlugin, TuiParamDescriptor, TuiParamSpec, TuiParamType};
+pub(crate) use recording_duration::{
+    recording_acquisition_config, recording_acquisition_config_for_range,
+};
 pub use types::{
     AbTestingStep, AbTestingTuiState, ArtistNode, CastDeviceInfo, ChannelConflictChoice,
     ChannelFilter, ChannelGroup, ChannelInfo, ConfigureSubScreen, EarTrainingTab,

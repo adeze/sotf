@@ -19,6 +19,11 @@ pub(crate) enum TuiKeyContext {
     EarTraining,
     ConfigureTabs,
     Directories,
+    RecordingContent,
+    RoomEqContent,
+    WorkflowStepTabs,
+    RecordingPathEdit,
+    RoomEqPathEdit,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -285,6 +290,49 @@ const fn section(key: &'static str, description: &'static str) -> TuiKeybindingH
         chords: &[],
         command: None,
     }
+}
+
+const fn focus_hint(
+    key: &'static str,
+    description: &'static str,
+    context: TuiKeyContext,
+) -> TuiKeybindingHelp {
+    TuiKeybindingHelp {
+        key,
+        description,
+        compact_description: None,
+        contexts: match context {
+            TuiKeyContext::RecordingContent => &[TuiKeyContext::RecordingContent],
+            TuiKeyContext::RoomEqContent => &[TuiKeyContext::RoomEqContent],
+            TuiKeyContext::WorkflowStepTabs => &[TuiKeyContext::WorkflowStepTabs],
+            TuiKeyContext::RecordingPathEdit => &[TuiKeyContext::RecordingPathEdit],
+            TuiKeyContext::RoomEqPathEdit => &[TuiKeyContext::RoomEqPathEdit],
+            _ => &[],
+        },
+        chords: &[],
+        command: None,
+    }
+}
+
+const WORKFLOW_FOCUS_HINTS: &[TuiKeybindingHelp] = &[
+    focus_hint("Esc", "step tabs", TuiKeyContext::RecordingContent),
+    focus_hint("Esc", "step tabs", TuiKeyContext::RoomEqContent),
+    focus_hint("←/→", "step", TuiKeyContext::WorkflowStepTabs),
+    focus_hint("↓/Enter", "content", TuiKeyContext::WorkflowStepTabs),
+    focus_hint("↑/Esc", "configure", TuiKeyContext::WorkflowStepTabs),
+    focus_hint("Enter", "confirm", TuiKeyContext::RecordingPathEdit),
+    focus_hint("Tab", "complete", TuiKeyContext::RecordingPathEdit),
+    focus_hint("Esc", "cancel", TuiKeyContext::RecordingPathEdit),
+    focus_hint("Enter", "load", TuiKeyContext::RoomEqPathEdit),
+    focus_hint("Tab", "complete", TuiKeyContext::RoomEqPathEdit),
+    focus_hint("Esc", "cancel", TuiKeyContext::RoomEqPathEdit),
+];
+
+pub(super) fn workflow_focus_hints(context: TuiKeyContext) -> Vec<&'static TuiKeybindingHelp> {
+    WORKFLOW_FOCUS_HINTS
+        .iter()
+        .filter(|hint| hint.contexts.contains(&context))
+        .collect()
 }
 
 const ALWAYS_KEYBINDINGS: &[TuiKeybindingHelp] = &[binding(
@@ -1523,6 +1571,22 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn workflow_focus_hints_cover_content_tabs_and_path_editing() {
+        for context in [
+            TuiKeyContext::RecordingContent,
+            TuiKeyContext::RoomEqContent,
+            TuiKeyContext::WorkflowStepTabs,
+            TuiKeyContext::RecordingPathEdit,
+            TuiKeyContext::RoomEqPathEdit,
+        ] {
+            let hints = workflow_focus_hints(context);
+            assert!(!hints.is_empty(), "missing focus hints for {context:?}");
+            assert!(hints.iter().all(|hint| !hint.key.is_empty()));
+            assert!(hints.iter().all(|hint| !hint.description.is_empty()));
         }
     }
 }

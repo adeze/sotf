@@ -778,25 +778,44 @@ impl PlayerView {
                 }))
         };
 
-        // Estimated capture-time hint (§2.7 default: ~14 min for 5 channels).
-        // This is a rough estimate computed from bass_octave_duration_s only.
-        // At the defaults (3 s/oct, 10 Hz → 20 kHz, 5 channels):
-        //   bass: log2(100/10)*3.0 = ~9.97 s, mid: log2(10)*1.5 ≈ 4.98 s,
-        //   high: log2(20)*1.15 ≈ 5.05 s → ~20 s/ch → 100 s per sweep pass.
-        // Add pre+post: ~4 s → ~104 s per channel → 5 ch ≈ 520 s ≈ 9 min.
-        // With 4 sweeps (§2.7 multi-sweep default) ≈ 36 min — but GD-1c adds
-        // that; here we show single-sweep. §2.7 says ~14 min so that's the
-        // expected rough value.
-        let estimated_min = {
-            let oct_bass = (100.0_f64 / 10.0_f64).log2();
-            let oct_mid = (1000.0_f64 / 100.0_f64).log2();
-            let oct_high = (20_000.0_f64 / 1000.0_f64).log2();
-            let sweep_s = oct_bass * bass_dur as f64
-                + oct_mid * (bass_dur as f64 * 0.5)
-                + oct_high * (bass_dur as f64 * 0.25);
-            let total_per_ch = sweep_s + pre_s as f64 + post_s_opt.unwrap_or(2.0) as f64;
-            let channels = 5.0; // show for typical 5-channel system
-            (total_per_ch * channels / 60.0).round() as u32
+        // Estimate the session from the same effective signal and padding
+        // configuration used by capture, then scale by the selected outputs
+        // and configured sweeps. This stays accurate for non-sweep signals,
+        // custom frequency bounds, and non-default sample rates.
+        let channels = rec_state.playback_config.channel_mappings.len();
+        let estimated_secs = if channels == 0 {
+            None
+        } else {
+            use sotf_audio_player::recording_helpers::{
+                capture_signal_params, effective_acquisition_config, measurement_amplitude,
+                signal_type_for,
+            };
+
+            let signal_type = signal_type_for(rec_state.signal_type);
+            let signal_params = capture_signal_params(
+                signal_type,
+                rec_state.sweep_start_freq,
+                rec_state.sweep_end_freq,
+                measurement_amplitude(rec_state.signal_level_db as f64),
+                Some(bass_dur),
+                Some(pre_s),
+                post_s_opt,
+            );
+            effective_acquisition_config(
+                signal_type,
+                &signal_params,
+                rec_state.signal_duration_secs,
+                rec_state.playback_config.sample_rate,
+            )
+            .ok()
+            .map(|config| {
+                f64::from(config.playback_duration_secs) * channels as f64 * f64::from(num_sweeps)
+            })
+        };
+        let estimated_time = match estimated_secs {
+            Some(seconds) if seconds < 60.0 => format!("~{} s", seconds.round() as u32),
+            Some(seconds) => format!("~{} min", (seconds / 60.0).round() as u32),
+            None => "unavailable for current signal settings".to_string(),
         };
 
         // Sweeps-per-channel numeric input. 2 is never offered: outlier
@@ -851,7 +870,7 @@ impl PlayerView {
             .child(pre_row)
             .child(post_row)
             .child(Text::caption(format!(
-                "Estimated capture time (5 channels, 10 Hz–20 kHz): ~{estimated_min} min"
+                "Estimated capture time ({channels} channels × {num_sweeps} sweeps): {estimated_time}"
             )))
     }
 

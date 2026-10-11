@@ -138,6 +138,7 @@ pub(super) fn load_room_eq_recording_fixture(fixture_dir: &Path) -> Result<Recor
                 clarity_c80_db: None,
                 spectrogram_db: None,
                 quality: None,
+                stimulus_config: None,
             });
             Ok(rec)
         })

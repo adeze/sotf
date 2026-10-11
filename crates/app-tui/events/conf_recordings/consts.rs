@@ -176,6 +176,24 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             return;
         }
     };
+    let stimulus_config = match sotf_audio_player::recording_helpers::effective_acquisition_config(
+        signal_type,
+        &params,
+        duration_secs,
+        sample_rate,
+    ) {
+        Ok(config) => config,
+        Err(error) => {
+            for idx in &capture_indices {
+                if let Some(ch) = app.recording.model.channel_recordings.get_mut(*idx) {
+                    ch.state = ChannelRecordingState::Error;
+                }
+            }
+            app.recording.model.status_message =
+                format!("Error describing capture signal: {error}");
+            return;
+        }
+    };
 
     // Write to temp file
     let temp_wav = match write_temp_wav(&signal, sample_rate, 1) {
@@ -526,6 +544,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                                 clarity_c80_db: Some(analysis_result.clarity_c80_db),
                                 spectrogram_db: Some(analysis_result.spectrogram_db),
                                 quality: Some(quality),
+                                stimulus_config: Some(stimulus_config.clone()),
                             },
                         ))
                     })

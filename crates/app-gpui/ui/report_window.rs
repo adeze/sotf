@@ -16,7 +16,7 @@ impl PlayerView {
     }
 
     fn prepare_shared_room_eq_report(&mut self, save: bool, cx: &mut Context<Self>) {
-        let (result, artifacts, dark, inputs, labels) = {
+        let (result, artifacts, quality, dark, inputs, labels) = {
             let app = &self.state.read(cx).app;
             let room = &app.measurement_state.room_eq_state;
             let labels = crate::app::i18n::SharedReportText::for_language(app.ui_state.language);
@@ -37,6 +37,7 @@ impl PlayerView {
             (
                 result,
                 room.artifact_dir.clone(),
+                capture_quality_report(&room.channel_measurements),
                 app.ui_state.theme_id != crate::app::theme::ThemeId::Light,
                 room.result_inputs.clone(),
                 labels,
@@ -46,7 +47,12 @@ impl PlayerView {
             state.app.measurement_state.room_eq_state.status_message = labels.preparing.into();
         });
         let worker = cx.background_executor().spawn(async move {
-            sotf_report_host::generate_report(&result, artifacts.as_deref(), None)
+            sotf_report_host::generate_report_with_quality(
+                &result,
+                artifacts.as_deref(),
+                None,
+                Some(&quality),
+            )
         });
         cx.spawn(async move |view, cx| match worker.await {
             Ok(report) => {
@@ -94,6 +100,192 @@ impl PlayerView {
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(error));
         });
         cx.notify();
+    }
+}
+
+fn capture_quality_report(
+    channels: &[sotf_audio_player::room_eq_types::ChannelMeasurement],
+) -> sotf_report_host::capture_quality::CaptureQualityReport {
+    use sotf_report_host::capture_quality::CaptureQualityReport;
+    let mut report = CaptureQualityReport::default();
+    for channel in channels {
+        if !channel.driver_measurement_sets.is_empty() {
+            for (driver_index, driver) in channel.driver_measurement_sets.iter().enumerate() {
+                for (index, result) in std::iter::once(&driver.measurement)
+                    .chain(driver.multi_mic_measurements.iter())
+                    .enumerate()
+                {
+                    report.sources.push(capture_quality_source(
+                        &format!(
+                            "{} / {}",
+                            channel.channel_name,
+                            driver
+                                .name
+                                .as_deref()
+                                .map(str::to_owned)
+                                .unwrap_or_else(|| format!("driver {}", driver_index + 1))
+                        ),
+                        index,
+                        result,
+                        driver.provenance.get(index),
+                    ));
+                }
+            }
+        } else {
+            for (index, result) in std::iter::once(&channel.measurement)
+                .chain(channel.multi_mic_measurements.iter())
+                .enumerate()
+            {
+                report.sources.push(capture_quality_source(
+                    &channel.channel_name,
+                    index,
+                    result,
+                    channel.provenance.get(index),
+                ));
+            }
+        }
+    }
+    report
+}
+
+fn capture_quality_source(
+    channel: &str,
+    index: usize,
+    result: &sotf_audio_player::recording_types::RecordingResult,
+    provenance: Option<&sotf_audio_player::room_eq_types::MeasurementProvenance>,
+) -> sotf_report_host::capture_quality::CaptureQualitySource {
+    use sotf_audio_player::capture_quality as capture;
+    use sotf_report_host::capture_quality as report;
+    let findings = result
+        .quality
+        .as_ref()
+        .map(|quality| {
+            quality
+                .findings
+                .iter()
+                .map(|finding| {
+                    let unit = match finding.unit {
+                        capture::QualityUnit::Percent => "%",
+                        capture::QualityUnit::Decibels => "dB",
+                        capture::QualityUnit::Samples => "samples",
+                        capture::QualityUnit::Count => "count",
+                    }
+                    .to_owned();
+                    report::CaptureQualityFinding {
+                        metric: match finding.metric {
+                            capture::QualityMetric::TotalHarmonicDistortion => {
+                                report::CaptureQualityMetric::Thd
+                            }
+                            capture::QualityMetric::BroadbandSnr => {
+                                report::CaptureQualityMetric::BroadbandSnr
+                            }
+                            capture::QualityMetric::BandSnr => {
+                                report::CaptureQualityMetric::Other("Band SNR".into())
+                            }
+                            capture::QualityMetric::Clipping => {
+                                report::CaptureQualityMetric::Other("Clipped samples".into())
+                            }
+                            capture::QualityMetric::TimingMarkers => {
+                                report::CaptureQualityMetric::Other("Timing markers".into())
+                            }
+                        },
+                        status: match finding.status {
+                            capture::QualityStatus::Pass => report::CaptureQualityStatus::Pass,
+                            capture::QualityStatus::Warning => {
+                                report::CaptureQualityStatus::Warning
+                            }
+                            capture::QualityStatus::Unknown => {
+                                report::CaptureQualityStatus::Unknown
+                            }
+                        },
+                        value: finding.measured,
+                        unit: unit.clone(),
+                        band: finding.band.map(|band| report::CaptureQualityBand {
+                            low_hz: band.low_hz,
+                            high_hz: band.high_hz,
+                        }),
+                        method: Some(format!("{:?}", finding.method)),
+                        policy: Some(format!("{:?}", finding.policy)),
+                        threshold: finding.threshold.map(|threshold| {
+                            report::CaptureQualityThreshold {
+                                comparison: match threshold.comparison {
+                                    capture::ThresholdComparison::AtMost => {
+                                        report::CaptureThresholdComparison::LessThanOrEqual
+                                    }
+                                    capture::ThresholdComparison::AtLeast => {
+                                        report::CaptureThresholdComparison::GreaterThanOrEqual
+                                    }
+                                    capture::ThresholdComparison::EqualTo => {
+                                        report::CaptureThresholdComparison::EqualTo
+                                    }
+                                },
+                                value: threshold.value,
+                                unit,
+                            }
+                        }),
+                        unknown_reason: finding.unknown_reason.clone(),
+                        recommendation: finding.recommendation.clone(),
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let findings = if findings.is_empty() {
+        vec![report::CaptureQualityFinding {
+            metric: report::CaptureQualityMetric::Other("Capture quality".into()),
+            status: report::CaptureQualityStatus::Unknown,
+            value: None,
+            unit: "evidence".into(),
+            band: None,
+            method: None,
+            policy: None,
+            threshold: None,
+            unknown_reason: Some(
+                "No typed capture-quality evidence is retained for this imported source".into(),
+            ),
+            recommendation: Some(
+                "Review or repeat the source measurement before relying on its quality".into(),
+            ),
+        }]
+    } else {
+        findings
+    };
+    // Bind the viewer identity to this measured source, including its provenance
+    // and evidence. A later retake produces a different report identity.
+    use sha2::{Digest, Sha256};
+    let source = serde_json::json!({"channel":channel,"index":index,"provenance":provenance,"measurement":result});
+    let source_id = Sha256::digest(source.to_string().as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    report::CaptureQualitySource {
+        source_id,
+        channel: Some(channel.into()),
+        mic: provenance.and_then(|source| source.mic_index.map(|mic| format!("{}", mic + 1))),
+        position: provenance.and_then(|source| {
+            source
+                .mic_position_index
+                .map(|position| format!("{}", position + 1))
+        }),
+        // Measurement order is not an acquisition take number; leave it unknown.
+        take: None,
+        stimulus: result
+            .stimulus_config
+            .as_ref()
+            .map(|config| report::CaptureStimulusMetadata {
+                signal_type: config.signal_type.clone(),
+                sample_rate_hz: Some(config.sample_rate_hz),
+                duration_secs: Some(f64::from(config.playback_duration_secs)),
+                band: config
+                    .low_frequency_hz
+                    .zip(config.high_frequency_hz)
+                    .map(|(low, high)| report::CaptureQualityBand {
+                        low_hz: f64::from(low),
+                        high_hz: f64::from(high),
+                    }),
+                level_dbfs: config.level_dbfs.map(f64::from),
+            }),
+        findings,
     }
 }
 

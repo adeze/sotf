@@ -11,7 +11,9 @@ mod producer;
 mod server;
 
 #[doc(inline)]
-pub use producer::{GeneratedReport, generate_report};
+pub use autoeq_report_wasm::capture_quality;
+#[doc(inline)]
+pub use producer::{GeneratedReport, generate_report, generate_report_with_quality};
 #[doc(inline)]
 pub use server::ReportServer;
 

@@ -131,7 +131,15 @@ pub(super) fn set_recording_field_from_string(app: &mut App) {
     match field {
         Duration => {
             if let Ok(v) = buf.parse::<f32>() {
-                app.recording.model.signal_duration_secs = v.clamp(1.0, 30.0);
+                match app.recording.model.signal_type {
+                    sotf_audio_player::recording_types::RecordingSignalType::Sweep => {
+                        app.recording.model.bass_octave_duration_s = v.clamp(1.0, 10.0);
+                    }
+                    sotf_audio_player::recording_types::RecordingSignalType::Mls => {}
+                    _ => {
+                        app.recording.model.signal_duration_secs = v.clamp(1.0, 30.0);
+                    }
+                }
             }
         }
         Level => {
@@ -589,6 +597,11 @@ pub(crate) fn save_recordings(app: &mut App) {
             &app.recording.model.channel_recordings,
             &channel_names,
         );
+    let stimulus_entries =
+        sotf_audio_player::recording_helpers::recording_stimulus_entries_from_sources(
+            &app.recording.model.channel_recordings,
+            &channel_names,
+        );
 
     // Serialize + write on a background thread — JSON for a
     // multi-position multichannel session can be megabytes, and the
@@ -615,12 +628,13 @@ pub(crate) fn save_recordings(app: &mut App) {
                     )
                     .map_err(|error| format!("Write error: {error}"))
                     .and_then(|()| {
-                        sotf_audio_player::recording_helpers::save_recording_quality_sidecar(
+                        sotf_audio_player::recording_helpers::save_recording_quality_sidecar_with_stimuli(
                             &path,
                             json.as_bytes(),
                             quality_entries,
+                            stimulus_entries,
                         )
-                        .map_err(|error| format!("Could not save recording quality: {error}"))
+                        .map_err(|error| format!("Could not save recording evidence: {error}"))
                     });
                 write_result
             }

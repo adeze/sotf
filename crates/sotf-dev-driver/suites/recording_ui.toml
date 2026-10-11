@@ -101,3 +101,14 @@ allowed_log_patterns = ["Recording failed: [record_and_analyze] Failed to stop c
 channels = 2
 points = 48
 fault = "io-failure"
+
+[[scenario]]
+name = "recording-fixed-footer-short-viewport"
+path = "crates/sotf-dev-driver/scenarios/recording_fixed_footer.scn"
+timeout = "90s"
+tags = ["recording", "responsive", "footer", "ui"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48
+profile = "clean"
