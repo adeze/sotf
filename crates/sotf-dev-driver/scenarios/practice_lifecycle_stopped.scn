@@ -1,13 +1,15 @@
-# Exercise the real EQ practice lifecycle against a local silent source while
-# transport remains stopped, so CI validates session behavior without audio hardware.
-focus       listening
+# Exercise the real EQ practice lifecycle against a local source with transport
+# paused before the session starts, so CI validates session behavior without audio hardware.
+action      SwitchToListeningTest
 action      ListeningResetGuide
 click       listening.guide.acknowledge
 wait_until  listening.guide_open == false timeout=2s
 action      ListeningSetSourceFixture {"mode":"practice"}
 wait_until  listening.eq.source.loading == false timeout=10s
 assert      listening.eq.source.count == 1
-assert      playback.is_playing == false
+wait_until  playback.is_playing == true timeout=5s
+click       transport.play
+wait_until  playback.is_playing == false timeout=3s
 click       listening.eq.start
 wait_until  listening.eq.has_question == true timeout=3s
 assert      playback.is_playing == false
@@ -22,7 +24,7 @@ click       listening.eq.pause
 wait_until  listening.eq.paused == false timeout=2s
 click       listening.eq.original
 wait_until  listening.eq.filtered == false timeout=2s
-key         enter
+click       listening.eq.submit
 wait_until  listening.eq.submitted == 1 timeout=2s
 click       listening.eq.next
 wait_until  listening.eq.answered == false timeout=2s

@@ -83,6 +83,11 @@ Current integration limitations:
 - The shared shell currently owns its chart colors and language. Host
   controls are localized; a complete report theme/locale contract belongs
   upstream so the renderer remains shared.
+- Capture-quality sidecars are shown in recording review and RoomEQ import.
+  The upstream report producer does not yet consume that sidecar. Its curve
+  loader reads response/phase columns and ignores extra THD columns; extending
+  the upstream input contract should carry typed quality rather than adding
+  another dashboard implementation in the app.
 
 ## Migration toward a mostly WASM report
 
