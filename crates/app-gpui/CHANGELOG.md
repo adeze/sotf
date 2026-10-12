@@ -1,5 +1,12 @@
 # 0.7.11 (unreleased)
 
+## Developer tooling
+
+- The `export-design-tokens` / `import-design-tokens` binaries moved here
+  from the retired `sotf-tools` crate. The import now resolves
+  `app/theme/` inside this crate instead of reaching across to a sibling,
+  which removes the old `sotf-tools` → `sotf-gpui` reverse dependency.
+
 ## Signal path visibility
 
 - Footer and Plugin Graph now display source/output sample rates, a resampling (SRC) indicator, and an engine-health warning pill from the read-only `SignalPath` model.

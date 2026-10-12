@@ -3,7 +3,54 @@ use sotf_audio_player::{Album, ChannelFilter, Track};
 use sotf_audio_player_gpui::app::manager::Manager;
 use sotf_audio_player_gpui::app::state::app::{App, AppMessage};
 use sotf_audio_player_gpui::app::state::library::{LibraryEvent, LibraryQuery, LibraryResponse};
+use sotf_audio_player_gpui::components::plugins::editing::PluginEditingManager;
 use std::path::PathBuf;
+
+#[gpui::test]
+fn rack_bypass_preserves_upmixer_topology_and_disabled_plugins(_cx: &mut TestAppContext) {
+    let mut app = App::new();
+    app.plugin_state
+        .graph
+        .add_plugin(&sotf_audio_player::PluginType::Upmixer)
+        .unwrap();
+    let gain = app
+        .plugin_state
+        .graph
+        .add_plugin(&sotf_audio_player::PluginType::Gain)
+        .unwrap();
+    app.plugin_state.graph.get_plugin_mut(gain).unwrap().enabled = false;
+    app.plugin_state.update_state.pending_plugin_update = None;
+    let channels = app.plugin_state.graph.output_channels();
+    assert!(channels > 2, "regression requires a channel-changing rack");
+    let enabled: Vec<_> = app
+        .plugin_state
+        .graph
+        .plugins()
+        .iter()
+        .map(|plugin| plugin.enabled)
+        .collect();
+
+    for bypass in [true, false, true, false] {
+        app.toggle_chain_bypass();
+        assert_eq!(app.plugin_state.chain_state.chain_bypass, bypass);
+        assert!(
+            app.plugin_state
+                .update_state
+                .pending_plugin_update
+                .is_none()
+        );
+        assert_eq!(app.plugin_state.graph.output_channels(), channels);
+        assert_eq!(
+            app.plugin_state
+                .graph
+                .plugins()
+                .iter()
+                .map(|plugin| plugin.enabled)
+                .collect::<Vec<_>>(),
+            enabled
+        );
+    }
+}
 
 #[gpui::test]
 fn test_manager_protocol(_cx: &mut TestAppContext) {

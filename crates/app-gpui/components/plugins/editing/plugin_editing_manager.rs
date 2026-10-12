@@ -1063,17 +1063,9 @@ impl PluginEditingManager for App {
     }
 
     fn toggle_chain_bypass(&mut self) {
+        // Removing channel-changing processors forces a hardware stream reopen.
+        // Engine bypass keeps that geometry and each plugin's enabled setting.
         self.plugin_state.chain_state.chain_bypass = !self.plugin_state.chain_state.chain_bypass;
-        let bypass = self.plugin_state.chain_state.chain_bypass;
-        for i in 0..self.plugin_state.graph.len() {
-            if let Some(plugin) = self.plugin_state.graph.get_plugin_mut(i)
-                && !plugin.is_permanent()
-            {
-                plugin.enabled = !bypass;
-            }
-        }
-        self.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
-        self.sync_spectrum_visible();
     }
 
     fn toggle_chain_autogain(&mut self) {

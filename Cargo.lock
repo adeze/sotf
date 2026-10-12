@@ -794,7 +794,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "autoeq"
-version = "0.5.76"
+version = "0.5.77"
 dependencies = [
  "anyhow",
  "autoeq-artifacts",
@@ -5299,6 +5299,7 @@ dependencies = [
  "realfft",
  "rustfft",
  "serde",
+ "serde_json",
  "sha2 0.11.0",
  "sotf-nalgebra",
 ]
@@ -8235,7 +8236,7 @@ dependencies = [
 
 [[package]]
 name = "roomeq-workflow"
-version = "0.5.34"
+version = "0.5.35"
 dependencies = [
  "anyhow",
  "autoeq-artifacts",
@@ -9145,7 +9146,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-capture"
-version = "0.1.0"
+version = "0.5.1"
 dependencies = [
  "audioadapter-buffers",
  "autoeq",
@@ -9408,6 +9409,7 @@ dependencies = [
  "gpui-builder",
  "gpui-d3rs 0.10.19 (git+https://github.com/pierreaubert/gpui-toolkit)",
  "gpui-design 0.10.7 (git+https://github.com/pierreaubert/gpui-toolkit)",
+ "gpui-design-tools",
  "gpui-ios",
  "gpui-keybinding",
  "gpui-px",
@@ -10772,6 +10774,8 @@ dependencies = [
 name = "sotf-plugin-upmixer"
 version = "0.5.123"
 dependencies = [
+ "anyhow",
+ "clap",
  "hound",
  "log",
  "math-dsp",
@@ -11052,27 +11056,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "toml 1.1.8+spec-1.1.0",
-]
-
-[[package]]
-name = "sotf-tools"
-version = "0.5.8"
-dependencies = [
- "anyhow",
- "bincode",
- "clap",
- "env_logger",
- "gpui-design-tools",
- "hound",
- "log",
- "rusqlite",
- "serde",
- "serde_json",
- "sotf-engine",
- "sotf-gpui",
- "sotf-gpui-toolkit-gpui",
- "sotf-plugins",
- "tempfile",
 ]
 
 [[package]]

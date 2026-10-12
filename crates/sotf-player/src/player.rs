@@ -326,6 +326,15 @@ impl Player {
         self.manager.is_muted()
     }
 
+    /// Bypass processing while retaining the rack and its output channel layout.
+    ///
+    /// # Errors
+    /// Returns an error if the engine cannot apply the command.
+    pub fn set_bypass(&self, bypassed: bool) -> Result<(), Box<dyn std::error::Error>> {
+        self.manager.set_bypass(bypassed)?;
+        Ok(())
+    }
+
     /// Queue the next file for gapless playback.
     /// When the current track finishes, the decoder seamlessly transitions
     /// to the queued file without any gap. Only one file can be queued at a time.

@@ -2360,6 +2360,19 @@ pub struct RecordingWorkflowTranslations {
 }
 
 impl RecordingWorkflowTranslations {
+    /// Return localized headers for the speaker routing table.
+    pub fn speaker_columns(self) -> [&'static str; 4] {
+        match self.language {
+            Language::English => ["Speaker", "Name", "Type", "Channel"],
+            Language::French => ["Enceinte", "Nom", "Type", "Canal"],
+            Language::German => ["Lautsprecher", "Name", "Typ", "Kanal"],
+            Language::Spanish => ["Altavoz", "Nombre", "Tipo", "Canal"],
+            Language::Pseudo => Self::for_language(Language::English)
+                .speaker_columns()
+                .map(pseudo_static),
+        }
+    }
+
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),

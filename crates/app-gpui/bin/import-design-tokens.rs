@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use clap::Parser;
 use gpui_design_tools::{DesignTokenFormat, import_design_tokens_from_path};
 use serde_json::Value;
@@ -57,9 +57,6 @@ fn main() -> Result<()> {
         .with_context(|| format!("parse {}", tokens_path.display()))?;
 
     let theme_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or_else(|| anyhow!("parent of crates/sotf-tools"))?
-        .join("app-gpui")
         .join("app")
         .join("theme");
 

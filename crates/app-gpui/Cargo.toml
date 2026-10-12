@@ -49,6 +49,7 @@ hound = { workspace = true, optional = true }
 gpui = { workspace = true }
 gpui-builder = { workspace = true }
 gpui-design = { workspace = true, features = ["gpui"] }
+gpui-design-tools = { workspace = true }
 gpui-keybinding = { workspace = true }
 gpui-audio-kit = { workspace = true }
 gpui-ui-kit = { workspace = true }
@@ -185,6 +186,14 @@ path = "main.rs"
 name = "plugin_visual_review"
 path = "bin/plugin_visual_review.rs"
 required-features = ["visual-qa"]
+
+[[bin]]
+name = "export-design-tokens"
+path = "bin/export-design-tokens.rs"
+
+[[bin]]
+name = "import-design-tokens"
+path = "bin/import-design-tokens.rs"
 
 [dev-dependencies]
 crossterm = { workspace = true }

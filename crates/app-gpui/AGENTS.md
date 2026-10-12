@@ -1,4 +1,4 @@
-# app-gpui (lib: `sotf_audio_player_gpui`, binary: `sotf-desktop`)
+# app-gpui (lib: `sotf_audio_player_gpui`, binaries: `sotf-desktop`, `export-design-tokens`, `import-design-tokens`)
 
 GPUI-based desktop music player with GPU-accelerated rendering.
 
@@ -41,6 +41,15 @@ Extensive testing: e2e, negative, proptest, component, lifecycle, event_integrat
 ```bash
 cargo run --bin sotf-desktop --release
 ```
+
+## Design-token round-trip
+
+`export-design-tokens` writes the app themes to
+`design-tokens/tokens.json` (Tokens Studio format);
+`import-design-tokens` regenerates `app/theme/*.rs` from it. Both accept
+`--toolkit` to forward generic DesignSystem token work to
+`gpui-design-tools` instead. The binaries are dev/CI-only and are not
+part of `just dist` artifacts.
 
 ## Design-token drift guard
 

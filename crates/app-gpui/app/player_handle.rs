@@ -586,6 +586,14 @@ impl PlayerHandle {
         self.enqueue_result("set_mute", move |player| player.set_mute(muted))
     }
 
+    /// Queue processing bypass on the player actor without rebuilding the rack.
+    ///
+    /// # Errors
+    /// Returns an error if the actor cannot accept the command.
+    pub fn set_bypass(&self, bypassed: bool) -> Result<(), PlayerCommandError> {
+        self.enqueue_result("set_bypass", move |player| player.set_bypass(bypassed))
+    }
+
     pub fn cancel_next(&self) -> Result<(), PlayerCommandError> {
         self.enqueue_result("cancel_next", |player| player.cancel_next())
     }

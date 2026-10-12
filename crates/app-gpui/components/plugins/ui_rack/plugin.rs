@@ -2868,7 +2868,13 @@ impl PlayerView {
                             cx.listener(move |view, _: &MouseUpEvent, _, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.toggle_chain_bypass();
-                                    state.app.update_level_meter_groups();
+                                    let bypass = state.app.plugin_state.chain_state.chain_bypass;
+                                    if let Err(error) = state.player.set_bypass(bypass) {
+                                        state.app.toggle_chain_bypass();
+                                        state.app.ui_state.toast_message = Some(
+                                            crate::app::ToastMessage::error(error.to_string()),
+                                        );
+                                    }
                                 });
                                 cx.notify();
                             }),

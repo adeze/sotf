@@ -248,7 +248,7 @@ fn main() -> Result<()> {
 fn workspace_root() -> PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("parent of crates/sotf-tools")
+        .expect("parent of crates/app-gpui")
         .parent()
         .expect("workspace root")
         .to_path_buf()

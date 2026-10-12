@@ -2,7 +2,6 @@
 members = [
     "crates/sotf-dev-api",
     "crates/sotf-player",
-    "crates/sotf-tools",
     "crates/sotf-dev-driver",
     "crates/app-cli",
     "crates/app-gpui",
@@ -103,7 +102,7 @@ rand_chacha = "0.10.0"
 num_cpus = "1.17"
 regex = "1.12"
 rfd = { version = "0.17.2", package = "sotf-rfd", git = "https://github.com/pierreaubert/sotf-3rdparties" }
-# bundled SQLite is enabled per-app (app-gpui, app-tui, app-cli, sotf-tools);
+# bundled SQLite is enabled per-app (app-gpui, app-tui, app-cli);
 # library crates take the workspace dep bare so dev `cargo check -p <lib>`
 # doesn't pay for the C compile. Feature unification re-enables `bundled`
 # automatically when a shipping app is in the build graph.

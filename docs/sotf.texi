@@ -985,7 +985,6 @@ crates/
   sotf-player/             playback business logic (shared lib)
   sotf-plugins/            host + plugin crates + bridges
   sotf-server/             headless server
-  sotf-tools/              standalone tools (sofa-to-sqlite, etc.)
   sotf-types/              shared types
   systemwide/              macOS system-wide daemon + menubar
 @end example
@@ -1100,8 +1099,11 @@ Menubar configuration app.
 @section Tools and Helpers
 
 @table @code
-@item sotf-tools
-Standalone tools (e.g. @code{sofa-to-sqlite}).
+@item Developer tools
+Standalone tools live with their owning crates: @code{generate-audio-tests}
+(@code{math-dsp}), @code{sofa-to-sqlite} (@code{sofa-reader}),
+@code{generate-upmixer-golden} (@code{sotf-plugin-upmixer}), and the
+design-token import/export pair (@code{sotf-gpui}).
 @item sotf-dev-driver
 Developer harness for plugin / engine tests.
 @item sotf-docs-gen

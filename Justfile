@@ -24,7 +24,7 @@ import 'builds/ios.just'
 import 'builds/tvos.just'
 import 'builds/dev-driver.just'
 
-import 'crates/sotf-tools/Justfile'
+import 'builds/downloads.just'
 # Engine/plugin recipes moved with their crates to ../sotf-daw (see
 # sotf-daw/Justfile). Run those from the sotf-daw checkout.
 

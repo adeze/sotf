@@ -1,0 +1,24 @@
+# 2026-10-10: Playback configuration in components/recording/config/misc.rs:137
+# stacked device/sample-rate/speaker settings and repeated labels inside every
+# speaker row. Narrow controls could also overlap the next field's label.
+# The fix at misc.rs:137 and misc.rs:1319 uses two form rows and a routing table.
+# Run from sotf with a fresh QA app (no capture or playback is started):
+#   qa_dir=$(mktemp -d)
+#   cargo run -p sotf-gpui --features dev-api --bin sotf-desktop -- --qa "$qa_dir" &
+#   cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/recording_compact_playback.scn -v
+
+focus recording
+assert recording.step == "Config"
+wait_idle 500ms
+assert_visible recording.playback.routing
+assert_visible recording.playback.channel.0
+assert_visible recording.playback.channel.1
+assert_within recording.playback.channel.0 recording.playback.routing
+assert_non_overlapping recording.playback.channel.0 recording.playback.channel.1
+assert_accessible table Speaker Configuration:
+screenshot recording-compact
+resize 900 750
+wait_idle 500ms
+assert_visible recording.playback.channel.0
+assert_visible recording.playback.channel.1
+screenshot recording-compact-narrow

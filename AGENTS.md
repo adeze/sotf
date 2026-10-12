@@ -93,8 +93,12 @@ GPUI, TUI, CLI, iOS, and tvOS.
   — shared test contracts (consumed via `../sotf-daw` path dependencies).
 - `crates/sotf-dev-api/`, `crates/sotf-dev-driver/` — deterministic UI and
   end-to-end driving infrastructure.
-- `crates/sotf-tools/`, `crates/sotf-docs-gen/`, `scripts/` — maintenance and
-  generation tools.
+- `crates/sotf-docs-gen/`, `scripts/` — maintenance and generation
+  tools. (The former `crates/sotf-tools/` binaries now live with their
+  owners: `generate-audio-tests` in `../math-audio/crates/math-dsp`,
+  `sofa-to-sqlite` in `../sofa-reader`, `generate-upmixer-golden` in
+  `../sotf-daw/.../sotf-plugin-upmixer`, and the design-token
+  import/export pair in `crates/app-gpui`.)
 - `crates/3rdparties/` — vendored/forked upstream code. Treat changes here as
   upstream-maintenance work and keep them isolated.
 - `data_generated/`, `dist/`, `target/`, `target-static/`, generated Xcode
