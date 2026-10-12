@@ -34,6 +34,9 @@ pub struct RecordingTuiState {
     pub multi_capture: MultiCaptureTuiState,
     /// Shared, UI-agnostic Recording wizard domain model.
     pub model: RecordingScreenModel,
+    /// Optional acoustic profile for hardware-free end-to-end capture scenarios.
+    #[cfg(feature = "dev-api")]
+    pub virtual_capture_profile: Option<String>,
 
     /// When true, the wizard step tab bar has focus (Left/Right change step).
     pub step_tab_focused: bool,
@@ -85,6 +88,8 @@ impl Default for RecordingTuiState {
                 save_name: String::new(),
                 ..Default::default()
             },
+            #[cfg(feature = "dev-api")]
+            virtual_capture_profile: None,
             step_tab_focused: false,
             available_playback_devices: Vec::new(),
             available_recording_devices: Vec::new(),

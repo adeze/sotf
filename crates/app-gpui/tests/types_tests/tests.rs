@@ -1245,6 +1245,7 @@ fn workflow_recording_result() -> RecordingResult {
         clarity_c80_db: None,
         spectrogram_db: None,
         quality: None,
+        stimulus_config: None,
     }
 }
 

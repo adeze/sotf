@@ -47,6 +47,9 @@ pub(super) struct ScenarioConfig {
     pub(super) seed_demo_audio: bool,
     #[serde(default)]
     pub(super) require_virtual_audio: bool,
+    /// Route engine playback into an isolated in-process sink for this scenario.
+    #[serde(default)]
+    pub(super) mock_playback: bool,
     /// Explicit substrings permitted to match the clean-log gate. Keep this
     /// narrow and scenario-specific so genuine regressions remain visible.
     #[serde(default)]
@@ -65,6 +68,8 @@ pub(super) struct ScenarioConfig {
 pub(super) struct FakeRecordingConfig {
     /// Optional RoomConfig JSON imported through the production completion path.
     pub(super) import_json: Option<String>,
+    /// Acoustic fixture profile passed to the real recording/analyze path.
+    pub(super) profile: Option<String>,
     #[serde(default = "default_fake_channels")]
     pub(super) channels: usize,
     #[serde(default = "default_fake_points")]

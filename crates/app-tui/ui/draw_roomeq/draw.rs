@@ -1,4 +1,58 @@
+use super::super::keybinding_catalog::{TuiKeyContext, workflow_focus_hints};
 use super::super::*;
+
+pub(crate) fn capture_level_review_notes(levels: &[(String, usize, f32)]) -> Vec<String> {
+    let mut sorted_levels = levels
+        .iter()
+        .map(|(_, _, level)| *level)
+        .collect::<Vec<_>>();
+    sorted_levels.sort_by(f32::total_cmp);
+    let (Some(min_dbfs), Some(max_dbfs)) = (sorted_levels.first(), sorted_levels.last()) else {
+        return Vec::new();
+    };
+    if *max_dbfs - *min_dbfs <= 0.01 {
+        return Vec::new();
+    }
+
+    let levels_by_take = levels
+        .iter()
+        .map(|(speaker, take, level)| format!("{speaker} take {take}: {level:.1} dBFS"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    vec![
+        format!(
+            "Capture levels varied by take ({min_dbfs:.1} to {max_dbfs:.1} dBFS); response magnitude is reference-normalized, while THD/SNR depend on level."
+        ),
+        format!("Per-take levels: {levels_by_take}"),
+    ]
+}
+
+#[cfg(test)]
+mod capture_level_review_tests {
+    use super::capture_level_review_notes;
+
+    #[test]
+    fn mixed_levels_explain_reference_normalization_and_list_each_take() {
+        let notes =
+            capture_level_review_notes(&[("L".to_string(), 1, -6.0), ("R".to_string(), 1, -9.0)]);
+
+        assert_eq!(notes.len(), 2);
+        assert!(notes[0].contains("-9.0 to -6.0 dBFS"));
+        assert!(notes[0].contains("reference-normalized"));
+        assert!(notes[0].contains("THD/SNR depend on level"));
+        assert!(notes[1].contains("L take 1: -6.0 dBFS"));
+        assert!(notes[1].contains("R take 1: -9.0 dBFS"));
+    }
+
+    #[test]
+    fn uniform_or_missing_capture_levels_need_no_variation_note() {
+        assert!(capture_level_review_notes(&[]).is_empty());
+        assert!(
+            capture_level_review_notes(&[("L".to_string(), 1, -6.0), ("R".to_string(), 1, -6.0),])
+                .is_empty()
+        );
+    }
+}
 
 pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
@@ -56,17 +110,54 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_type(step_tab_border)
                 .border_style(Style::default().fg(step_tab_border_color))
-                .title(i18n.ui("Room EQ")),
+                .title(format!(
+                    "{} · {}",
+                    i18n.ui("Room EQ"),
+                    if s.step_tab_focused {
+                        i18n.dynamic("STEP TABS FOCUSED".to_string())
+                    } else {
+                        i18n.dynamic("step tabs".to_string())
+                    }
+                )),
         )
         .select(s.model.step.index())
         .highlight_style(Style::default().fg(app.theme.accent_primary));
     f.render_widget(tabs, outer[0]);
 
     // Content wrapper with focus-aware border
+    let focus_context = if s.editing_file_path && s.model.step == RoomEqStep::LoadData {
+        TuiKeyContext::RoomEqPathEdit
+    } else if s.step_tab_focused {
+        TuiKeyContext::WorkflowStepTabs
+    } else {
+        TuiKeyContext::RoomEqContent
+    };
+    let focus_hint = workflow_focus_hints(focus_context)
+        .iter()
+        .map(|hint| {
+            format!(
+                "{}={}",
+                hint.key,
+                i18n.dynamic(hint.description.to_string())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let focus_label = if s.editing_file_path && s.model.step == RoomEqStep::LoadData {
+        "FILE PATH EDIT FOCUSED"
+    } else if s.step_tab_focused {
+        "STEP TABS FOCUSED"
+    } else {
+        "CONTENT FOCUSED"
+    };
     let content_wrapper = Block::default()
         .borders(Borders::ALL)
         .border_type(content_border)
-        .border_style(Style::default().fg(content_border_color));
+        .border_style(Style::default().fg(content_border_color))
+        .title(format!(
+            " {} · {focus_hint} ",
+            i18n.dynamic(focus_label.to_string())
+        ));
     f.render_widget(content_wrapper, outer[1]);
     let content = Rect {
         x: outer[1].x + 1,
@@ -81,7 +172,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(3), // file path
-                    Constraint::Length(3), // status/error
+                    Constraint::Length(5), // status and source quality evidence
                     Constraint::Min(3),    // loaded channels
                     Constraint::Length(1), // help
                 ])
@@ -116,16 +207,105 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     );
                 f.render_widget(err_para, inner[1]);
             } else if !s.model.channel_measurements.is_empty() {
-                let status = Paragraph::new(i18n.dynamic(format!(
-                    " {} channels loaded",
+                let (passed, review, unknown) = quality_review_counts(&s.quality_review_entries);
+                let mut status_lines = vec![format!(
+                    "{} channels loaded • quality: {passed} pass, {review} review, {unknown} unknown",
                     s.model.channel_measurements.len()
-                )))
-                .style(Style::default().fg(app.theme.accent_success))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(i18n.ui("Status")),
-                );
+                )];
+                if let Some(warning) = &s.quality_sidecar_warning {
+                    status_lines.push(warning.clone());
+                }
+                let capture_levels = s
+                    .quality_review_entries
+                    .iter()
+                    .filter_map(|entry| {
+                        let level = entry.stimulus_config.as_ref()?.level_dbfs?;
+                        Some((
+                            entry.source.speaker.clone(),
+                            entry.source.measurement_index + 1,
+                            level,
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                status_lines.extend(capture_level_review_notes(&capture_levels));
+                for entry in s
+                    .quality_review_entries
+                    .iter()
+                    .filter(|entry| {
+                        !entry
+                            .quality
+                            .as_ref()
+                            .is_some_and(|quality| quality.trustworthy)
+                    })
+                    .take(2)
+                {
+                    let driver = entry
+                        .source
+                        .driver_index
+                        .map(|index| format!(" / driver {}", index + 1))
+                        .unwrap_or_default();
+                    let label = entry
+                        .source_label
+                        .as_deref()
+                        .map(|name| format!(" ({name})"))
+                        .unwrap_or_default();
+                    let level = entry
+                        .stimulus_config
+                        .as_ref()
+                        .and_then(|config| config.level_dbfs)
+                        .map(|level| format!(" · capture {level:.1} dBFS"))
+                        .unwrap_or_default();
+                    let verdict = entry.quality.as_ref().map_or_else(
+                        || "quality evidence unavailable (unknown)".to_string(),
+                        sotf_audio_player::recording_helpers::take_verdict_text,
+                    );
+                    status_lines.push(format!(
+                        "{}{} / take {}{}{}: {verdict}",
+                        entry.source.speaker,
+                        driver,
+                        entry.source.measurement_index + 1,
+                        label,
+                        level
+                    ));
+                }
+                if status_lines.len() == 1
+                    && let Some(entry) = s.quality_review_entries.first()
+                {
+                    let label = entry
+                        .source_label
+                        .as_deref()
+                        .map(|name| format!(" ({name})"))
+                        .unwrap_or_default();
+                    let level = entry
+                        .stimulus_config
+                        .as_ref()
+                        .and_then(|config| config.level_dbfs)
+                        .map(|level| format!(" · capture {level:.1} dBFS"))
+                        .unwrap_or_default();
+                    let verdict = entry.quality.as_ref().map_or_else(
+                        || "quality evidence unavailable (unknown)".to_string(),
+                        sotf_audio_player::recording_helpers::take_verdict_text,
+                    );
+                    status_lines.push(format!(
+                        "{} / take {}{}{}: {verdict}",
+                        entry.source.speaker,
+                        entry.source.measurement_index + 1,
+                        label,
+                        level
+                    ));
+                }
+                let status = Paragraph::new(i18n.dynamic(status_lines.join("\n")))
+                    .style(Style::default().fg(if unknown > 0 || review > 0 {
+                        app.theme.accent_warning
+                    } else {
+                        app.theme.accent_success
+                    }))
+                    .wrap(ratatui::widgets::Wrap { trim: true })
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Status and measurement quality")),
+                    );
                 f.render_widget(status, inner[1]);
             } else {
                 let status = Paragraph::new(i18n.ui(" No data loaded"))
@@ -191,7 +371,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 if s.editing_file_path {
                     " Enter=confirm  F2=browse  Tab=autocomplete  Esc=cancel"
                 } else {
-                    " Enter=browse for JSON  Tab=next step"
+                    " e=edit path  Enter=browse for JSON  Tab=next step"
                 }
                 .to_string(),
             );
@@ -930,6 +1110,27 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             }
         }
     }
+}
+
+fn quality_review_counts(
+    entries: &[crate::app::RoomEqQualityReviewEntry],
+) -> (usize, usize, usize) {
+    entries
+        .iter()
+        .fold((0, 0, 0), |(passed, review, unknown), entry| {
+            match entry.quality.as_ref() {
+                None => (passed, review, unknown + 1),
+                Some(quality) if quality.trustworthy => (passed + 1, review, unknown),
+                Some(quality)
+                    if sotf_audio_player::recording_helpers::take_verdict_text(quality)
+                        .to_ascii_lowercase()
+                        .contains("unknown") =>
+                {
+                    (passed, review, unknown + 1)
+                }
+                Some(_) => (passed, review + 1, unknown),
+            }
+        })
 }
 
 /// Render the "Delay" wizard step — simplified to just a read-only table

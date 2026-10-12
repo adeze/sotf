@@ -4,8 +4,8 @@ use super::consts::SPL_FIELD_OUT_CH;
 use super::consts::SPL_FIELD_REF_FREQ;
 use super::consts::SPL_FIELD_REPORTED;
 use super::consts::SPL_FIELD_TONE_AMP;
-use super::misc::init_recording_channels;
 use super::misc::update_channel_mappings_for_config;
+use super::misc::{init_recording_channels, sync_channel_sweep_range};
 use crate::app::App;
 use crate::app::RecordingField;
 use sotf_audio_player::recording_helpers::nudge_num_sweeps;
@@ -116,10 +116,17 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
             };
             app.recording.model.signal_type = types[new_idx];
         }
-        Duration => {
-            app.recording.model.signal_duration_secs =
-                (app.recording.model.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
-        }
+        Duration => match app.recording.model.signal_type {
+            RecordingSignalType::Sweep => {
+                app.recording.model.bass_octave_duration_s =
+                    (app.recording.model.bass_octave_duration_s + delta as f32).clamp(1.0, 10.0);
+            }
+            RecordingSignalType::Mls => {}
+            _ => {
+                app.recording.model.signal_duration_secs =
+                    (app.recording.model.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
+            }
+        },
         Level => {
             app.recording.model.signal_level_db =
                 (app.recording.model.signal_level_db + delta as f32).clamp(-40.0, 0.0);
@@ -127,10 +134,12 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
         SweepStart => {
             app.recording.model.sweep_start_freq =
                 (app.recording.model.sweep_start_freq + delta as f32 * 10.0).clamp(10.0, 1000.0);
+            sync_channel_sweep_range(app);
         }
         SweepEnd => {
             app.recording.model.sweep_end_freq =
                 (app.recording.model.sweep_end_freq + delta as f32 * 1000.0).clamp(1000.0, 24000.0);
+            sync_channel_sweep_range(app);
         }
         NumRecordingChannels => {
             let cur = app.recording.model.recording_config.num_channels as i32;

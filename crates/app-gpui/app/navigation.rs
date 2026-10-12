@@ -121,7 +121,10 @@ impl App {
                 let step = recording.step;
                 if forward {
                     if step == RecordingStep::Config {
-                        recording.init_channel_recordings();
+                        let had_takes = recording.has_captured_takes();
+                        if !had_takes || !recording.capture_structure_is_current() {
+                            recording.init_channel_recordings();
+                        }
                     }
                     if step == RecordingStep::Saving {
                         self.ui_state.current_screen = self.ui_state.navigation.last_screen;
@@ -131,6 +134,10 @@ impl App {
                 } else if step == RecordingStep::Config {
                     self.ui_state.current_screen = self.ui_state.navigation.last_screen;
                 } else if let Some(previous) = step.previous() {
+                    if previous == RecordingStep::Config && recording.has_captured_takes() {
+                        recording.config_change_confirmation_pending = true;
+                        return true;
+                    }
                     recording.step = previous;
                 }
             }
@@ -186,6 +193,21 @@ impl App {
             self.ui_state.toast_message = Some(super::types::ToastMessage::error(error));
         }
         true
+    }
+
+    /// Open the recording settings after the footer warning has been confirmed.
+    pub fn confirm_recording_settings_edit(&mut self) {
+        let recording = &mut self.measurement_state.recording_state;
+        if recording.config_change_confirmation_pending && recording.has_captured_takes() {
+            recording.config_change_confirmation_pending = false;
+            recording.step = RecordingStep::Config;
+        }
+    }
+
+    pub fn cancel_recording_settings_edit(&mut self) {
+        self.measurement_state
+            .recording_state
+            .config_change_confirmation_pending = false;
     }
 
     pub fn select_next_album(&mut self) {

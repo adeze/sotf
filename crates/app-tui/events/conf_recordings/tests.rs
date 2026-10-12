@@ -236,6 +236,8 @@ fn right_on_config_adjusts_field() {
 
     let mut app = make_app();
     app.recording.selected_field = 4; // signal_duration_secs (numerical)
+    app.recording.model.signal_type =
+        sotf_audio_player::recording_types::RecordingSignalType::WhiteNoise;
     let before = app.recording.model.signal_duration_secs;
     let right_key = KeyEvent {
         code: KeyCode::Right,
@@ -250,6 +252,99 @@ fn right_on_config_adjusts_field() {
         app.recording.model.step,
         sotf_audio_player::recording_types::RecordingStep::Config
     );
+}
+
+#[test]
+fn duration_control_edits_octave_sweep_precision_when_sweep_is_selected() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    let mut app = make_app();
+    app.recording.selected_field = 4;
+    app.recording.model.signal_type =
+        sotf_audio_player::recording_types::RecordingSignalType::Sweep;
+    let generic_duration = app.recording.model.signal_duration_secs;
+    let bass_duration = app.recording.model.bass_octave_duration_s;
+    handle_recording_keys(
+        &mut app,
+        KeyEvent {
+            code: KeyCode::Right,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        },
+    );
+
+    assert_eq!(app.recording.model.signal_duration_secs, generic_duration);
+    assert_eq!(
+        app.recording.model.bass_octave_duration_s,
+        bass_duration + 1.0
+    );
+}
+
+#[test]
+fn duration_control_is_read_only_for_sequence_defined_mls() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    let mut app = make_app();
+    app.recording.selected_field = 4;
+    app.recording.model.signal_type = sotf_audio_player::recording_types::RecordingSignalType::Mls;
+    let generic_duration = app.recording.model.signal_duration_secs;
+    let bass_duration = app.recording.model.bass_octave_duration_s;
+    let key = |code| KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    };
+
+    handle_recording_keys(&mut app, key(KeyCode::Right));
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+
+    assert_eq!(app.recording.model.signal_duration_secs, generic_duration);
+    assert_eq!(app.recording.model.bass_octave_duration_s, bass_duration);
+    assert!(!app.recording.editing_value);
+}
+
+#[test]
+fn visible_sweep_edits_update_the_channel_range_used_by_capture() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    let mut app = make_app();
+    init_recording_channels(&mut app);
+    let key = |code| KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    };
+
+    app.recording.selected_field = 6;
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+    for _ in 0..2 {
+        handle_recording_keys(&mut app, key(KeyCode::Backspace));
+    }
+    for character in ['5', '0', '0'] {
+        handle_recording_keys(&mut app, key(KeyCode::Char(character)));
+    }
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+
+    app.recording.selected_field = 7;
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+    for _ in 0..5 {
+        handle_recording_keys(&mut app, key(KeyCode::Backspace));
+    }
+    for character in ['8', '0', '0', '0'] {
+        handle_recording_keys(&mut app, key(KeyCode::Char(character)));
+    }
+    handle_recording_keys(&mut app, key(KeyCode::Enter));
+
+    let selected = &app.recording.model.channel_recordings[0];
+    assert_eq!(app.recording.model.sweep_start_freq, 500.0);
+    assert_eq!(app.recording.model.sweep_end_freq, 8000.0);
+    // start_recording_channel forwards these selected per-channel values to
+    // prepare_measurement_signal and the capture backend.
+    assert_eq!(selected.sweep_start_freq, 500.0);
+    assert_eq!(selected.sweep_end_freq, 8000.0);
 }
 
 fn done_recording_result(mag_db: f32) -> RecordingResult {
@@ -271,6 +366,7 @@ fn done_recording_result(mag_db: f32) -> RecordingResult {
         clarity_c80_db: None,
         spectrogram_db: None,
         quality: None,
+        stimulus_config: None,
     }
 }
 
@@ -451,7 +547,10 @@ fn poll_recording_sets_and_clears_low_level_warning() {
     // Very low transfer-function level → warning set and surfaced.
     *slot.lock().unwrap() = Some((
         app.recording.model.capture_generation,
-        Ok((vec![(0, done_recording_result(-80.0))], None)),
+        Ok((
+            vec![(0, result_with_quality(-80.0, quality_summary(true, 1.0)))],
+            None,
+        )),
     ));
     assert!(poll_recording(&mut app));
     assert_eq!(
@@ -479,7 +578,10 @@ fn poll_recording_sets_and_clears_low_level_warning() {
     app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
     *slot.lock().unwrap() = Some((
         app.recording.model.capture_generation,
-        Ok((vec![(0, done_recording_result(-10.0))], None)),
+        Ok((
+            vec![(0, result_with_quality(-10.0, quality_summary(true, 1.0)))],
+            None,
+        )),
     ));
     assert!(poll_recording(&mut app));
     assert!(app.recording.model.noise_floor_warning.is_none());
@@ -583,6 +685,7 @@ fn quality_summary(
         } else {
             vec!["low coherence".to_string()]
         },
+        findings: Vec::new(),
         mean_coherence: Some(0.71),
         median_snr_db: Some(18.2),
         clip_fraction: 0.0,
@@ -731,7 +834,10 @@ fn poll_recording_discards_stale_generation_result() {
     // The in-flight capture's own result (current generation) is applied.
     *slot.lock().unwrap() = Some((
         app.recording.model.capture_generation,
-        Ok((vec![(0, done_recording_result(-10.0))], None)),
+        Ok((
+            vec![(0, result_with_quality(-10.0, quality_summary(true, 1.0)))],
+            None,
+        )),
     ));
     assert!(poll_recording(&mut app));
     assert_eq!(

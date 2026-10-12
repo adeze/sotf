@@ -9,5 +9,6 @@ size = "1440x900"
 name = "practice-lifecycle"
 path = "crates/sotf-dev-driver/scenarios/practice_lifecycle.scn"
 seed_demo_audio = true
+mock_playback = true
 timeout = "60s"
-tags = ["listening", "practice", "confirmation", "keyboard", "ui"]
+tags = ["listening", "practice", "confirmation", "keyboard", "playback", "hardware-free", "ui"]

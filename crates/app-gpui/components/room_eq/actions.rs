@@ -26,6 +26,27 @@ impl PlayerView {
                 return;
             }
 
+            let source_quality = state
+                .app
+                .measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter(|recording| {
+                    recording.state == crate::app::types::ChannelRecordingState::Done
+                })
+                .filter_map(|recording| {
+                    recording.result.as_ref().map(|result| {
+                        let verdict = result.quality.as_ref().map_or_else(
+                            || "quality evidence unavailable; review status is unknown".to_owned(),
+                            sotf_audio_player::recording_helpers::take_verdict_text,
+                        );
+                        format!("{}: {verdict}", recording.channel_name)
+                    })
+                })
+                .collect::<Vec<_>>()
+                .join(" · ");
+
             if let Err(error) = state
                 .app
                 .measurement_state
@@ -130,6 +151,14 @@ impl PlayerView {
                     "Successfully loaded {} channel(s) from recording session",
                     channel_count
                 );
+                if !source_quality.is_empty() {
+                    state
+                        .app
+                        .measurement_state
+                        .room_eq_state
+                        .status_message
+                        .push_str(&format!(" · Take quality: {source_quality}"));
+                }
                 state.app.measurement_state.room_eq_state.error_message = None;
             }
         });

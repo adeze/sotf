@@ -1,0 +1,19 @@
+# Low-SNR samples must preserve the measured response and quality report while
+# stopping in the normal user review state.
+focus       recording
+assert      recording.step == "Capture"
+click       recording.capture_all
+wait_until recording.review_count == 1 timeout=30s
+assert      recording.review_count == 1
+assert      recording.quality_count == 1
+assert      recording.take.0.state == "ReviewNeeded"
+assert      recording.take.0.evidence_complete == true
+assert      recording.status_severity == "Warning"
+screenshot  recording-low-snr-review
+click       recording.accept_take_0
+wait_until  recording.review_count == 1 timeout=30s
+assert      recording.take.1.quality_present == true
+scroll      recording.content -600
+click       recording.accept_take_1
+wait_until  recording.done_count == 2 timeout=30s
+assert      recording.done_count == 2

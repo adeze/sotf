@@ -16,6 +16,7 @@ use super::post::post_hover;
 use super::post::post_input;
 use super::post::post_key;
 use super::post::post_qa_headphone_discovery_fixture;
+use super::post::post_qa_playback_output;
 use super::post::post_qa_recording_fake_capture;
 use super::post::post_qa_room_eq;
 use super::post::post_qa_room_eq_export_json;
@@ -29,6 +30,7 @@ use super::post::post_screenshot;
 use super::post::post_scroll;
 use super::post::post_text;
 use super::qa::qa_headphone_discovery_fixture;
+use super::qa::qa_playback_output;
 use super::qa::qa_recording_fake_capture;
 use super::qa::qa_room_eq;
 use super::qa::qa_room_eq_export_json;
@@ -54,6 +56,7 @@ use sotf_dev_api::{CoordinateInput, PointerPhase};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
+use std::time::{Duration, Instant};
 
 static SNAPSHOT_REVISION: std::sync::OnceLock<std::sync::Mutex<(String, u64)>> =
     std::sync::OnceLock::new();
@@ -240,6 +243,42 @@ pub(super) fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut
                 Err(e) => DevReply::err(format!("{e:#}")),
             };
             let _ = reply.send(dev_reply);
+        }
+        DevCommand::QaPlaybackOutput { payload, reply } => {
+            let result = cx.update(|cx| qa_playback_output(payload, window, cx));
+            match result {
+                Ok(receipt) => {
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    cx.spawn(async move |cx: &mut AsyncApp| {
+                        loop {
+                            if let Some(result) = receipt.poll() {
+                                let dev_reply = match result {
+                                    Ok(()) => DevReply::ok(),
+                                    Err(failure) => DevReply::err(format!(
+                                        "{}: {}",
+                                        failure.label, failure.error
+                                    )),
+                                };
+                                let _ = reply.send(dev_reply);
+                                break;
+                            }
+                            if Instant::now() >= deadline {
+                                let _ = reply.send(DevReply::err(
+                                    "timed out waiting for playback output configuration",
+                                ));
+                                break;
+                            }
+                            cx.background_executor()
+                                .timer(Duration::from_millis(10))
+                                .await;
+                        }
+                    })
+                    .detach();
+                }
+                Err(error) => {
+                    let _ = reply.send(DevReply::err(format!("{error:#}")));
+                }
+            }
         }
         DevCommand::QaHeadphoneDiscoveryFixture { payload, reply } => {
             let result = cx.update(|cx| qa_headphone_discovery_fixture(payload, window, cx));
@@ -1889,6 +1928,7 @@ fn dispatch_metadata_action(
             let (name, channels) = match mode {
                 "first" => ("practice-source-mono.wav", 1),
                 "second" => ("practice-source-stereo.wav", 2),
+                "practice" => ("practice-source-stereo.wav", 2),
                 "quad" => ("practice-source-quad.wav", 4),
                 "surround6" => ("practice-source-surround6.wav", 6),
                 "surround12" => ("practice-source-surround12.wav", 12),
@@ -1938,6 +1978,8 @@ fn dispatch_metadata_action(
                 let comparison = mode.starts_with("comparison");
                 let seconds = if comparison {
                     10
+                } else if mode == "practice" {
+                    5
                 } else if mode.starts_with("surround") {
                     30
                 } else {
@@ -2362,6 +2404,10 @@ pub(super) fn dispatch_request(req: &HttpRequest, tx: &mpsc::SyncSender<DevComma
                 let status = if r.ok { 200 } else { 500 };
                 (status, r.to_json())
             }),
+        ("POST", "/qa/playback/output") => post_qa_playback_output(&req.body, tx).map(|r| {
+            let status = if r.ok { 200 } else { 500 };
+            (status, r.to_json())
+        }),
         ("POST", "/qa/headphone/discovery-fixture") => {
             post_qa_headphone_discovery_fixture(&req.body, tx).map(|r| {
                 let status = if r.ok { 200 } else { 500 };

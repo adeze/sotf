@@ -8,11 +8,15 @@ size = "600x1000"
 name = "abx-results"
 path = "crates/sotf-dev-driver/scenarios/listening_abx_results.scn"
 timeout = "45s"
+mock_playback = true
+seed_demo_audio = true
 
 [[scenario]]
 name = "abx-results-german"
 path = "crates/sotf-dev-driver/scenarios/listening_abx_results.scn"
 timeout = "45s"
+mock_playback = true
+seed_demo_audio = true
 language = "German"
 theme = "Light"
 font_scale = 1.5

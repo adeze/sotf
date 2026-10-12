@@ -124,11 +124,125 @@ fn capabilities() -> Capabilities {
         "playback.volume".into(),
         "playback.is_playing".into(),
         "playback.muted".into(),
+        "playback.has_current_track".into(),
         "queue.length".into(),
         "queue.current_index".into(),
         "library.album_count".into(),
         "library.track_count".into(),
+        "library.visible_album_count".into(),
+        "library.selected_album_index".into(),
         "metadata.editor_open".into(),
+        "recording.review_needed_count".into(),
+        "recording.quality_results".into(),
+        "recording.thd_warning_count".into(),
+        "recording.max_thd_percent".into(),
+        "recording.unknown_finding_count".into(),
+        "recording.unknown_review_ack_required".into(),
+        "recording.unknown_review_explained".into(),
+        "recording.unknown_finding_count".into(),
+        "recording.quality_sidecar_count".into(),
+        "recording.quality_sidecar_results".into(),
+        "recording.quality_sidecar_unknown_count".into(),
+        "recording.save_success".into(),
+        "recording.save_error".into(),
+        "recording.persisted".into(),
+        "learning.session_active".into(),
+        "learning.config_trial_count".into(),
+        "learning.session_current_answered".into(),
+        "learning.session_trial_count".into(),
+        "learning.session_correct_count".into(),
+        "learning.session_answered".into(),
+        "learning.progress_total_attempts".into(),
+        "learning.progress_persisted".into(),
+        "learning.progress_accuracy".into(),
+        "learning.filtered_audition".into(),
+        "learning.selected_path".into(),
+        "ab_testing.step".into(),
+        "ab_testing.path_a_captured".into(),
+        "ab_testing.path_b_captured".into(),
+        "ab_testing.status".into(),
+        "ab_testing.session_active".into(),
+        "ab_testing.completed_trials".into(),
+        "ab_testing.abx_score".into(),
+        "ab_testing.prepared_duration_ms".into(),
+        "ab_testing.level_match_correction_db".into(),
+        "ab_testing.session_persisted".into(),
+        "ab_testing.runtime_active".into(),
+        "ab_testing.trial_mode".into(),
+        "ab_testing.blind_mode".into(),
+        "ab_testing.phase".into(),
+        "ab_testing.available_cue_count".into(),
+        "ab_testing.available_answer_count".into(),
+        "ab_testing.assignment_seed".into(),
+        "ab_testing.committed_x_path".into(),
+        "recording.step".into(),
+        "recording.step_tab_focused".into(),
+        "recording.editing_path".into(),
+        "recording.focus_context".into(),
+        "recording.selected_field".into(),
+        "recording.signal_duration_secs".into(),
+        "recording.bass_octave_duration_s".into(),
+        "recording.duration_control_kind".into(),
+        "recording.signal_type".into(),
+        "recording.effective_acquisition".into(),
+        "recording.effective_playback_duration_secs".into(),
+        "recording.duration_control_applies".into(),
+        "recording.stimulus_configs".into(),
+        "recording.stimulus_config_count".into(),
+        "recording.stimulus_levels_vary".into(),
+        "recording.stimulus_config_matches_current".into(),
+        "recording.signal_level_db".into(),
+        "recording.sweep_start_hz".into(),
+        "recording.sweep_end_hz".into(),
+        "recording.num_sweeps".into(),
+        "recording.selected_sweep_start_hz".into(),
+        "recording.selected_sweep_end_hz".into(),
+        "recording.all_done".into(),
+        "recording.done_count".into(),
+        "recording.channel_count".into(),
+        "recording.status".into(),
+        "recording.virtual_capture_profile".into(),
+        "recording.current_state".into(),
+        "roomeq.step".into(),
+        "roomeq.step_tab_focused".into(),
+        "roomeq.editing_file_path".into(),
+        "roomeq.focus_context".into(),
+        "roomeq.measurement_count".into(),
+        "roomeq.optimization_status".into(),
+        "roomeq.result_count".into(),
+        "roomeq.has_dsp_output".into(),
+        "roomeq.dsp_channel_count".into(),
+        "roomeq.filter_count".into(),
+        "roomeq.average_pre_score".into(),
+        "roomeq.average_post_score".into(),
+        "roomeq.status".into(),
+        "roomeq.error".into(),
+        "roomeq.file_path".into(),
+        "roomeq.export_path".into(),
+        "roomeq.export_exists".into(),
+        "roomeq.export_filter_count".into(),
+        "roomeq.export_filter_count_matches_result".into(),
+        "roomeq.result_filter_count".into(),
+        "roomeq.result_nonzero_gain_count".into(),
+        "roomeq.applied_eq_filter_count".into(),
+        "roomeq.applied_eq_nonzero_gain_count".into(),
+        "roomeq.applied_eq_filters".into(),
+        "roomeq.applied_eq_parameters_match_results".into(),
+        "roomeq.apply_status".into(),
+        "roomeq.apply_error".into(),
+        "roomeq.quality_sidecar_count".into(),
+        "roomeq.quality_sidecar_unknown_count".into(),
+        "roomeq.quality_review_entry_count".into(),
+        "roomeq.stimulus_configs".into(),
+        "roomeq.stimulus_config_count".into(),
+        "roomeq.capture_level_review_note".into(),
+        "roomeq.stimulus_configs_match_recording".into(),
+        "roomeq.quality_unknown_count".into(),
+        "roomeq.thd_warning_count".into(),
+        "roomeq.max_thd_percent".into(),
+        "roomeq.unknown_finding_count".into(),
+        "roomeq.quality_review_entries".into(),
+        "roomeq.quality_sidecar_warning".into(),
     ];
     capabilities.inputs = InputCapabilities {
         key: true,
@@ -140,10 +254,13 @@ fn capabilities() -> Capabilities {
         resize: true,
         remote: vec![],
     };
-    capabilities.fixtures = vec![FixtureCapability {
-        name: "seed".into(),
-        max_body_bytes: capabilities.limits.fixture_body_bytes,
-    }];
+    capabilities.fixtures = ["seed", "virtual-capture", "room-eq-ui", "playback-output"]
+        .into_iter()
+        .map(|name| FixtureCapability {
+            name: name.into(),
+            max_body_bytes: capabilities.limits.fixture_body_bytes,
+        })
+        .collect();
     capabilities
 }
 
@@ -180,6 +297,10 @@ fn dispatch_request(req: &HttpRequest, tx: &mpsc::SyncSender<DevCommand>) -> Str
             let status = if r.ok { 200 } else { 500 };
             (status, r.to_json())
         }),
+        ("POST", "/text") => post_text(&req.body, tx).map(|r| {
+            let status = if r.ok { 200 } else { 500 };
+            (status, r.to_json())
+        }),
         ("GET", "/health") => get_health(tx).map(|r| {
             let status = if r.value.is_ok() { 200 } else { 500 };
             (status, r.to_json())
@@ -192,7 +313,19 @@ fn dispatch_request(req: &HttpRequest, tx: &mpsc::SyncSender<DevCommand>) -> Str
             let status = if r.ok { 200 } else { 500 };
             (status, r.to_json())
         }),
-        ("POST", "/qa/seed") => post_qa_seed(tx).map(|r| {
+        ("POST", "/qa/seed") => post_qa_seed(&req.body, tx).map(|r| {
+            let status = if r.ok { 200 } else { 500 };
+            (status, r.to_json())
+        }),
+        ("POST", "/qa/capture/virtual") => post_qa_virtual_capture(&req.body, tx).map(|r| {
+            let status = if r.ok { 200 } else { 500 };
+            (status, r.to_json())
+        }),
+        ("POST", "/qa/room-eq/ui-fixture") => post_qa_room_eq_fixture(&req.body, tx).map(|r| {
+            let status = if r.ok { 200 } else { 500 };
+            (status, r.to_json())
+        }),
+        ("POST", "/qa/playback/output") => post_qa_playback_output(&req.body, tx).map(|r| {
             let status = if r.ok { 200 } else { 500 };
             (status, r.to_json())
         }),
@@ -307,6 +440,27 @@ fn post_key(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> 
     Ok(reply)
 }
 
+fn post_text(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
+    #[derive(serde::Deserialize)]
+    struct Payload {
+        text: String,
+    }
+    let payload: Payload =
+        serde_json::from_slice(body).map_err(|e| anyhow!("invalid JSON: {e}"))?;
+    if payload.text.chars().count() > 4096 {
+        return Err(anyhow!("text input exceeds 4096 characters"));
+    }
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::Text {
+        text: payload.text,
+        reply: reply_tx,
+    })
+    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api reply timeout"))
+}
+
 fn get_health(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Health { reply: reply_tx })
@@ -336,14 +490,88 @@ fn post_quit(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
     Ok(reply)
 }
 
-fn post_qa_seed(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
+fn post_qa_seed(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
+    #[derive(serde::Deserialize)]
+    struct Payload {
+        #[serde(default)]
+        library_dirs: Vec<std::path::PathBuf>,
+    }
+    let payload: Payload =
+        serde_json::from_slice(body).map_err(|e| anyhow!("invalid JSON: {e}"))?;
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-    tx.send(DevCommand::QaSeed { reply: reply_tx })
-        .map_err(|_| anyhow!("dev-api queue closed"))?;
+    tx.send(DevCommand::QaSeed {
+        library_dirs: payload.library_dirs,
+        reply: reply_tx,
+    })
+    .map_err(|_| anyhow!("dev-api queue closed"))?;
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
         .map_err(|_| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
+}
+
+fn post_qa_virtual_capture(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
+    #[derive(serde::Deserialize)]
+    struct Payload {
+        profile: String,
+        #[serde(default)]
+        output_directory: Option<std::path::PathBuf>,
+    }
+    let payload: Payload =
+        serde_json::from_slice(body).map_err(|e| anyhow!("invalid JSON: {e}"))?;
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::QaVirtualCapture {
+        profile: payload.profile,
+        output_directory: payload.output_directory,
+        reply: reply_tx,
+    })
+    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api reply timeout"))
+}
+
+fn post_qa_room_eq_fixture(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
+    #[derive(serde::Deserialize)]
+    struct Payload {
+        fixture_dir: std::path::PathBuf,
+        #[serde(default)]
+        invalid: Option<String>,
+    }
+    let payload: Payload =
+        serde_json::from_slice(body).map_err(|e| anyhow!("invalid JSON: {e}"))?;
+    if payload.invalid.is_some() {
+        return Ok(DevReply::err(
+            "TUI RoomEQ fixture accepts measurement files only; invalid state fixtures are unsupported",
+        ));
+    }
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::QaRoomEqFixture {
+        fixture_dir: payload.fixture_dir,
+        reply: reply_tx,
+    })
+    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api reply timeout"))
+}
+
+fn post_qa_playback_output(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
+    #[derive(serde::Deserialize)]
+    struct Payload {
+        enabled: bool,
+    }
+    let payload: Payload =
+        serde_json::from_slice(body).map_err(|e| anyhow!("invalid JSON: {e}"))?;
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::QaPlaybackOutput {
+        enabled: payload.enabled,
+        reply: reply_tx,
+    })
+    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api reply timeout"))
 }
 
 fn http_response(status: u16, body: &str) -> String {

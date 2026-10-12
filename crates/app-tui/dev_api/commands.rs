@@ -1,6 +1,7 @@
 //! Command + reply types exchanged between the HTTP server thread
 //! and the TUI main thread.
 
+use std::path::PathBuf;
 use std::sync::mpsc;
 
 /// Reply payload returned to the HTTP handler thread once a command
@@ -86,6 +87,11 @@ pub enum DevCommand {
         keystroke: String,
         reply: mpsc::SyncSender<DevReply>,
     },
+    /// Dispatch bounded text as individual character key events.
+    Text {
+        text: String,
+        reply: mpsc::SyncSender<DevReply>,
+    },
     /// Return an allow-listed protocol-v2 state snapshot.
     Snapshot {
         reply: mpsc::SyncSender<DevQueryReply>,
@@ -96,6 +102,25 @@ pub enum DevCommand {
     },
     /// Gracefully quit the app.
     Quit { reply: mpsc::SyncSender<DevReply> },
-    /// Seed demo audio into the library.
-    QaSeed { reply: mpsc::SyncSender<DevReply> },
+    /// Add QA audio directories, then start the production library scanner.
+    QaSeed {
+        library_dirs: Vec<PathBuf>,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Install a virtual capture backend for a hardware-free recording flow.
+    QaVirtualCapture {
+        profile: String,
+        output_directory: Option<PathBuf>,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Point the RoomEQ LoadData form at a copied measurement fixture.
+    QaRoomEqFixture {
+        fixture_dir: PathBuf,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Enable or disable the isolated test-only playback sink for this Player.
+    QaPlaybackOutput {
+        enabled: bool,
+        reply: mpsc::SyncSender<DevReply>,
+    },
 }

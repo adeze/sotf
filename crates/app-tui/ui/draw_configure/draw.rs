@@ -398,6 +398,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let s = &app.recording;
+    use super::super::keybinding_catalog::{TuiKeyContext, workflow_focus_hints};
 
     // Layout: step tabs on top, content below
     let outer = Layout::default()
@@ -452,17 +453,54 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_type(step_tab_border)
                 .border_style(Style::default().fg(step_tab_border_color))
-                .title(format!("{} · F8: Multi-mic capture", i18n.ui("Recording"))),
+                .title(format!(
+                    "{} · {} · F8: Multi-mic capture",
+                    i18n.ui("Recording"),
+                    if s.step_tab_focused {
+                        i18n.dynamic("STEP TABS FOCUSED".to_string())
+                    } else {
+                        i18n.dynamic("step tabs".to_string())
+                    }
+                )),
         )
         .select(step_idx)
         .highlight_style(Style::default().fg(app.theme.accent_primary));
     f.render_widget(tabs, outer[0]);
 
     // Content wrapper with focus-aware border
+    let focus_context = if s.editing_output_dir || s.editing_mic_cal_channel.is_some() {
+        TuiKeyContext::RecordingPathEdit
+    } else if s.step_tab_focused {
+        TuiKeyContext::WorkflowStepTabs
+    } else {
+        TuiKeyContext::RecordingContent
+    };
+    let focus_hint = workflow_focus_hints(focus_context)
+        .iter()
+        .map(|hint| {
+            format!(
+                "{}={}",
+                hint.key,
+                i18n.dynamic(hint.description.to_string())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let focus_label = if s.editing_output_dir || s.editing_mic_cal_channel.is_some() {
+        "PATH EDIT FOCUSED"
+    } else if s.step_tab_focused {
+        "STEP TABS FOCUSED"
+    } else {
+        "CONTENT FOCUSED"
+    };
     let content_wrapper = Block::default()
         .borders(Borders::ALL)
         .border_type(content_border)
-        .border_style(Style::default().fg(content_border_color));
+        .border_style(Style::default().fg(content_border_color))
+        .title(format!(
+            " {} · {focus_hint} ",
+            i18n.dynamic(focus_label.to_string())
+        ));
     f.render_widget(content_wrapper, outer[1]);
     let content = Rect {
         x: outer[1].x + 1,
@@ -566,19 +604,43 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                     s.model.signal_type.as_str().to_string(),
                 ),
             ];
-            // Task 10: the duration knob is ignored for sweeps (the
-            // octave-scaled sweep is self-timed) — say so on the label so
-            // users are not misled. The field stays editable: it still
-            // applies to the non-sweep signal types.
-            let duration_label = if s.model.signal_type == RecordingSignalType::Sweep {
-                "Duration (s) (ignored for sweeps)"
-            } else {
-                "Duration (s)"
-            };
+            // Bind this control to the generator input that actually sets
+            // duration for the selected signal.
+            let (duration_label, duration_value) =
+                if s.model.signal_type == RecordingSignalType::Sweep {
+                    (
+                        "Bass sweep duration (s/oct)",
+                        s.model.bass_octave_duration_s,
+                    )
+                } else if s.model.signal_type == RecordingSignalType::Mls {
+                    let generated = crate::app::recording_acquisition_config(&s.model)
+                        .map(|config| config.generated_duration_secs);
+                    (
+                        "MLS sequence duration (fixed)",
+                        generated.unwrap_or_default(),
+                    )
+                } else {
+                    ("Signal duration (s)", s.model.signal_duration_secs)
+                };
             rows.push((
                 Some(4),
                 duration_label.to_string(),
-                format!("{:.1}", s.model.signal_duration_secs),
+                format!("{duration_value:.1}"),
+            ));
+            let effective_playback = crate::app::recording_acquisition_config(&s.model)
+                .map(|config| {
+                    format!(
+                        "{:.2}s · {} frames @ {} Hz",
+                        config.playback_duration_secs,
+                        config.playback_frames,
+                        config.sample_rate_hz
+                    )
+                })
+                .unwrap_or_else(|error| format!("unavailable: {error}"));
+            rows.push((
+                None,
+                "Effective playback (incl. padding)".to_string(),
+                effective_playback,
             ));
             rows.push((
                 Some(5),
@@ -654,6 +716,8 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             let mut lines: Vec<Line> = Vec::new();
             for (idx, label, value) in &rows {
                 let is_selected = idx.is_some_and(|i| i == s.selected_field);
+                let is_fixed_duration =
+                    *idx == Some(4) && s.model.signal_type == RecordingSignalType::Mls;
                 let is_editing_numerical = is_selected && s.editing_value;
                 // Resolve the field identity to know whether this row is
                 // currently in path-edit mode.
@@ -688,6 +752,10 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                         .fg(app.theme.fg_selected)
                         .bg(app.theme.bg_selected)
                         .add_modifier(Modifier::BOLD)
+                } else if is_fixed_duration {
+                    Style::default()
+                        .fg(app.theme.fg_secondary)
+                        .add_modifier(Modifier::DIM)
                 } else if is_selected {
                     Style::default()
                         .fg(app.theme.accent_primary)
@@ -701,6 +769,8 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 };
                 let arrow = if is_editing {
                     "✎ "
+                } else if is_fixed_duration {
+                    "· "
                 } else if is_selected {
                     "> "
                 } else {

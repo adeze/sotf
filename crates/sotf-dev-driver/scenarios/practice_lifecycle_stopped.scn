@@ -1,0 +1,48 @@
+# Exercise the real EQ practice lifecycle against a local source with transport
+# paused before the session starts, so CI validates session behavior without audio hardware.
+action      SwitchToListeningTest
+action      ListeningResetGuide
+click       listening.guide.acknowledge
+wait_until  listening.guide_open == false timeout=2s
+action      ListeningSetSourceFixture {"mode":"practice"}
+wait_until  listening.eq.source.loading == false timeout=10s
+assert      listening.eq.source.count == 1
+wait_until  playback.is_playing == true timeout=5s
+click       transport.play
+wait_until  playback.is_playing == false timeout=3s
+click       listening.eq.start
+wait_until  listening.eq.has_question == true timeout=3s
+assert      playback.is_playing == false
+click       listening.eq.filtered
+wait_until  listening.eq.filtered == true timeout=2s
+click       listening.eq.pause
+wait_until  listening.eq.paused == true timeout=2s
+assert      playback.is_playing == false
+key         enter
+assert      listening.eq.submitted == 0
+click       listening.eq.pause
+wait_until  listening.eq.paused == false timeout=2s
+click       listening.eq.original
+wait_until  listening.eq.filtered == false timeout=2s
+click       listening.eq.submit
+wait_until  listening.eq.submitted == 1 timeout=2s
+click       listening.eq.next
+wait_until  listening.eq.answered == false timeout=2s
+click       listening.eq.end
+wait_until  listening.eq.confirm_end == true timeout=2s
+click       listening.eq.confirm-end
+wait_until  listening.eq.ended_early == true timeout=2s
+assert      listening.eq.submitted == 1
+assert      listening.eq.progress_sessions == 1
+assert      playback.is_playing == false
+screenshot  practice-stopped-source-summary
+click       listening.eq.retry
+wait_until  listening.eq.has_question == true timeout=2s
+assert      listening.eq.submitted == 0
+click       listening.eq.end
+wait_until  listening.eq.confirm_end == true timeout=2s
+click       listening.eq.confirm-end
+wait_until  listening.eq.ended_early == true timeout=2s
+assert      listening.eq.submitted == 0
+assert      listening.eq.progress_sessions == 1
+assert      playback.is_playing == false

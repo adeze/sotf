@@ -38,6 +38,7 @@ fn matrix_recording(
         clarity_c80_db: None,
         spectrogram_db: None,
         quality: None,
+        stimulus_config: None,
     });
     rec
 }
@@ -77,6 +78,7 @@ fn raw_matrix_recording(
         clarity_c80_db: None,
         spectrogram_db: None,
         quality: None,
+        stimulus_config: None,
     });
     rec
 }

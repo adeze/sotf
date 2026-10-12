@@ -407,8 +407,6 @@ pub(super) fn process_dev_command(
     media_controls: &mut Option<TuiMediaControls>,
     cmd: DevCommand,
 ) {
-    use sotf_audio_player_tui::events::handle_key_event;
-
     match cmd {
         DevCommand::Action {
             name,
@@ -432,22 +430,28 @@ pub(super) fn process_dev_command(
         }
         DevCommand::Key { keystroke, reply } => {
             let result = parse_keystroke(&keystroke)
-                .map(|key| {
-                    if let Some(cmd) = handle_key_event(app, key) {
-                        if let Err(e) = handle_player_command(player, app, cmd) {
-                            log::error!("[dev-api] Player command error: {}", e);
-                            app.ui.error_message = Some(e.to_string());
-                            app.enter_overlay_mode(InputMode::ShowError);
-                            app.playback.is_playing = false;
-                        }
-                        update_media_controls(app, player, media_controls);
-                    }
-                    Ok(())
-                })
-                .unwrap_or_else(Err);
+                .and_then(|key| dispatch_dev_key(app, player, media_controls, key));
             let dev_reply = match result {
                 Ok(()) => DevReply::ok(),
                 Err(e) => DevReply::err(format!("{e:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::Text { text, reply } => {
+            let result = text.chars().try_for_each(|character| {
+                dispatch_dev_key(
+                    app,
+                    player,
+                    media_controls,
+                    crossterm::event::KeyEvent::new(
+                        crossterm::event::KeyCode::Char(character),
+                        crossterm::event::KeyModifiers::NONE,
+                    ),
+                )
+            });
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(error) => DevReply::err(format!("{error:#}")),
             };
             let _ = reply.send(dev_reply);
         }
@@ -488,10 +492,100 @@ pub(super) fn process_dev_command(
             app.should_quit = true;
             let _ = reply.send(DevReply::ok());
         }
-        DevCommand::QaSeed { reply } => {
-            let _ = reply.send(DevReply::err("qa seed not yet implemented for TUI"));
+        DevCommand::QaSeed {
+            library_dirs,
+            reply,
+        } => {
+            let result = (|| -> anyhow::Result<()> {
+                for path in library_dirs {
+                    app.add_directory_quiet(path);
+                }
+                app.scan_library()
+                    .map_err(|error| anyhow::anyhow!("library scan failed: {error}"))?;
+                Ok(())
+            })();
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(error) => DevReply::err(format!("could not seed TUI library: {error:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::QaVirtualCapture {
+            profile,
+            output_directory,
+            reply,
+        } => {
+            let profile = profile.trim().to_ascii_lowercase();
+            let result = match profile.as_str() {
+                "clean" | "high-thd" | "low-snr" | "unknown-evidence" | "clipping" => {
+                    if let Some(directory) = output_directory {
+                        app.recording.output_directory = directory.to_string_lossy().to_string();
+                    }
+                    app.recording.virtual_capture_profile = Some(profile);
+                    Ok(())
+                }
+                _ => Err(anyhow::anyhow!(
+                    "unsupported virtual capture profile `{profile}`"
+                )),
+            };
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(error) => {
+                    DevReply::err(format!("could not configure virtual capture: {error:#}"))
+                }
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::QaRoomEqFixture { fixture_dir, reply } => {
+            let measurement_path = fixture_dir.join("recordings.json");
+            let result = if measurement_path.is_file() {
+                app.room_eq.file_path = measurement_path.to_string_lossy().into_owned();
+                app.room_eq.load_error = None;
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!(
+                    "RoomEQ fixture is missing {}",
+                    measurement_path.display()
+                ))
+            };
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(error) => DevReply::err(format!("could not install RoomEQ fixture: {error:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::QaPlaybackOutput { enabled, reply } => {
+            let dev_reply = match player.set_test_output_enabled(enabled) {
+                Ok(()) => DevReply::ok(),
+                Err(error) => {
+                    DevReply::err(format!("could not configure test playback output: {error}"))
+                }
+            };
+            let _ = reply.send(dev_reply);
         }
     }
+}
+
+#[cfg(feature = "dev-api")]
+fn dispatch_dev_key(
+    app: &mut App,
+    player: &mut Player,
+    media_controls: &mut Option<TuiMediaControls>,
+    key: crossterm::event::KeyEvent,
+) -> anyhow::Result<()> {
+    use sotf_audio_player_tui::events::handle_key_event;
+
+    if let Some(command) = handle_key_event(app, key) {
+        if let Err(error) = handle_player_command(player, app, command) {
+            log::error!("[dev-api] Player command error: {}", error);
+            app.ui.error_message = Some(error.to_string());
+            app.enter_overlay_mode(InputMode::ShowError);
+            app.playback.is_playing = false;
+            return Err(anyhow::anyhow!("player command failed: {error}"));
+        }
+        update_media_controls(app, player, media_controls);
+    }
+    Ok(())
 }
 
 #[cfg(feature = "dev-api")]

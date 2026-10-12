@@ -93,7 +93,77 @@ impl PlayerView {
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
-            .child(self.render_correction_export_status(cx, &room_eq.delivery, result_is_current))
+            .child(self.render_correction_export_status(cx, &room_eq.delivery, result_is_current));
+        if is_rack_compatible {
+            // Simple case: EQ (+ optional delay/gain) — apply to linear rack
+            stack = stack.child(
+                Card::new()
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(
+                        Text::new(translations.roomeq_apply_to_rack)
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                Text::new(if has_eq_in_rack {
+                                    translations.roomeq_eq_exists_in_rack
+                                } else {
+                                    translations.roomeq_no_eq_in_rack
+                                })
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                            )
+                            .child(dev_track!(
+                                Button::new("apply_to_player", translations.roomeq_apply_to_rack)
+                                    .disabled(!result_is_current || application_pending)
+                                    .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
+                                        view.apply_room_eq_to_player(cx);
+                                    })),
+                                "roomeq.apply_to_player"
+                            )),
+                    ),
+            );
+        } else {
+            // Complex case: multi-driver crossovers — requires graph
+            stack = stack.child(
+                Card::new()
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(
+                        Text::new(translations.roomeq_apply_as_graph)
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                Text::new(translations.roomeq_apply_graph_help)
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                Button::new("apply_as_graph", translations.roomeq_apply_as_graph)
+                                    .disabled(!result_is_current || application_pending)
+                                    .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
+                                        view.apply_room_eq_as_graph(cx);
+                                    })),
+                            ),
+                    ),
+            );
+        }
+
+        stack = stack
             .child(
                 Card::new()
                     .background(theme.surface)
@@ -271,75 +341,6 @@ impl PlayerView {
                         export_content
                     }),
             );
-
-        if is_rack_compatible {
-            // Simple case: EQ (+ optional delay/gain) — apply to linear rack
-            stack = stack.child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new(translations.roomeq_apply_to_rack)
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
-                    )
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Sm)
-                            .child(
-                                Text::new(if has_eq_in_rack {
-                                    translations.roomeq_eq_exists_in_rack
-                                } else {
-                                    translations.roomeq_no_eq_in_rack
-                                })
-                                .size(TextSize::Xs)
-                                .color(theme.text_secondary),
-                            )
-                            .child(dev_track!(
-                                Button::new("apply_to_player", translations.roomeq_apply_to_rack)
-                                    .disabled(!result_is_current || application_pending)
-                                    .variant(ButtonVariant::Secondary)
-                                    .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.apply_room_eq_to_player(cx);
-                                    })),
-                                "roomeq.apply_to_player"
-                            )),
-                    ),
-            );
-        } else {
-            // Complex case: multi-driver crossovers — requires graph
-            stack = stack.child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new(translations.roomeq_apply_as_graph)
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
-                    )
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Sm)
-                            .child(
-                                Text::new(translations.roomeq_apply_graph_help)
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
-                            )
-                            .child(
-                                Button::new("apply_as_graph", translations.roomeq_apply_as_graph)
-                                    .disabled(!result_is_current || application_pending)
-                                    .variant(ButtonVariant::Secondary)
-                                    .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.apply_room_eq_as_graph(cx);
-                                    })),
-                            ),
-                    ),
-            );
-        }
 
         stack
     }

@@ -1,6 +1,22 @@
+use sotf_audio_player::recording_helpers::EffectiveAcquisitionConfig;
+use sotf_audio_player::recording_types::{RecordingSourceIdentity, TakeQualitySummary};
 use sotf_audio_player::room_eq_types::{RoomEqEasyLayout, validate_room_eq_easy_layout};
 use sotf_audio_player::ui_models::room_eq::RoomEqScreenModel;
 use std::collections::VecDeque;
+
+/// Quality evidence associated with one loaded RoomEQ source.
+///
+/// `quality: None` means the source has no current, validated sidecar entry;
+/// it is presented as unknown evidence, never as a passing take.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RoomEqQualityReviewEntry {
+    pub source: RecordingSourceIdentity,
+    /// Read-only provenance label retained from the source measurement name.
+    pub source_label: Option<String>,
+    pub quality: Option<TakeQualitySummary>,
+    /// Per-take generator settings restored from the exact-session sidecar.
+    pub stimulus_config: Option<EffectiveAcquisitionConfig>,
+}
 
 /// TUI-specific UI state for the Room EQ wizard.
 ///
@@ -22,6 +38,10 @@ pub struct RoomEqTuiState {
     pub file_path: String,
     pub editing_file_path: bool,
     pub load_error: Option<String>,
+    /// Per-source capture quality loaded from the validated recording sidecar.
+    pub quality_review_entries: Vec<RoomEqQualityReviewEntry>,
+    /// Explains why no valid quality sidecar could be used.
+    pub quality_sidecar_warning: Option<String>,
 
     // Step 2: delay detection (tone-burst probe). Business state lives in
     // the shared `DelayDetectionState`; the `dd_*` fields below are

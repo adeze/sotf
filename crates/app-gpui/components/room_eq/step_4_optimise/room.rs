@@ -987,6 +987,17 @@ impl PlayerView {
                 ),
             )
         };
+        let artifact_dir = match artifact_dir {
+            Ok(directory) => directory,
+            Err(error) => {
+                self.state.update(cx, |state, _| {
+                    state.app.measurement_state.room_eq_state.error_message =
+                        Some(format!("Cannot create RoomEQ artifact directory: {error}"));
+                });
+                cx.notify();
+                return;
+            }
+        };
 
         if channel_names.is_empty() {
             log::warn!("No channels to optimize");
@@ -1727,20 +1738,25 @@ pub fn room_eq_channel_chain_by_name<'a>(
 fn room_eq_artifact_dir(
     data_source: &sotf_audio_player::room_eq_types::RoomEqDataSource,
     recording_dir: Option<&str>,
-) -> std::path::PathBuf {
-    match data_source {
-        sotf_audio_player::room_eq_types::RoomEqDataSource::FromFile(path) => path
-            .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| {
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-            }),
-        sotf_audio_player::room_eq_types::RoomEqDataSource::FromRecording => recording_dir
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| {
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-            }),
-    }
+) -> std::io::Result<std::path::PathBuf> {
+    let parent = match data_source {
+        sotf_audio_player::room_eq_types::RoomEqDataSource::FromFile(path) => path.parent(),
+        sotf_audio_player::room_eq_types::RoomEqDataSource::FromRecording => {
+            recording_dir.map(std::path::Path::new)
+        }
+    };
+    // Each result owns only its generated artifacts. Imported capture sessions
+    // intentionally have no wizard-owned output directory; they must never
+    // fall back to scanning or writing the application's working directory.
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("sotf-roomeq-");
+    let directory = match parent.filter(|path| !path.as_os_str().is_empty()) {
+        Some(parent) => builder.tempdir_in(parent)?,
+        None => builder.tempdir()?,
+    };
+    // FIR/convolution exports may refer to these files after optimization, so
+    // retain this result's directory for the existing artifact lifetime.
+    Ok(directory.keep())
 }
 
 fn room_eq_channel_result_by_name<'a>(

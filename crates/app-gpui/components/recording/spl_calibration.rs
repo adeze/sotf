@@ -129,7 +129,8 @@ impl PlayerView {
                     .align(StackAlign::Center)
                     .child(Text::new(translations.recording_level_label).size(TextSize::Sm))
                     .child(
-                        NumberInput::new("spl_calibration_signal_level")
+                        dev_track!(
+                            NumberInput::new("spl_calibration_signal_level")
                             .value(signal_level_db as f64)
                             .min(-60.0)
                             .max(0.0)
@@ -158,6 +159,8 @@ impl PlayerView {
                                     cx.notify();
                                 });
                             }),
+                            "recording.signal_level"
+                        ),
                     )
             })
             .child(start_button);

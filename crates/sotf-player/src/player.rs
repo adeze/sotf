@@ -28,6 +28,24 @@ pub struct Player {
 }
 
 impl Player {
+    /// Select device-free output for this player's development workflows.
+    ///
+    /// File decoding, DSP, transport and output metering remain active. This
+    /// setting is available only with development/test features and must be
+    /// changed before starting playback.
+    ///
+    /// # Errors
+    /// Returns an error if an engine is already active.
+    #[cfg(any(feature = "dev-api", feature = "testing"))]
+    pub fn set_test_output_enabled(
+        &mut self,
+        enabled: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.manager
+            .set_test_output_enabled(enabled)
+            .map_err(Into::into)
+    }
+
     pub fn new() -> Self {
         Self {
             manager: AudioEngineManager::with_signal_watching(true),

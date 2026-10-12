@@ -1,0 +1,104 @@
+# An Unknown quality finding stays in review until the user explicitly accepts
+# it. The capture backend still produces a real analysis summary; the visible
+# controls start and save the measurement through the normal wizard.
+focus configure
+key 2
+assert configure.sub_screen == "Recording"
+
+# Match the GPUI quality fixture's full audible sweep, -6 dB level and one
+# complete production analysis so the structured quality result is comparable.
+key down
+key down
+key down
+key down
+key down
+key enter
+key backspace
+key backspace
+key backspace
+key backspace
+key backspace
+type -6
+key enter
+query recording.signal_level_db
+assert recording.signal_level_db == -6
+key down
+key down
+key down
+key down
+key down
+key down
+key down
+key down
+key enter
+key backspace
+type 1
+key enter
+query recording.sweep_start_hz
+query recording.sweep_end_hz
+query recording.num_sweeps
+query recording.virtual_capture_profile
+assert recording.signal_level_db == -6
+assert recording.sweep_start_hz == 20
+assert recording.sweep_end_hz == 20000
+assert recording.num_sweeps == 1
+assert recording.virtual_capture_profile == "unknown-evidence"
+
+key esc
+key right
+key right
+assert recording.step == "Capture"
+key down
+assert recording.selected_sweep_start_hz == 20
+assert recording.selected_sweep_end_hz == 20000
+key enter
+wait_until recording.current_state != "Recording" timeout=10s
+query recording.status
+assert recording.current_state == "ReviewNeeded"
+assert recording.unknown_review_ack_required == true
+assert recording.unknown_review_explained == true
+assert recording.unknown_finding_count >= 1
+assert recording.done_count == 0
+
+# Explicitly acknowledge the unknown-quality result before it can be saved.
+key a
+assert recording.unknown_review_ack_required == false
+assert recording.done_count == 1
+
+key esc
+key right
+key right
+key right
+assert recording.step == "Evaluating"
+key right
+assert recording.step == "Saving"
+key down
+key ctrl-s
+wait_until recording.save_success == true timeout=10s
+assert recording.persisted == true
+assert recording.quality_sidecar_count >= 1
+assert recording.quality_sidecar_unknown_count >= 1
+assert recording.unknown_finding_count >= 1
+query recording.quality_sidecar_results
+
+# Load the sidecar through the production RoomEQ loader and retain Unknown
+# evidence on the source rows after the handoff.
+key esc
+key esc
+key 3
+assert configure.sub_screen == "RoomEq"
+query input_mode
+key esc
+query input_mode
+query roomeq.step
+key e
+type "$SOTF_QA_DIR/recordings/recordings.json"
+key enter
+query roomeq.file_path
+query roomeq.error
+assert roomeq.error == ""
+wait_until roomeq.measurement_count >= 1 timeout=5s
+assert roomeq.quality_sidecar_count >= 1
+assert roomeq.quality_unknown_count >= 1
+assert roomeq.unknown_finding_count >= 1
+query roomeq.quality_review_entries

@@ -284,6 +284,7 @@ fn make_dummy_measurement(channel: &str) -> ChannelMeasurement {
             clarity_c80_db: None,
             spectrogram_db: None,
             quality: None,
+            stimulus_config: None,
         },
         is_group: false,
         group_drivers: Vec::new(),

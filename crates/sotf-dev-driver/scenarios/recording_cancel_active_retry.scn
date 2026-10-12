@@ -1,0 +1,25 @@
+# Cancel a real in-flight capture through the visible Stop control. The stale
+# background completion must not restore a result; then retry through Capture.
+focus recording
+assert recording.step == "Capture"
+assert recording.all_done == false
+click recording.capture_all
+wait_until recording.in_progress == true timeout=3s
+wait_until recording.take.0.state == "Recording" timeout=3s
+assert_visible recording.stop
+click recording.stop
+wait_until recording.in_progress == false timeout=3s
+wait_idle 3s
+assert recording.take.0.state == "Empty"
+assert recording.done_count == 0
+assert recording.review_count == 0
+assert recording.quality_count == 0
+
+# A new user initiated capture succeeds after cancellation, proving the stale
+# worker did not keep the session busy or attach its result to the retry.
+click recording.capture_all
+wait_until recording.done_count == 2 timeout=30s
+assert recording.all_done == true
+assert recording.evidence_complete == true
+assert recording.quality_count == 2
+assert recording.error_count == 0

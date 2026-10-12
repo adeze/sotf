@@ -316,6 +316,7 @@ impl RoomEqWorkflowTranslations {
                 single: pseudo_static("Single"),
                 multi_driver: pseudo_static("Multi-Driver"),
                 dismiss: pseudo_static("Dismiss"),
+                run_from_recording: pseudo_static("Run RoomEQ"),
                 load_from_recording: pseudo_static("Load from Recording"),
                 go_to_recording: pseudo_static("Go to Recording"),
                 import_from_file: pseudo_static("Import from File"),

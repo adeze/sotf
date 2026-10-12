@@ -1,10 +1,10 @@
 # Recording deterministic failure, cancellation, and retry QA scenario.
 #
-# The suite installs one one-shot fault before this script. The first visible
-# Capture action must put every channel in the Error state without pretending
+# The suite installs one one-shot device or I/O fault before this script. The
+# first visible Capture action must fail its active channel without pretending
 # completion. Going back cancels the failed take's context; returning to
 # Capture and retrying the same button consumes a healthy deterministic source.
-# Fix: crates/app-gpui/components/recording/capture/misc.rs::complete_qa_fake_capture.
+# The feature-gated virtual wire now reaches the production recording and analysis APIs.
 # Run with:
 #   QA_DIR=$(mktemp -d) && rtk cargo build -p sotf-gpui --features dev-api --bin sotf-desktop && \
 #   target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/recording_ui.toml -v
@@ -16,13 +16,14 @@ assert      recording.all_done == false
 assert      recording.error_count == 0
 assert_visible recording.capture_all
 
-# The injected device loss, clipping, or I/O failure is surfaced by the real
+# The injected device loss or I/O failure is surfaced by the real
 # Capture control rather than by a direct state mutation from the scenario.
 click       recording.capture_all
-wait_idle   2s
+wait_until recording.error_count == 1 timeout=10s
 assert      recording.all_done == false
 assert      recording.done_count == 0
-assert      recording.error_count == 2
+assert      recording.quality_count == 0
+assert      recording.error_count == 1
 assert      recording.status_severity == "Error"
 screenshot  recording-capture-error
 
@@ -51,9 +52,40 @@ assert      recording.spl_ready == true
 click       recording.next
 assert      recording.step == "Capture"
 click       recording.capture_all
-wait_idle   2s
+wait_until  recording.done_count == 2 timeout=30s
 assert      recording.error_count == 0
 assert      recording.done_count == 2
 assert      recording.all_done == true
+assert      recording.quality_count == 2
+assert      recording.evidence_complete == true
+assert      recording.review_count == 0
+assert      recording.status_severity == "Success"
+
+# Finish the ordinary calibration, review, and save stages so a successful
+# retry proves the captures are accepted and persisted through the real flow.
+click       recording.next
+assert      recording.step == "Probe"
+click       recording.probe_run
+wait_idle   2s
+assert      recording.probe_complete == true
+click       recording.next
+assert      recording.step == "BassAnchor"
+click       recording.bass_anchor_run
+wait_idle   2s
+assert      recording.bass_anchor_complete == true
+click       recording.next
+assert      recording.step == "Evaluating"
+click       recording.accept.0
+click       recording.accept.1
+click       recording.next
+assert      recording.step == "Saving"
+scroll      recording.content -600
+assert_enabled recording.save == true
+click       recording.save
+wait_until  recording.save_status == "Current" timeout=10s
+assert      recording.saved_path != null
+assert      recording.status_severity == "Success"
+assert      recording.error_count == 0
+screenshot  recording-capture-retry-saved
 assert      recording.status_severity == "Success"
 screenshot  recording-capture-retry

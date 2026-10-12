@@ -304,6 +304,22 @@ pub(super) fn post_qa_headphone_discovery_fixture(
         .map_err(|_| anyhow!("dev-api reply timeout"))
 }
 
+pub(super) fn post_qa_playback_output(
+    body: &[u8],
+    tx: &mpsc::SyncSender<DevCommand>,
+) -> Result<DevReply> {
+    let payload = parse_json_payload(body)?;
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::QaPlaybackOutput {
+        payload,
+        reply: reply_tx,
+    })
+    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api reply timeout"))
+}
+
 pub(super) fn post_qa_spinorama_discovery_fixture(
     body: &[u8],
     tx: &mpsc::SyncSender<DevCommand>,

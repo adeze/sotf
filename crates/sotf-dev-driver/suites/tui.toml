@@ -108,3 +108,56 @@ timeout = "10s"
 name = "tui-configure-servers"
 path = "crates/sotf-dev-driver/scenarios/tui_configure_servers.scn"
 timeout = "10s"
+
+# ── Input-driven workflows ──────────────────────────────────────────────────
+
+[[scenario]]
+name = "tui-learning-progress"
+path = "crates/sotf-dev-driver/scenarios/tui_learning_progress.scn"
+timeout = "45s"
+mock_playback = true
+
+[[scenario]]
+name = "tui-abx-persisted-trial"
+path = "crates/sotf-dev-driver/scenarios/tui_abx_persisted_trial.scn"
+timeout = "90s"
+seed_demo_audio = true
+mock_playback = true
+
+[[scenario]]
+name = "tui-recording-quality-review"
+path = "crates/sotf-dev-driver/scenarios/tui_recording_quality_review.scn"
+timeout = "240s"
+tags = ["recording", "quality", "hardware-free", "tui"]
+
+[scenario.fake_recording]
+channels = 2
+profile = "high-thd"
+
+[[scenario]]
+name = "tui-recording-unknown-evidence"
+path = "crates/sotf-dev-driver/scenarios/tui_recording_unknown_evidence.scn"
+timeout = "90s"
+tags = ["recording", "unknown-quality", "hardware-free", "tui"]
+
+[scenario.fake_recording]
+channels = 2
+profile = "unknown-evidence"
+
+[[scenario]]
+name = "tui-roomeq-optimize-export-apply"
+path = "crates/sotf-dev-driver/scenarios/tui_roomeq_optimize_export_apply.scn"
+timeout = "180s"
+tags = ["roomeq", "optimizer", "export", "apply", "tui"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "tui-roomeq"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+max_iter = 1000
+population = 10
+start = false
+ui_driven = true

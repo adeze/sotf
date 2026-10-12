@@ -1,8 +1,16 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+action AddToQueue
+wait_until queue.length > 0 timeout=3s
+action PlayPause
+wait_until playback.is_playing == true timeout=3s
+wait_idle 1s
 action ListeningResetGuide
 click listening.guide.acknowledge
 click listening.tab-comparison
 action ListeningSetSourceFixture {"mode":"comparison"}
-assert playback.is_playing == false
+assert playback.is_playing == true
 wait_idle 1s
 screenshot listening-setup-header
 scroll_into_view listening.comparison.content listening.planned-trials
@@ -25,9 +33,27 @@ click listening.session.prepare
 wait_until listening.session_ready == true timeout=20s
 key ctrl-x
 wait_until listening.pending_mode == "Abx" timeout=3s
+wait_until plugins.update_pending == false timeout=5s
+wait_until plugins.engine_matches_current_graph == true timeout=5s
 key alt-3
+click listening.cue.ReferenceA
+wait_until listening.runtime_active == true timeout=3s
+assert listening.runtime_active == true
+wait_until plugins.parameter_receipt.status == "applied" timeout=5s
+wait_until playback.engine_diagnostics.playback_frames_received > 0 timeout=5s
+wait_until playback.engine_diagnostics.playback_frames_written > 0 timeout=5s
+wait_until playback.engine_diagnostics.output_peak_linear > 0 timeout=5s
 wait_idle 500ms
-assert playback.is_playing == false
+click listening.cue.ReferenceB
+wait_until listening.runtime_active == true timeout=3s
+assert listening.runtime_active == true
+wait_until plugins.parameter_receipt.status == "applied" timeout=5s
+wait_idle 500ms
+click listening.cue.Unknown
+wait_until listening.runtime_active == true timeout=3s
+assert listening.runtime_active == true
+wait_until plugins.parameter_receipt.status == "applied" timeout=5s
+wait_idle 500ms
 key alt-a
 wait_until listening.completed_trials == 1 timeout=3s
 assert listening.completed_trials == 1
@@ -40,7 +66,7 @@ resize 600 1000
 wait_idle 1s
 assert listening.abx_total == 1
 screenshot listening-abx-results
-assert playback.is_playing == false
+assert playback.is_playing == true
 scroll_into_view listening.workspace.content listening.session.comparison-save-results
 click listening.session.comparison-save-results
 wait_until listening.session_file_exists == true timeout=5s
@@ -59,4 +85,4 @@ click listening.view-results
 wait_until listening.results_open == true timeout=3s
 assert listening.abx_total == 1
 screenshot listening-abx-results-reloaded
-assert playback.is_playing == false
+assert playback.is_playing == true

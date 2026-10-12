@@ -23,6 +23,7 @@ import 'builds/linux.just'
 import 'builds/ios.just'
 import 'builds/tvos.just'
 import 'builds/dev-driver.just'
+import 'builds/mocked-workflows.just'
 
 import 'builds/downloads.just'
 # Engine/plugin recipes moved with their crates to ../sotf-daw (see
@@ -135,7 +136,7 @@ test-realtime-safety:
 	cd ../sotf-daw && just test-realtime-safety
 
 [group('test')]
-test-pr: test-unit-core test-integration-engine test-integration-player test-device-fakes test-realtime-safety
+test-pr: test-unit-core test-integration-engine test-integration-player test-device-fakes test-realtime-safety test-workflow-contracts
 
 # Systemwide audio lab, contract gates, and installer packaging moved to
 # ../sotf-systemwide (Justfile, builds/systemwide.just, scripts/).

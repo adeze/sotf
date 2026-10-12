@@ -1,0 +1,50 @@
+# Prepare two real signal paths from the running library track, conduct an
+# ABX trial through the shared controller, then reload the saved result.
+focus library
+wait_until library.track_count >= 17 timeout=20s
+wait_until library.album_count >= 2 timeout=20s
+wait_until library.visible_album_count >= 2 timeout=20s
+query library.visible_album_count
+query library.selected_album_index
+key enter
+assert queue.length > 0
+focus queue
+key space
+wait_until playback.has_current_track == true timeout=5s
+wait_until playback.is_playing == true timeout=5s
+
+key T
+assert screen.focused == "Tools"
+key 2
+key enter
+assert screen.focused == "AbTesting"
+key a
+key b
+assert ab_testing.path_a_captured == true
+assert ab_testing.path_b_captured == true
+
+key p
+wait_until ab_testing.session_active == true timeout=30s
+assert ab_testing.prepared_duration_ms > 0
+assert ab_testing.level_match_correction_db != null
+assert ab_testing.trial_mode == "Abx"
+assert ab_testing.assignment_seed == 42424242
+
+key enter
+assert ab_testing.runtime_active == true
+assert ab_testing.step == "Trial"
+assert ab_testing.phase == "Trial(Abx)"
+assert ab_testing.available_cue_count == 3
+assert ab_testing.available_answer_count == 2
+key e
+key 1
+assert ab_testing.completed_trials == 1
+assert ab_testing.committed_x_path == "A"
+
+key s
+assert ab_testing.session_persisted == true
+key l
+assert ab_testing.completed_trials == 1
+assert ab_testing.session_active == true
+assert ab_testing.committed_x_path == "A"
+query ab_testing.abx_score

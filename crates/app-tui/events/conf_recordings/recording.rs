@@ -34,6 +34,12 @@ pub(super) fn recording_step_next_wrap(
 pub(crate) fn recording_field_value_string_kind(app: &App, field: &RecordingField) -> String {
     use RecordingField::*;
     match field {
+        Duration
+            if app.recording.model.signal_type
+                == sotf_audio_player::recording_types::RecordingSignalType::Sweep =>
+        {
+            format!("{:.1}", app.recording.model.bass_octave_duration_s)
+        }
         Duration => format!("{:.1}", app.recording.model.signal_duration_secs),
         Level => format!("{:.1}", app.recording.model.signal_level_db),
         SweepStart => format!("{:.0}", app.recording.model.sweep_start_freq),

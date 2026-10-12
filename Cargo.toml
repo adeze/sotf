@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/sotf-dev-api",
+    "crates/sotf-report-host",
     "crates/sotf-player",
     "crates/sotf-dev-driver",
     "crates/app-cli",

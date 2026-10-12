@@ -36,4 +36,5 @@ pub use consts::*;
 pub use misc::*;
 pub use player_view::*;
 
+pub(crate) mod report_window;
 mod spectrum_poll;

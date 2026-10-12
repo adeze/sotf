@@ -1,0 +1,107 @@
+name: Mocked workflow contracts
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: linux-x64
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: sotf
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: sotf
+      - name: Validate private companion checkout configuration
+        env:
+          WORKSPACE_READ_TOKEN: ${{ secrets.WORKSPACE_READ_TOKEN }}
+        run: |
+          if [[ -z "$WORKSPACE_READ_TOKEN" ]]; then
+            printf 'Configure the WORKSPACE_READ_TOKEN repository secret before running private sibling contract checks.\n' >&2
+            exit 1
+          fi
+      # Cargo path dependencies and embedded report resources need the sibling
+      # workspace layout. Private peers require WORKSPACE_READ_TOKEN. These
+      # immutable refs form the compatible review baseline; default branches do
+      # not yet contain all of the APIs exercised by this workflow.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-capture
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: d3a7418aa1b51546dd7e1f1e1e944f32b9623ffa # feat/issue-184-mocked-capture
+          path: sotf-capture
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-daw
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: 3ed3c7455d35fee0bd839b0afa9461af19a1b56f # feat/issue-184-mocked-playback
+          path: sotf-daw
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/autoeq
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: 0f2d22a1ad6a91a62c57a72d13b90e2a9427ed6a # feat/issue-184-shared-report
+          path: autoeq
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/math-audio
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: math-audio
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/gpui-toolkit
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: gpui-toolkit
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sofa-reader
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: sofa-reader
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/symphonia-add-ons
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: symphonia-add-ons
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build and report dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang cmake mold \
+            libasound2-dev libssl-dev libglib2.0-dev libgtk-3-dev \
+            libwayland-dev libxkbcommon-x11-dev pkg-config python3-numpy
+          cargo install just --locked
+      - name: Run deterministic workflow contracts
+        run: |
+          mkdir -p ../workflow-artifacts
+          just cargo=cargo test-workflow-contracts 2>&1 | tee ../workflow-artifacts/contracts.log
+      - name: Run shared report contracts
+        run: just cargo=cargo test-shared-report 2>&1 | tee ../workflow-artifacts/report.log
+      - name: Preserve contract logs
+        if: always()
+        # Gitea uses the GHES-compatible artifact protocol; upstream v4
+        # rejects GHES. Keep the supported v3 uploader here.
+        uses: actions/upload-artifact@v3
+        with:
+          name: mocked-workflow-contracts-${{ github.sha }}
+          path: workflow-artifacts/
+          if-no-files-found: warn

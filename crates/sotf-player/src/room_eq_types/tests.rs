@@ -283,6 +283,7 @@ fn build_speakers_from_recordings_groups_per_channel() {
                 clarity_c80_db: None,
                 spectrogram_db: None,
                 quality: None,
+                stimulus_config: None,
             });
             recordings.push(rec);
         }

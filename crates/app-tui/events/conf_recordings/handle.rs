@@ -276,7 +276,12 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                             app.recording.sync_recording_channel_vecs();
                             app.recording.editing_mic_cal_channel = Some(ch);
                         }
-                        Some(field) if is_recording_field_numerical_kind(&field) => {
+                        Some(field)
+                            if is_recording_field_numerical_kind(&field)
+                                && (field != RecordingField::Duration
+                                    || app.recording.model.signal_type
+                                        != sotf_audio_player::recording_types::RecordingSignalType::Mls) =>
+                        {
                             app.recording.edit_buffer =
                                 recording_field_value_string_kind(app, &field);
                             app.recording.editing_value = true;

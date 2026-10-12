@@ -15,9 +15,11 @@ assert      recording.done_count == 0
 assert      recording.step == "Capture"
 assert_visible recording.capture_all
 click       recording.capture_all
-wait_idle   2s
+wait_until  recording.done_count == 2 timeout=30s
 assert      recording.all_done == true
 assert      recording.done_count == 2
+assert      recording.quality_count == 2
+assert      recording.evidence_complete == true
 
 # Rewind to exercise the user-entered SPL calibration stage before Capture.
 assert_visible recording.back

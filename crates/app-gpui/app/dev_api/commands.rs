@@ -161,6 +161,11 @@ pub enum DevCommand {
         payload: serde_json::Value,
         reply: mpsc::SyncSender<DevReply>,
     },
+    /// Enable or disable an isolated test audio sink for engine playback.
+    QaPlaybackOutput {
+        payload: serde_json::Value,
+        reply: mpsc::SyncSender<DevReply>,
+    },
     /// Install deterministic Headphone EQ discovery responses for rendered QA.
     QaHeadphoneDiscoveryFixture {
         payload: serde_json::Value,

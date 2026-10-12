@@ -15,6 +15,11 @@ use crate::ui::PlayerView;
 use super::performance;
 
 pub fn resolve(path: &str, window: AnyWindowHandle, cx: &mut App) -> Result<Value> {
+    if path == "roomeq.report_window_count" {
+        return Ok(json!(crate::ui::report_window::shared_report_window_count(
+            cx
+        )));
+    }
     window
         .update(cx, |any_view, window, cx| {
             let viewport = window.viewport_size();
@@ -70,6 +75,158 @@ fn maximum_shortterm_lufs_query(loudness: Option<&sotf_audio_player::LoudnessDat
 }
 
 fn read_path(path: &str, state: &AppState) -> Result<Value> {
+    if let Some(field) = path.strip_prefix("playback.engine_diagnostics.") {
+        const FIELDS: &[&str] = &[
+            "snapshot_sequence",
+            "playback_epoch",
+            "playback_state",
+            "playback_frames_received",
+            "playback_frames_written",
+            "output_peak_linear",
+            "sample_rate",
+        ];
+        if FIELDS.contains(&field) {
+            return Ok(read_path("playback.engine_diagnostics", state)?
+                .get(field)
+                .cloned()
+                .unwrap_or(Value::Null));
+        }
+    }
+    if let Some(take_path) = path.strip_prefix("recording.take.") {
+        let (index, field) = take_path
+            .split_once('.')
+            .ok_or_else(|| anyhow!("recording take query requires an index and field"))?;
+        let index = index
+            .parse::<usize>()
+            .map_err(|_| anyhow!("invalid recording take index {index:?}"))?;
+        let recording = state
+            .app
+            .measurement_state
+            .recording_state
+            .channel_recordings
+            .get(index)
+            .ok_or_else(|| anyhow!("recording take index {index} is out of range"))?;
+        let result = recording.result.as_ref();
+        let clipping_finding =
+            result
+                .and_then(|result| result.quality.as_ref())
+                .and_then(|quality| {
+                    quality
+                        .findings
+                        .iter()
+                        .find(|finding| format!("{:?}", finding.metric) == "Clipping")
+                });
+        return match field {
+            "state" => Ok(json!(format!("{:?}", recording.state))),
+            "clipping_status" => Ok(json!(
+                clipping_finding.map(|finding| format!("{:?}", finding.status))
+            )),
+            "clipping_measured" => Ok(json!(clipping_finding.and_then(|finding| finding.measured))),
+            "evidence_complete" => Ok(json!(result.is_some_and(|result| {
+                result.frequencies.len() >= 2
+                    && result.magnitude_db.len() == result.frequencies.len()
+                    && result
+                        .impulse_response
+                        .as_ref()
+                        .is_some_and(|samples| samples.len() >= 2)
+                    && result
+                        .wav_path
+                        .as_ref()
+                        .is_some_and(|path| std::path::Path::new(path).is_file())
+                    && result
+                        .csv_path
+                        .as_ref()
+                        .is_some_and(|path| std::path::Path::new(path).is_file())
+            }))),
+            "quality_present" => Ok(json!(result.is_some_and(|result| result.quality.is_some()))),
+            "max_thd_percent" => Ok(json!(
+                result
+                    .and_then(|result| result.thd_percent.as_ref())
+                    .and_then(|values| values.iter().copied().reduce(f32::max))
+            )),
+            "capture_mtime_ms" => Ok(json!(
+                result
+                    .and_then(|result| result.wav_path.as_ref())
+                    .and_then(|path| std::fs::metadata(path).ok())
+                    .and_then(|metadata| metadata.modified().ok())
+                    .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|duration| duration.as_millis() as u64)
+            )),
+            field if field.starts_with("mtime_after.") => {
+                let other_index = field
+                    .strip_prefix("mtime_after.")
+                    .expect("prefix checked")
+                    .parse::<usize>()
+                    .map_err(|_| anyhow!("invalid comparison take index in {field:?}"))?;
+                let other = state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .channel_recordings
+                    .get(other_index)
+                    .ok_or_else(|| anyhow!("recording take index {other_index} is out of range"))?;
+                let wav_mtime_ms = |take: &crate::app::types::ChannelRecording| {
+                    take.result
+                        .as_ref()
+                        .and_then(|result| result.wav_path.as_ref())
+                        .and_then(|path| std::fs::metadata(path).ok())
+                        .and_then(|metadata| metadata.modified().ok())
+                        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|duration| duration.as_millis())
+                };
+                Ok(json!(
+                    wav_mtime_ms(recording)
+                        .zip(wav_mtime_ms(other))
+                        .is_some_and(|(current, other)| current > other)
+                ))
+            }
+            "fingerprint" => {
+                let fingerprint = |path: Option<&String>| -> Option<String> {
+                    let bytes = std::fs::read(path?).ok()?;
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    std::hash::Hash::hash(&bytes, &mut hasher);
+                    Some(format!(
+                        "{:016x}:{}",
+                        std::hash::Hasher::finish(&hasher),
+                        bytes.len()
+                    ))
+                };
+                Ok(json!(result.map(|result| {
+                    json!({
+                        "wav": fingerprint(result.wav_path.as_ref()),
+                        "csv": fingerprint(result.csv_path.as_ref()),
+                    })
+                })))
+            }
+            "source_identity" => {
+                let identity = recording
+                    .imported_source
+                    .as_ref()
+                    .map(|source| {
+                        format!(
+                            "{}|driver={:?}|measurement={}",
+                            source.speaker, source.driver_index, source.measurement_index
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        let speaker = recording
+                            .channel_name
+                            .find(" (")
+                            .map_or(recording.channel_name.as_str(), |position| {
+                                &recording.channel_name[..position]
+                            });
+                        format!(
+                            "{speaker}|channel={}|mic={}|position={}",
+                            recording.channel_index,
+                            recording.mic_index,
+                            recording.mic_position_index
+                        )
+                    });
+                Ok(json!(identity))
+            }
+            _ => Err(anyhow!("unknown recording take field {field:?}")),
+        };
+    }
     if let Some(field) = path.strip_prefix("plugins.parameter_receipt.") {
         const FIELDS: &[&str] = &[
             "status",
@@ -273,6 +430,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "navigation.compact_highlight" => json!(app.ui_state.navigation.compact_highlight),
         "navigation.studio_picker_open" => json!(app.ui_state.navigation.studio_picker_open),
         "playback.transport_diagnostics" => state.player.transport_diagnostics(),
+        "playback.engine_diagnostics" => state.player.engine_diagnostics(),
         "playback.volume" => json!(app.playback.volume),
         "playback.is_playing" => json!(app.playback.is_playing),
         "playback.muted" => json!(app.playback.muted),
@@ -887,18 +1045,28 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             json!(app.measurement_state.recording_state.setup_description)
         }
         "recording.save_name" => json!(app.measurement_state.recording_state.save_name),
+        "recording.signal_level_db" => {
+            json!(app.measurement_state.recording_state.signal_level_db)
+        }
         "recording.saved_path" => json!(app.measurement_state.recording_state.take_review.saved_to),
         "recording.all_done" => json!(
             app.measurement_state
                 .recording_state
                 .all_channels_recorded()
         ),
+        "recording.all_takes_accepted" => {
+            let recording = &app.measurement_state.recording_state;
+            json!(recording.take_review.all_accepted(&recording.channel_recordings))
+        }
         "recording.channel_count" => json!(
             app.measurement_state
                 .recording_state
                 .channel_recordings
                 .len()
         ),
+        "recording.in_progress" => {
+            json!(app.measurement_state.recording_state.is_recording())
+        }
         "recording.done_count" => json!(
             app.measurement_state
                 .recording_state
@@ -908,6 +1076,88 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                     recording.state == crate::app::types::ChannelRecordingState::Done
                 })
                 .count()
+        ),
+        "recording.review_count" => json!(
+            app.measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter(|recording| {
+                    recording.state == crate::app::types::ChannelRecordingState::ReviewNeeded
+                })
+                .count()
+        ),
+        "recording.completed_count" => json!(
+            app.measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter(|recording| {
+                    matches!(
+                        recording.state,
+                        crate::app::types::ChannelRecordingState::Done
+                            | crate::app::types::ChannelRecordingState::ReviewNeeded
+                    )
+                })
+                .count()
+        ),
+        "recording.quality_count" => json!(
+            app.measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter(|recording| recording.result.as_ref().is_some_and(|result| result.quality.is_some()))
+                .count()
+        ),
+        "recording.stimulus_config_count" => json!(
+            app.measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter(|recording| recording.result.as_ref().is_some_and(|result| result.stimulus_config.is_some()))
+                .count()
+        ),
+        "recording.config_edit_confirmation_pending" => json!(
+            app.measurement_state
+                .recording_state
+                .config_change_confirmation_pending
+        ),
+        "recording.mixed_stimulus_levels" => {
+            let levels = app
+                .measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter_map(|recording| recording.result.as_ref()?.stimulus_config.as_ref()?.level_dbfs)
+                .collect::<Vec<_>>();
+            json!(levels
+                .first()
+                .is_some_and(|first| levels.iter().any(|level| (level - first).abs() > 0.01)))
+        }
+        "recording.evidence_complete" => json!(
+            !app.measurement_state.recording_state.channel_recordings.is_empty()
+                && app.measurement_state.recording_state.channel_recordings.iter().all(|recording| {
+                    recording.result.as_ref().is_some_and(|result| {
+                        result.frequencies.len() >= 2
+                            && result.magnitude_db.len() == result.frequencies.len()
+                            && result.impulse_response.as_ref().is_some_and(|samples| samples.len() >= 2)
+                            && result.wav_path.as_ref().is_some_and(|path| std::path::Path::new(path).is_file())
+                            && result.csv_path.as_ref().is_some_and(|path| std::path::Path::new(path).is_file())
+                    })
+                })
+        ),
+        "recording.max_thd_percent" => json!(
+            app.measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter_map(|recording| recording.result.as_ref())
+                .filter_map(|result| result.thd_percent.as_ref())
+                .flat_map(|values| values.iter().copied())
+                .reduce(f32::max)
+        ),
+        "recording.noise_warning" => json!(
+            app.measurement_state.recording_state.noise_floor_warning.is_some()
         ),
         "recording.error_count" => json!(
             app.measurement_state
@@ -1362,6 +1612,25 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             json!(value)
         }
         "roomeq.error" => json!(app.measurement_state.room_eq_state.error_message),
+        "roomeq.source_quality_visible" => json!(app
+            .measurement_state
+            .room_eq_state
+            .status_message
+            .contains("Take quality:")),
+        "roomeq.source_quality_warning_count" => json!(app
+            .measurement_state
+            .recording_state
+            .channel_recordings
+            .iter()
+            .filter(|recording| {
+                recording.state == crate::app::types::ChannelRecordingState::Done
+                    && recording
+                        .result
+                        .as_ref()
+                        .and_then(|result| result.quality.as_ref())
+                        .is_some_and(|quality| !quality.trustworthy)
+            })
+            .count()),
         "roomeq.export.path" => json!(default_room_eq_export_path()),
         "roomeq.export.exists" => json!(default_room_eq_export_path().is_file()),
         "roomeq.export.bytes" => json!(room_eq_export_summary().and_then(|s| s.bytes)),

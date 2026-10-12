@@ -54,7 +54,13 @@ impl App {
         let session_id = format!("sotf-tui-listening-{timestamp}");
         let result = prepare_ab_test_session(AbTestSessionPreparationRequest {
             session_id: &session_id,
-            assignment_seed: timestamp as u64,
+            // Keep QA runs reproducible while preserving a fresh seed for
+            // ordinary user-created listening sessions.
+            assignment_seed: if cfg!(feature = "dev-api") {
+                42_424_242
+            } else {
+                timestamp as u64
+            },
             path_a_label: "Path A",
             path_b_label: "Path B",
             path_a: &path_a,
