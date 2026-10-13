@@ -9,7 +9,7 @@ pub(super) struct Cli {
     #[command(flatten)]
     pub(super) actions: RecorderActions,
 
-    /// Signal type: tone, two-tone, sweep, white-noise, pink-noise, m-noise, mls, dirac
+    /// Signal type: tone, two-tone, sweep, white-noise, pink-noise, m-noise, mls, dirac, stipa
     #[arg(long)]
     pub(super) signal: Option<String>,
 

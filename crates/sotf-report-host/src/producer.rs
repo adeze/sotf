@@ -56,6 +56,8 @@ impl GeneratedReport {
 /// Run this function on a background worker. `artifact_root` resolves relative
 /// response/IR sidecars without rewriting their identities. Python with NumPy
 /// is required by the existing AutoEQ producer; `python` selects that runtime.
+/// The native dataset producer resolves to `AUTOEQ_REPORT_PRODUCER` when set,
+/// else to Cargo's cached build in the sibling AutoEQ checkout when present.
 /// No packages are installed and no network access is performed.
 ///
 /// # Errors
@@ -125,7 +127,19 @@ pub fn generate_report_with_quality(
     let interpreter = python
         .or(configured_python.as_deref())
         .unwrap_or(Path::new("python3"));
-    let mut child = Command::new(interpreter)
+    let mut command = Command::new(interpreter);
+    // Staged scripts are not a runnable cargo workspace, so the native
+    // producer fallback needs the real sibling checkout. Installed hosts
+    // without a checkout keep the previous behavior and must provide
+    // AUTOEQ_REPORT_PRODUCER (a prebuilt report-producer executable).
+    let sibling = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../autoeq");
+    if sibling
+        .join("crates/autoeq-report-wasm/Cargo.toml")
+        .is_file()
+    {
+        command.env("AUTOEQ_WORKSPACE_ROOT", &sibling);
+    }
+    let mut child = command
         .arg("-I").arg("-c")
         .arg("import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); from src.loaders import load_roomeq_json; from src.report import build_report_payload; import json; Path(sys.argv[3]).write_text(json.dumps(build_report_payload(load_roomeq_json(Path(sys.argv[2]))),ensure_ascii=False,allow_nan=False),encoding=\"utf-8\")")
         .arg(producer).arg(&json_path).arg(&payload_path)

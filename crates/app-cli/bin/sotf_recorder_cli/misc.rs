@@ -225,6 +225,9 @@ pub fn record_signal(
             let amp = validated_amp(amp, "--amp")?;
             SignalParams::Dirac { amp }
         }
+        // STIPA carries a standardized spectrum and level; --amp does not
+        // apply and any supplied value is ignored like other unused flags.
+        SignalType::Stipa => SignalParams::Stipa,
     };
 
     println!("\nConfiguration:");
@@ -474,6 +477,43 @@ mod tests {
         .expect_err("uncreatable output dir must fail");
         assert!(
             err.contains("failed to create output directory"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn record_signal_routes_stipa_without_requiring_flags() {
+        use std::collections::HashMap;
+
+        // STIPA needs no --freq/--amp flags, so with a below-minimum sample
+        // rate the CLI must reach shared validation (which rejects the rate)
+        // instead of failing on a missing flag. Signal preparation runs
+        // before any hardware access, so this stays hardware-free.
+        let err = super::record_signal(
+            "stipa".to_string(),
+            1.0,
+            16000,
+            1,
+            "0".to_string(),
+            "0".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            20.0,
+            20000.0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            HashMap::new(),
+        )
+        .expect_err("below-minimum STIPA sample rate must fail");
+        assert!(
+            err.contains("STIPA requires a sample rate"),
             "unexpected error: {err}"
         );
     }
