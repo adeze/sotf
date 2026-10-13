@@ -620,24 +620,20 @@ pub(crate) fn save_recordings(app: &mut App) {
 
     std::thread::spawn(move || {
         let result = match serde_json::to_string_pretty(&room_config) {
-            Ok(json) => {
-                let write_result =
-                    sotf_audio_player::recording_helpers::save_recording_session_json(
-                        &path,
-                        json.as_bytes(),
-                    )
-                    .map_err(|error| format!("Write error: {error}"))
-                    .and_then(|()| {
-                        sotf_audio_player::recording_helpers::save_recording_quality_sidecar_with_stimuli(
-                            &path,
-                            json.as_bytes(),
-                            quality_entries,
-                            stimulus_entries,
-                        )
-                        .map_err(|error| format!("Could not save recording evidence: {error}"))
-                    });
-                write_result
-            }
+            Ok(json) => sotf_audio_player::recording_helpers::save_recording_session_json(
+                &path,
+                json.as_bytes(),
+            )
+            .map_err(|error| format!("Write error: {error}"))
+            .and_then(|()| {
+                sotf_audio_player::recording_helpers::save_recording_quality_sidecar_with_stimuli(
+                    &path,
+                    json.as_bytes(),
+                    quality_entries,
+                    stimulus_entries,
+                )
+                .map_err(|error| format!("Could not save recording evidence: {error}"))
+            }),
             Err(e) => Err(format!("Serialize error: {}", e)),
         };
         let _ = tx.send(result);

@@ -705,7 +705,7 @@ impl PlayerView {
                                         captured_level_lines
                                             .iter()
                                             .cloned()
-                                            .map(|line| Text::caption(line)),
+                                            .map(Text::caption),
                                     )
                                     .child(Text::caption(next_capture_level.clone())),
                             ),
@@ -1323,9 +1323,7 @@ impl PlayerView {
         #[cfg(feature = "dev-api")]
         let qa_capture = self.state.update(cx, |state, _| {
             let recording = &mut state.app.measurement_state.recording_state;
-            let Some(fixture) = recording.qa_fake_capture.as_mut() else {
-                return None;
-            };
+            let fixture = recording.qa_fake_capture.as_mut()?;
             Some(QaCaptureRun {
                 profile: fixture.profile,
                 fault: fixture.fault.take(),

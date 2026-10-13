@@ -365,7 +365,8 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 ("Compressor", data.gain_reduction_db.as_slice())
             } else if let Some(data) = data.downcast_ref::<sotf_plugins::MultibandExpanderData>() {
                 ("Expander", data.attenuation_db.as_slice())
-            } else if let Some(data) = data.downcast_ref::<sotf_plugins::LimiterData>() {
+            } else {
+                let data = data.downcast_ref::<sotf_plugins::LimiterData>()?;
                 // Limiter publishes one aggregate reduction, not per-channel values.
                 return Some(json!({
                     "kind": "Limiter",
@@ -375,8 +376,6 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                     "input_peak_db": data.peak_db.is_finite().then_some(data.peak_db),
                     "output_peak_db": data.output_peak_db.is_finite().then_some(data.output_peak_db),
                 }));
-            } else {
-                return None;
             };
             Some(json!({
                 "kind": kind,

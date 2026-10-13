@@ -37,7 +37,9 @@ struct CaptureReview {
 
 #[derive(Debug)]
 enum WorkerEvent {
-    Loaded(Result<(ValidatedCaptureSession, PathBuf), String>),
+    // Boxed: the validated plan dwarfs the other variants and the event
+    // crosses threads once per load, so indirection costs nothing.
+    Loaded(Box<Result<(ValidatedCaptureSession, PathBuf), String>>),
     Progress(String),
     Recorded(Result<usize, String>),
     Processed(Result<CaptureReview, String>),
@@ -109,7 +111,7 @@ impl CaptureWorkflow {
         self.review_lines.clear();
         self.clear_results();
         self.start(CaptureStage::Loading, "Loading session plan", move |_| {
-            WorkerEvent::Loaded(read_plan(&path))
+            WorkerEvent::Loaded(Box::new(read_plan(&path)))
         })
     }
 
@@ -210,13 +212,16 @@ impl CaptureWorkflow {
 
     fn finish(&mut self, event: WorkerEvent) {
         match event {
-            WorkerEvent::Loaded(Ok((session, directory))) => {
-                self.review_lines = plan_review(&session);
-                self.plan = Some(session);
-                self.plan_directory = directory;
-                self.stage = CaptureStage::Ready;
-                self.message = "Plan valid. Review routes, calibration, positions, and frozen gains before recording. Hardware and take QA are unchecked.".into();
-            }
+            WorkerEvent::Loaded(boxed) => match *boxed {
+                Ok((session, directory)) => {
+                    self.review_lines = plan_review(&session);
+                    self.plan = Some(session);
+                    self.plan_directory = directory;
+                    self.stage = CaptureStage::Ready;
+                    self.message = "Plan valid. Review routes, calibration, positions, and frozen gains before recording. Hardware and take QA are unchecked.".into();
+                }
+                Err(error) => self.fail(error),
+            },
             WorkerEvent::Recorded(Ok(count)) => {
                 self.stage = CaptureStage::RawReady;
                 self.message = format!(
@@ -244,9 +249,9 @@ impl CaptureWorkflow {
                     "Processing finished without a complete RoomEQ manifest. Import unavailable; review pending stages."
                 }.into();
             }
-            WorkerEvent::Loaded(Err(error))
-            | WorkerEvent::Recorded(Err(error))
-            | WorkerEvent::Processed(Err(error)) => self.fail(error),
+            WorkerEvent::Recorded(Err(error)) | WorkerEvent::Processed(Err(error)) => {
+                self.fail(error);
+            }
             WorkerEvent::Progress(_) => {}
         }
     }
@@ -497,10 +502,10 @@ mod tests {
     fn plan_validation_never_claims_hardware_or_measurement_acceptance() {
         let (mut workflow, sender) = pending(CaptureStage::Loading);
         sender
-            .send(WorkerEvent::Loaded(Ok((
+            .send(WorkerEvent::Loaded(Box::new(Ok((
                 session(),
                 PathBuf::from("calibrations"),
-            ))))
+            )))))
             .unwrap();
         assert!(workflow.poll());
         assert_eq!(workflow.stage, CaptureStage::Ready);

@@ -533,13 +533,13 @@ impl PlayerView {
                                                 (usize::from(accepted), mic_position)
                                             },
                                         );
-                                        if accepted > 0 {
-                                            if let Some(mic_position) = mic_position {
-                                                view.resume_batch_after_review_accept(
-                                                    mic_position,
-                                                    cx,
-                                                );
-                                            }
+                                        if accepted > 0
+                                            && let Some(mic_position) = mic_position
+                                        {
+                                            view.resume_batch_after_review_accept(
+                                                mic_position,
+                                                cx,
+                                            );
                                         }
                                         cx.notify();
                                     });
