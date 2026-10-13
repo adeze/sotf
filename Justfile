@@ -61,7 +61,7 @@ check:
 	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" {{cargo}} check --workspace --lib --bins --tests --examples {{test_features}}
 
 [group('test')]
-test:
+test: prebuild-report-producer
 	#!/usr/bin/env bash
 	set -euo pipefail
 	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
@@ -84,8 +84,18 @@ test-proptest:
 	mkdir -p "$CLANG_CACHE_DIR"
 	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" PROPTEST_CASES=10000 {{cargo}} test --test proptest_tests --release {{release_test_features}}
 
+# Warm Cargo's cache for the report-producer binary that sotf-report-host
+# tests spawn through autoeq's native_report.py `cargo run` fallback.
+# Without this, cold checkouts exceed the tests' 60s generation timeout:
+# parallel `cargo run` builds serialize on cargo's package lock while each
+# test's clock runs. This must match the fallback invocation (dev profile,
+# same manifest and target dir) so the cache hits.
 [group('test')]
-ntest:
+prebuild-report-producer:
+	{{cargo}} build --quiet --manifest-path ../autoeq/Cargo.toml -p autoeq-report-wasm --bin report-producer
+
+[group('test')]
+ntest: prebuild-report-producer
 	CARGO_PROFILE_RELEASE_LTO=off {{cargo}} nextest run --release --no-fail-fast --workspace --lib --bins --examples {{release_test_features}}
 
 [group('test')]

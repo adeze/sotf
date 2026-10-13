@@ -45,12 +45,24 @@ impl ReportServer {
                 while !worker_stop.load(Ordering::Acquire) {
                     match listener.accept() {
                         Ok((stream, _)) => {
-                            let _ = serve(stream, &path, html.as_bytes());
+                            // The worker owns no error channel back to the
+                            // report window; a dropped connection with no
+                            // diagnostic is a blank viewer and an
+                            // undebuggable test failure. These paths only
+                            // fire on client misbehavior or timeouts.
+                            if let Err(error) = serve(stream, &path, html.as_bytes()) {
+                                eprintln!(
+                                    "sotf-report-host: closing connection after serve error: {error}"
+                                );
+                            }
                         }
                         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                             std::thread::sleep(Duration::from_millis(10));
                         }
-                        Err(_) => break,
+                        Err(error) => {
+                            eprintln!("sotf-report-host: accept loop stopping: {error}");
+                            break;
+                        }
                     }
                 }
             })
@@ -93,6 +105,10 @@ impl Drop for ReportServer {
 }
 
 fn serve(mut stream: TcpStream, path: &str, html: &[u8]) -> std::io::Result<()> {
+    // Accepted sockets inherit the listener's nonblocking mode; the first
+    // read would then race the client's request bytes (EAGAIN) and drop the
+    // connection. Blocking plus timeouts keeps the slow-client bound below.
+    stream.set_nonblocking(false)?;
     // Bound a slow client so closing a window cannot leave a blocked worker.
     stream.set_read_timeout(Some(Duration::from_millis(250)))?;
     stream.set_write_timeout(Some(Duration::from_millis(250)))?;
@@ -140,5 +156,31 @@ mod tests {
         let address = url::Url::parse(&url).unwrap();
         drop(report);
         assert!(TcpStream::connect(("127.0.0.1", address.port().unwrap())).is_err());
+    }
+
+    #[test]
+    fn slow_arriving_request_is_still_served() {
+        use std::io::Write as _;
+        let report = ReportServer::start("<html>slow</html>".into()).unwrap();
+        let url = url::Url::parse(report.url()).unwrap();
+        let mut stream = TcpStream::connect(("127.0.0.1", url.port().unwrap())).unwrap();
+        // Request bytes arrive after the accept (50ms: past the 10ms accept
+        // poll, well inside the 250ms slow-client bound). The server must
+        // wait for them instead of dropping the connection with EAGAIN.
+        std::thread::sleep(Duration::from_millis(50));
+        write!(
+            stream,
+            "GET {} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+            url.path()
+        )
+        .unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).unwrap();
+        let response = String::from_utf8(response).unwrap();
+        assert!(
+            response.starts_with("HTTP/1.1 200 OK"),
+            "unexpected response: {response}"
+        );
+        assert!(response.ends_with("<html>slow</html>"));
     }
 }
