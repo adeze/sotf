@@ -9818,7 +9818,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-dev-api"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "hex",
  "serde",
@@ -9860,7 +9860,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-docs-gen"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "sotf-host",
  "sotf-plugins",
@@ -9868,7 +9868,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "arc-swap",
  "bytemuck",
@@ -9946,7 +9946,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -11488,7 +11488,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-report-host"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "anyhow",
  "autoeq-report-wasm",
