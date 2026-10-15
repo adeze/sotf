@@ -611,6 +611,7 @@ pub(crate) fn render_app_plugin_shell(
         let entity_for_highlight = entity.clone();
         let entity_for_output = entity.clone();
         let select = Select::new(("upmixer-header-output", plugin_idx))
+            .aria_label(text.label("Output"))
             .size(SelectSize::Sm)
             .selected(selected)
             .options(

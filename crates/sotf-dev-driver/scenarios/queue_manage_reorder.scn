@@ -1,7 +1,7 @@
 # Queue rendered workflow with the checked-in demo audio fixture.
 #
-# Album-card selection and Enter use the same visible Library workflow as a
-# keyboard user. The remainder uses only painted Queue controls and asserts
+# Album details expose an explicit Add to Queue action. The remainder uses
+# only painted Queue controls and asserts
 # the durable queue model behind the rendered rows.
 
 focus library
@@ -10,39 +10,33 @@ action ResetFontSize
 assert settings.font_scale == 1.0 tolerance=0.01
 assert queue.length == 0
 wait_until library.album_count > 0 timeout=5s
-# The model query can lead the rendered album-card registry by one frame while
-# the seeded library finishes its initial layout.
-sleep 500ms
-assert_visible library.album.0
-assert_visible library.album.1
+wait_idle 1s
+click library.tab.search
+click library.search_input
+type "Demo"
+wait_until library.filtered_album_count > 0 timeout=2s
 click library.album.0
-sleep 100ms
-key enter
-wait_until queue.length == 1 timeout=2s
-click library.album.1
-sleep 100ms
-key enter
-wait_until queue.length == 2 timeout=2s
-assert queue.first_title == "Demo"
-assert queue.second_title == "Library"
+wait_until library.detail.open == true timeout=2s
+click library.detail.track.0.add
+click library.detail.track.2.add
+wait_until queue.upcoming_count == 2 timeout=2s
+assert queue.upcoming_titles == ["Country","EDM"]
 click sidebar.nav-queue
 assert screen.focused == "Queue"
-assert_visible queue.move_down.0
-click queue.move_down.0
-assert queue.first_title == "Library"
-assert queue.second_title == "Demo"
-assert queue.current_index == 1
-# Let GPUI repaint the expanded row after its index changes before selecting its
-# newly registered remove control.
-sleep 100ms
-assert_visible queue.remove.1
-assert_accessible button Remove from Queue
-click queue.remove.1
-wait_until queue.length == 1 timeout=2s
+wait_idle 500ms
+assert_visible queue.upcoming.0.down
+click queue.upcoming.0.down
+wait_until queue.upcoming_titles == ["EDM","Country"] timeout=2s
+assert playback.is_playing == false
+wait_idle 250ms
+assert_visible queue.upcoming.1.remove
+assert_accessible button Remove
+click queue.upcoming.1.remove
+wait_until queue.upcoming_count == 1 timeout=2s
 assert queue.can_undo_remove == true
-assert_visible queue.undo_remove
 click queue.undo_remove
-wait_until queue.length == 2 timeout=2s
+wait_until queue.upcoming_count == 2 timeout=2s
+assert queue.upcoming_titles == ["EDM","Country"]
 assert queue.can_undo_remove == false
 
 # Clear and undo through the header controls; the recovered queue must retain
@@ -64,19 +58,24 @@ resize 700 600
 sleep 300ms
 assert_in_viewport queue.save_as_playlist
 assert_in_viewport queue.clear
-assert_non_overlapping sidebar.nav-queue queue.clear
-assert_visible meters.panel
+assert_non_overlapping navigation.compact queue.clear
+assert_visible meters.lufs-panel
 screenshot queue-manage-reorder-compact-100
 
-click sidebar.nav-preferences-button
-click settings.tab.Theme
+click navigation.preferences
+click preferences.category
+key down
+key enter
+wait_until settings.active_tab == "Theme" timeout=2s
+scroll_into_view preferences.content settings.appearance.font-scale
 assert_in_viewport settings.appearance.font-scale
 click settings.appearance.font-scale
 key cmd-a
 type "150"
 key enter
 assert settings.font_scale == 1.5 tolerance=0.01
-click sidebar.nav-queue
+click preferences.done
+wait_idle 500ms
 assert screen.focused == "Queue"
 sleep 300ms
 assert_in_viewport queue.save_as_playlist
@@ -84,15 +83,17 @@ assert_in_viewport queue.clear
 assert_visible meters.lufs-panel
 screenshot queue-manage-reorder-compact-150
 
-click sidebar.nav-preferences-button
-click settings.tab.Theme
+click navigation.preferences
+wait_until settings.active_tab == "Theme" timeout=2s
+scroll_into_view preferences.content settings.appearance.font-scale
 assert_in_viewport settings.appearance.font-scale
 click settings.appearance.font-scale
 key cmd-a
 type "200"
 key enter
 assert settings.font_scale == 2.0 tolerance=0.01
-click sidebar.nav-queue
+click preferences.done
+wait_idle 500ms
 assert screen.focused == "Queue"
 sleep 300ms
 assert_in_viewport queue.save_as_playlist

@@ -28,6 +28,7 @@ macro_rules! tracked {
 
 impl PlayerView {
     pub(super) fn render_flat_queue(&self, cx: &mut Context<Self>) -> AnyElement {
+        let management_actions = self.render_queue_management_actions(cx).into_any_element();
         let state = self.state.read(cx);
         let app = &state.app;
         let labels = FlatQueueTranslations::for_language(app.ui_state.language);
@@ -53,7 +54,8 @@ impl PlayerView {
             .flex_col()
             .gap(d.gap)
             .p(d.card)
-            .child(Text::section_header(translations.queue_title));
+            .child(Text::section_header(translations.queue_title))
+            .child(management_actions);
         if let Some(title) = current {
             root = root.child(Text::label(format!(
                 "{} · {title}",

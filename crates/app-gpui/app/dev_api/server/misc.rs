@@ -1,8 +1,5 @@
 use super::super::registry;
-use crate::app::types::{
-    ChannelMapping, ChannelRecording, ChannelRecordingState, RecordingResult, RecordingState,
-    RecordingStep,
-};
+use crate::app::types::{ChannelMapping, RecordingState, RecordingStep};
 use anyhow::{Result, anyhow};
 use gpui::App;
 use std::path::{Path, PathBuf};
@@ -64,25 +61,19 @@ pub(super) fn room_eq_export_summary_for_path(path: &Path) -> Result<serde_json:
 
 pub(super) fn load_room_eq_recording_fixture(fixture_dir: &Path) -> Result<RecordingState> {
     let recordings_path = fixture_dir.join("recordings.json");
-    if !recordings_path.is_file() {
-        return Err(anyhow!(
-            "RoomEQ fixture is missing recordings.json: {}",
-            recordings_path.display()
-        ));
-    }
-    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&recordings_path)?)
-        .map_err(|e| anyhow!("invalid recordings.json: {e}"))?;
-    let speakers = json
-        .get("speakers")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| anyhow!("recordings.json needs `speakers` object"))?;
-
-    let mut names: Vec<String> = speakers.keys().cloned().collect();
-    names.sort_by_key(|name| channel_sort_key(name));
-    if names.is_empty() {
-        return Err(anyhow!("recordings.json contains no speakers"));
-    }
-
+    let json = std::fs::read_to_string(&recordings_path)
+        .map_err(|error| anyhow!("reading {}: {error}", recordings_path.display()))?;
+    let mut imported =
+        sotf_audio_player::recording_types::RecordingImport::from_json(&json, Some(fixture_dir))
+            .map_err(|error| anyhow!("invalid recordings.json: {error}"))?;
+    imported
+        .channels
+        .sort_by_key(|channel| channel_sort_key(&channel.channel_name));
+    let names: Vec<_> = imported
+        .channels
+        .iter()
+        .map(|channel| channel.channel_name.clone())
+        .collect();
     let mut recording = RecordingState {
         model: sotf_audio_player::ui_models::recording::RecordingScreenModel {
             recording_directory: Some(fixture_dir.to_string_lossy().into_owned()),
@@ -98,90 +89,13 @@ pub(super) fn load_room_eq_recording_fixture(fixture_dir: &Path) -> Result<Recor
         .collect();
     recording.model.recording_config.num_channels = 1;
     recording.model.recording_config.channel_mappings = vec![0];
-
-    recording.model.channel_recordings = names
-        .iter()
-        .enumerate()
-        .map(|(idx, name)| -> Result<ChannelRecording> {
-            let speaker = speakers
-                .get(name)
-                .ok_or_else(|| anyhow!("missing speaker `{name}`"))?;
-            let frequencies = json_f32_array(speaker, "frequencies", name)?;
-            let magnitude_db = json_f32_array(speaker, "magnitude_db", name)?;
-            let phase_deg = json_f32_array(speaker, "phase_deg", name)?;
-            if frequencies.len() != magnitude_db.len() || frequencies.len() != phase_deg.len() {
-                return Err(anyhow!(
-                    "speaker `{name}` has mismatched response lengths: frequencies={}, magnitude_db={}, phase_deg={}",
-                    frequencies.len(),
-                    magnitude_db.len(),
-                    phase_deg.len()
-                ));
-            }
-
-            let mut rec = ChannelRecording::new(idx, name.clone());
-            rec.state = ChannelRecordingState::Done;
-            rec.result = Some(RecordingResult {
-                sample_rate_hz: None,
-                channel: idx,
-                wav_path: fixture_child_path(fixture_dir, speaker.get("wav_path")),
-                csv_path: fixture_child_path(fixture_dir, speaker.get("csv_path")),
-                frequencies,
-                magnitude_db,
-                phase_deg,
-                impulse_response: None,
-                impulse_time_ms: None,
-                thd_percent: None,
-                harmonic_distortion_db: None,
-                excess_group_delay_ms: None,
-                rt60_ms: None,
-                clarity_c50_db: None,
-                clarity_c80_db: None,
-                spectrogram_db: None,
-                quality: None,
-                stimulus_config: None,
-            });
-            Ok(rec)
-        })
-        .collect::<Result<Vec<_>>>()?;
-
+    recording.model.channel_recordings = imported.recordings();
+    recording.imported_session = Some(imported);
     recording.model.step = RecordingStep::Evaluating;
     recording.model.recording_progress = 1.0;
     recording.model.current_recording_channel = None;
     recording.model.status_message = format!("QA RoomEQ fixture loaded: {} channels", names.len());
-
     Ok(recording)
-}
-
-pub(super) fn json_f32_array(
-    parent: &serde_json::Value,
-    key: &str,
-    speaker_name: &str,
-) -> Result<Vec<f32>> {
-    let array = parent
-        .get(key)
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| anyhow!("speaker `{speaker_name}` needs `{key}` array"))?;
-    array
-        .iter()
-        .enumerate()
-        .map(|(idx, value)| {
-            value
-                .as_f64()
-                .map(|v| v as f32)
-                .ok_or_else(|| anyhow!("speaker `{speaker_name}` `{key}`[{idx}] is not numeric"))
-        })
-        .collect()
-}
-
-pub(super) fn fixture_child_path(root: &Path, value: Option<&serde_json::Value>) -> Option<String> {
-    let raw = value.and_then(|v| v.as_str())?;
-    let path = PathBuf::from(raw);
-    let path = if path.is_absolute() {
-        path
-    } else {
-        root.join(path)
-    };
-    Some(path.to_string_lossy().into_owned())
 }
 
 pub(super) fn channel_sort_key(name: &str) -> (usize, String) {

@@ -983,6 +983,7 @@ impl RoomEqScreenModel {
                                             measurements,
                                             speaker_name: None,
                                             provenance: acquisition,
+                                            estimated_position: None,
                                         },
                                     ),
                                 ),
@@ -1044,6 +1045,7 @@ impl RoomEqScreenModel {
                                             measurements,
                                             speaker_name: driver.name.clone(),
                                             provenance: acquisition,
+                                            estimated_position: None,
                                         },
                                     )
                                 };
@@ -1618,6 +1620,7 @@ mod tests {
                 .collect(),
             speaker_name: None,
             provenance: provenance.clone(),
+            estimated_position: None,
         });
         let mut config = autoeq::RoomConfig::default();
         config.speakers.insert(
@@ -1753,6 +1756,7 @@ mod tests {
                     autoeq::MeasurementSource::Multiple(autoeq::read::MeasurementMultiple {
                         speaker_name: Some("Woofer".into()),
                         provenance: Default::default(),
+                        estimated_position: None,
                         measurements: vec![
                             response("Woofer seat A", 1.0),
                             response("Woofer seat B", 2.0),

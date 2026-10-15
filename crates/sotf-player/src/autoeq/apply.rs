@@ -525,18 +525,67 @@ pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> Result<PluginGr
         let y = 100.0 + (*y_index as f32) * y_spacing;
         *y_index += 1;
 
-        let plugin_type = PluginType::from_name(&node_config.plugin_type).unwrap_or(PluginType::EQ);
+        let channel_gain_settings = if node_config.plugin_type.eq_ignore_ascii_case("gain") {
+            node_config
+                .parameters
+                .get("channel_gains")
+                .and_then(|value| value.as_array())
+                .filter(|gains| !gains.is_empty())
+                .map(|gains| {
+                    // Match the Matrix DSP's per-axis channel limit before allocating.
+                    const MAX_MATRIX_CHANNELS: usize = 128;
+                    let channels = gains.len();
+                    if channels > MAX_MATRIX_CHANNELS || channels != node_config.input_channels {
+                        return Err(
+                            "Per-channel gain dimensions do not match the graph node".to_string()
+                        );
+                    }
+                    let mut matrix = vec![0.0; channels * channels];
+                    for (index, value) in gains.iter().enumerate() {
+                        let gain_db = value
+                            .as_f64()
+                            .filter(|value| value.is_finite())
+                            .ok_or_else(|| "Invalid per-channel gain".to_string())?
+                            as f32;
+                        let amplitude = 10.0_f32.powf(gain_db / 20.0);
+                        if !gain_db.is_finite() || !amplitude.is_finite() {
+                            return Err(
+                                "Per-channel gain is outside the finite matrix range".to_string()
+                            );
+                        }
+                        matrix[index * channels + index] = amplitude;
+                    }
+                    Ok::<_, String>(PluginSettings::Matrix {
+                        input_channels: channels,
+                        output_channels: channels,
+                        matrix,
+                        channel_states: vec![Default::default(); channels],
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        let plugin_type = if channel_gain_settings.is_some() {
+            PluginType::Matrix
+        } else {
+            PluginType::from_name(&node_config.plugin_type).unwrap_or(PluginType::EQ)
+        };
 
         let node_id = graph.add_plugin_node(&plugin_type, NodePosition::new(x, y))?;
 
         let derived_name = derive_plugin_name(&node_config.plugin_type, &node_config.parameters);
 
         if let Some(node) = graph.nodes.get_mut(&node_id) {
-            apply_dsp_params_to_settings(
-                &mut node.plugin.settings,
-                &node_config.plugin_type,
-                &node_config.parameters,
-            );
+            if let Some(settings) = channel_gain_settings {
+                node.plugin.settings = settings;
+            } else {
+                apply_dsp_params_to_settings(
+                    &mut node.plugin.settings,
+                    &node_config.plugin_type,
+                    &node_config.parameters,
+                );
+            }
             node.plugin.name = derived_name;
         }
 
@@ -710,6 +759,19 @@ mod tests {
         assert_eq!(outcome.total_broadband, 0);
         assert!(graph.find_plugin_index_by_name("Room EQ").is_some());
         assert!(graph.find_plugin_index_by_name("Broadband EQ").is_none());
+    }
+
+    #[test]
+    fn apply_rack_accepts_tagged_room_correction() {
+        let mut graph = PluginGraph::with_default_rack();
+        let dsp = make_dsp_output_for_channels(&[
+            ("L", vec![json_eq_plugin(Some("room_eq_correction"), 125.0)]),
+            ("R", vec![json_eq_plugin(Some("room_eq_correction"), 250.0)]),
+        ]);
+        let outcome = apply_room_eq_rack_to_chain(&mut graph, &dsp, &["L".into(), "R".into()]);
+        assert_eq!(outcome.total_filters, 2);
+        assert_eq!(outcome.total_broadband, 0);
+        assert!(graph.find_plugin_index_by_name("Room EQ").is_some());
     }
 
     #[test]
@@ -907,6 +969,65 @@ mod tests {
     }
 
     #[test]
+    fn build_ui_graph_preserves_distinct_channel_gains() {
+        use sotf_audio::engine::{PluginGraphConfig, PluginGraphNodeConfig};
+        let config = PluginGraphConfig {
+            nodes: vec![PluginGraphNodeConfig {
+                id: 0,
+                plugin_type: "gain".into(),
+                input_channels: 2,
+                bypassed: false,
+                parameters: serde_json::json!({"channel_gains": [-6.0, -12.0]}),
+            }],
+            edges: vec![],
+        };
+        let graph = build_ui_graph_from_config(&config).unwrap();
+        let matrix = graph
+            .nodes
+            .values()
+            .find_map(|node| match &node.plugin.settings {
+                PluginSettings::Matrix {
+                    input_channels,
+                    output_channels,
+                    matrix,
+                    ..
+                } => {
+                    assert_eq!((*input_channels, *output_channels), (2, 2));
+                    Some(matrix)
+                }
+                _ => None,
+            })
+            .expect("per-channel gain representation");
+        assert!((matrix[0] - 0.5011872).abs() < 1e-6);
+        assert_eq!(matrix[1], 0.0);
+        assert_eq!(matrix[2], 0.0);
+        assert!((matrix[3] - 0.2511886).abs() < 1e-6);
+        let mut invalid = config.clone();
+        invalid.nodes[0].parameters = serde_json::json!({"channel_gains": [-6.0]});
+        assert!(build_ui_graph_from_config(&invalid).is_err());
+        invalid.nodes[0].parameters = serde_json::json!({"channel_gains": [-6.0, -1e300]});
+        assert!(build_ui_graph_from_config(&invalid).is_err());
+    }
+
+    #[test]
+    fn finalized_protection_and_gain_require_graph_apply() {
+        use crate::room_eq_types::DspChainOutputExt;
+        let protected = make_dsp_output_for_channels(&[(
+            "L",
+            vec![json_eq_plugin(Some("excursion_protection"), 40.0)],
+        )]);
+        assert!(!protected.is_rack_compatible());
+        let trimmed = make_dsp_output_for_channels(&[(
+            "L",
+            vec![crate::room_eq_types::DspPluginConfig {
+                plugin_type: "gain".into(),
+                parameters: serde_json::json!({"gain_db": -3.0}),
+            }],
+        )]);
+        assert!(!trimmed.is_rack_compatible());
+    }
+
+    #[test]
     fn build_ui_graph_from_config_applies_delay_per_channel_representative() {
         use sotf_audio::engine::{PluginGraphConfig, PluginGraphNodeConfig};
 
@@ -940,7 +1061,7 @@ mod tests {
     }
 
     #[test]
-    fn build_ui_graph_from_config_applies_gain_per_channel_representative() {
+    fn build_ui_graph_from_config_applies_scalar_gain() {
         use sotf_audio::engine::{PluginGraphConfig, PluginGraphNodeConfig};
 
         let config = PluginGraphConfig {
@@ -950,8 +1071,7 @@ mod tests {
                 input_channels: 2,
                 bypassed: false,
                 parameters: serde_json::json!({
-                    "channel_gains": [-6.0, -9.0],
-                    "gain_db": 0.0,
+                    "gain_db": -6.0,
                 }),
             }],
             edges: vec![],

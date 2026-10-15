@@ -1,6 +1,6 @@
 # GPUI Settings screen — visible preferences coverage.
 #
-# Covers all ten settings tabs through their rendered tab controls, changes
+# Covers all ten settings sections through rendered category and tab controls, changes
 # appearance and release-channel state through visible controls, and verifies
 # language, keymap, library, font-scale, and device observability.
 
@@ -24,28 +24,27 @@ assert      settings.active_tab == "Theme"
 screenshot  settings-theme-top
 
 # The accessibility controls and theme cards are below the fold at 700×600.
-scroll      settings.content -600
-sleep       200ms
+scroll_into_view preferences.content settings.appearance.reduce-motion
 assert_in_viewport settings.appearance.reduce-motion
 screenshot  settings-theme-accessibility
 click       settings.appearance.reduce-motion
 assert      settings.reduce_motion == true timeout=2s
-scroll      settings.content -800
-sleep       200ms
+scroll_into_view preferences.content settings.appearance.theme.Light
 assert_in_viewport settings.appearance.theme.Light
 click       settings.appearance.theme.Light
 assert      settings.theme == "Light" timeout=2s
 screenshot  settings-theme-light-reduced-motion
 
 # ── Language tab ────────────────────────────────────────────────────────────
+scroll_into_view preferences.content settings.tab.Language
 click       settings.tab.Language
 sleep       200ms
 assert      settings.active_tab == "Language"
 assert_focused settings-tab-Language
-key         tab
-assert_focused settings-tab-Keybindings
+key         shift-tab
+assert_focused settings-tab-Theme
 key         space
-assert      settings.active_tab == "Keybindings" timeout=2s
+assert      settings.active_tab == "Theme" timeout=2s
 click       settings.tab.Language
 assert      settings.active_tab == "Language" timeout=2s
 assert_visible settings.language.en
@@ -72,6 +71,7 @@ click       settings.language.en
 assert      settings.language == "English"
 
 # ── Keybindings tab ─────────────────────────────────────────────────────────
+scroll_into_view preferences.content settings.tab.Keybindings
 click       settings.tab.Keybindings
 sleep       200ms
 assert      settings.active_tab == "Keybindings"
@@ -137,6 +137,7 @@ sleep       200ms
 assert      settings.active_tab == "Servers"
 
 # ── Metadata tab ─────────────────────────────────────────────────────────────
+click       settings.tab.Library
 click       settings.tab.Metadata
 sleep       200ms
 assert      settings.active_tab == "Metadata"
@@ -153,11 +154,11 @@ screenshot  settings-release-beta
 # ── Compact and enlarged-font matrix ────────────────────────────────────────
 click       settings.tab.Library
 assert      settings.active_tab == "Library"
+click       settings.tab.Theme
 resize      700 600
 sleep       300ms
 screenshot  settings-compact-100
 
-click       settings.tab.Theme
 sleep       200ms
 assert_in_viewport settings.appearance.font-scale
 click       settings.appearance.font-scale
@@ -167,6 +168,7 @@ key         enter
 assert      settings.font_scale == 1.5 tolerance=0.01
 screenshot  settings-compact-150
 
+scroll_into_view preferences.content settings.appearance.font-scale
 click       settings.appearance.font-scale
 key         cmd-a
 type        "200"
@@ -176,7 +178,9 @@ screenshot  settings-compact-200
 
 # Preset controls remain individually reachable, named, and wrapped at the
 # smallest supported viewport with 200% text.
-click       settings.tab.Keybindings
+click       preferences.category
+key         down
+key         enter
 sleep       200ms
 assert      settings.active_tab == "Keybindings"
 assert_in_viewport settings.keymap-preset.Default
@@ -189,15 +193,19 @@ assert_accessible button Emacs
 assert_accessible button VSCode
 accessibility
 screenshot  settings-keybindings-compact-200
-scroll settings.keybinding.content -250
-sleep 200ms
+scroll_into_view preferences.content settings.keybinding.edit.switchtolibrary
 assert_in_viewport settings.keybinding.edit.switchtolibrary
 
 # Language controls use the same individually focusable contract and must wrap
 # without clipping at the smallest supported viewport and largest text scale.
+click       preferences.category
+key         up
+key         enter
+wait_until  settings.active_tab == "Theme" timeout=2s
+wait_idle   500ms
+scroll_into_view preferences.content settings.tab.Language
 click       settings.tab.Language
-sleep       200ms
-assert      settings.active_tab == "Language"
+wait_until  settings.active_tab == "Language" timeout=2s
 assert_in_viewport settings.language.en
 assert_in_viewport settings.language.fr
 assert_in_viewport settings.language.de
@@ -212,5 +220,7 @@ screenshot  settings-language-compact-200
 # ── Return to library ───────────────────────────────────────────────────────
 action      ResetFontSize
 resize      1200 832
+click       preferences.done
+wait_idle   500ms
 click       sidebar.nav-library
 assert      screen.focused == "Library"

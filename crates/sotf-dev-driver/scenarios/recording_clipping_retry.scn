@@ -1,0 +1,66 @@
+# Clipped capture retains reviewable quality evidence; retry must replace it
+# with a clean take and persist through the ordinary wizard.
+focus recording
+assert recording.step == "Capture"
+click recording.capture_all
+wait_until recording.review_count == 1 timeout=30s
+assert recording.error_count == 0
+assert recording.done_count == 0
+assert recording.quality_count == 1
+assert recording.take.0.evidence_complete == true
+assert recording.take.0.clipping_status == "Warning"
+assert recording.take.0.clipping_measured > 0
+assert recording.status_severity == "Warning"
+screenshot recording-clipping-before-retry
+
+# Leave the clipped take, then return and retry with the same production action.
+assert_visible recording.back
+click       recording.back
+assert      recording.step == "SplCalibration"
+click       recording.spl_start
+wait_idle   2s
+click       recording.spl_meter
+key         cmd-a
+type        "75"
+key         enter
+assert      recording.spl_ready == true
+click       recording.next
+assert      recording.step == "Capture"
+click       recording.capture_all
+wait_until  recording.done_count == 2 timeout=30s
+assert      recording.error_count == 0
+assert      recording.done_count == 2
+assert      recording.all_done == true
+assert      recording.quality_count == 2
+assert      recording.evidence_complete == true
+assert      recording.review_count == 0
+assert      recording.status_severity == "Success"
+
+# Finish the ordinary calibration, review, and save stages so a successful
+# retry proves the captures are accepted and persisted through the real flow.
+click       recording.next
+assert      recording.step == "Probe"
+click       recording.probe_run
+wait_idle   2s
+assert      recording.probe_complete == true
+click       recording.next
+assert      recording.step == "BassAnchor"
+click       recording.bass_anchor_run
+wait_idle   2s
+assert      recording.bass_anchor_complete == true
+click       recording.next
+assert      recording.step == "Evaluating"
+click       recording.accept.0
+click       recording.accept.1
+click       recording.next
+assert      recording.step == "Saving"
+assert_in_viewport recording.save_footer
+assert_enabled recording.save_footer == true
+click       recording.save_footer
+wait_until  recording.save_status == "Current" timeout=10s
+assert      recording.saved_path != null
+assert      recording.status_severity == "Success"
+assert      recording.error_count == 0
+screenshot  recording-capture-retry-saved
+assert      recording.status_severity == "Success"
+screenshot  recording-capture-retry

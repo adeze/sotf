@@ -919,12 +919,32 @@ fn applied_eq_parameters_match_dsp_output(app: &App) -> bool {
         .iter()
         .map(|result| result.channel_name.as_str())
         .collect::<Vec<_>>();
+    let graph_apply =
+        !sotf_audio_player::room_eq_types::DspChainOutputExt::is_rack_compatible(dsp_output);
     let mut expected = channel_names
         .iter()
         .filter_map(|name| dsp_output.channels.get(*name))
         .flat_map(|channel| {
-            let (main, broadband) = sotf_audio_player::autoeq::classify_channel_eq_filters(channel);
-            main.into_iter().chain(broadband)
+            if graph_apply {
+                channel
+                    .plugins
+                    .iter()
+                    .filter(|plugin| plugin.plugin_type.eq_ignore_ascii_case("eq"))
+                    .filter_map(|plugin| {
+                        plugin
+                            .parameters
+                            .get("filters")
+                            .and_then(serde_json::Value::as_array)
+                    })
+                    .flat_map(|filters| {
+                        sotf_audio_player::room_eq_types::parse_eq_filters_from_json(filters)
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                let (main, broadband) =
+                    sotf_audio_player::autoeq::classify_channel_eq_filters(channel);
+                main.into_iter().chain(broadband).collect()
+            }
         })
         .map(|filter| (filter.frequency, filter.q, filter.gain_db))
         .collect::<Vec<_>>();

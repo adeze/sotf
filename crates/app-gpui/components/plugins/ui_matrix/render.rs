@@ -138,6 +138,7 @@ fn render_route_selectors(
             } else {
                 "matrix-route-input"
             })
+            .aria_label(route_labels[usize::from(is_output)])
             .size(SelectSize::Xs)
             .options(
                 (0..count)

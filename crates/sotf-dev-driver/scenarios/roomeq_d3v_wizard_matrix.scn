@@ -25,7 +25,8 @@ assert      roomeq.dsp_channel_count == 2
 assert      roomeq.filter_count <= 28
 assert      roomeq.average_pre_score >= 1
 assert      roomeq.average_pre_score <= 35
-assert      roomeq.average_post_score >= 1
+# AutoEQ reports target error: successful correction may reduce it below 1.
+assert      roomeq.average_post_score >= 0
 assert      roomeq.average_post_score <= 35
 assert      roomeq.error == null
 query       roomeq.status

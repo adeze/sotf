@@ -101,19 +101,25 @@ impl PlayerView {
                     return;
                 }
                 if save {
-                    let file = rfd::AsyncFileDialog::new()
-                        .add_filter("AutoEQ HTML", &["html"])
-                        .set_title(labels.save)
-                        .set_file_name("roomeq-report.html")
-                        .save_file()
-                        .await;
-                    if let Some(file) = file
-                        && let Err(error) = report.save(file.path())
+                    // rfd has no iOS/tvOS backend (target-gated in
+                    // Cargo.toml); on those platforms the save action
+                    // falls through to the in-app report window below.
+                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                     {
-                        let _ =
-                            view.update(cx, |view, cx| view.report_error(error.to_string(), cx));
+                        let file = rfd::AsyncFileDialog::new()
+                            .add_filter("AutoEQ HTML", &["html"])
+                            .set_title(labels.save)
+                            .set_file_name("roomeq-report.html")
+                            .save_file()
+                            .await;
+                        if let Some(file) = file
+                            && let Err(error) = report.save(file.path())
+                        {
+                            let _ = view
+                                .update(cx, |view, cx| view.report_error(error.to_string(), cx));
+                        }
+                        return;
                     }
-                    return;
                 }
                 if let Err(error) = open_report_window(report, dark, cx) {
                     let _ = view.update(cx, |view, cx| view.report_error(error.to_string(), cx));

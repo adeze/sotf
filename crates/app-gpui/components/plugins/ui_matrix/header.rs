@@ -58,6 +58,7 @@ pub(crate) fn render_header(
     let highlight_entity = entity.downgrade();
     let toggle = entity.downgrade();
     let select = Select::new(("matrix-preset", instance_id))
+        .aria_label("Matrix preset")
         .options(options)
         .selected(current)
         .size(SelectSize::Xs)

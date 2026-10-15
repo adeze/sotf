@@ -347,14 +347,19 @@ fn plan_review(session: &ValidatedCaptureSession) -> Vec<String> {
         ),
     ];
     for mic in &plan.microphones {
+        let position = match (mic.position_m, mic.position_uncertainty_mm) {
+            (Some(position), Some(uncertainty_mm)) => {
+                format!("{position:?} m ±{uncertainty_mm} mm")
+            }
+            _ => "Position not surveyed".to_string(),
+        };
         lines.push(format!(
-            "{}: {} input {} | gain {} dB | {:?} m ±{} mm",
+            "{}: {} input {} | gain {} dB | {}",
             mic.id,
             mic.device,
             mic.input_channel + 1,
             mic.gain_db,
-            mic.position_m,
-            mic.position_uncertainty_mm
+            position
         ));
         lines.push(format!(
             "  Calibration: {} ({:?})",

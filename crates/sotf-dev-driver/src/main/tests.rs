@@ -191,6 +191,20 @@ fn compare_not_equal() {
 }
 
 #[test]
+fn compare_array_preserves_type_and_order() {
+    let comparison = parse_compare(r#"queue.upcoming_titles == ["Country","EDM"]"#).unwrap();
+    assert!(comparison.matches(&json!(["Country", "EDM"])));
+    assert!(!comparison.matches(&json!(["EDM", "Country"])));
+    assert!(!comparison.matches(&json!(r#"["Country","EDM"]"#)));
+    assert!(
+        parse_compare(r#"queue.upcoming_titles != ["EDM","Country"]"#)
+            .unwrap()
+            .matches(&json!(["Country", "EDM"]))
+    );
+    assert!(parse_compare("queue.upcoming_titles == [invalid]").is_err());
+}
+
+#[test]
 fn compare_string_quoted_and_bare() {
     let cmp = parse_compare(r#"screen.focused == "Library""#).unwrap();
     assert!(cmp.matches(&json!("Library")));

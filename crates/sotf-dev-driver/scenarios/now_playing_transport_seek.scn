@@ -45,6 +45,11 @@ click       transport.play
 wait_until  playback.is_playing == false timeout=2s
 
 # Rendered seek and traversal controls update the displayed playback model.
+# Anchor the paused player at zero after the preceding play/pause checks.
+# Otherwise seeking forward and back correctly returns to elapsed playback time.
+action      PlaybackResetQueueCursor {"track_index":0,"activate":true,"seek_loaded_player":true}
+wait_idle   500ms
+wait_until  playback.position_secs == 0 tolerance=0.25 timeout=2s
 click       transport.seek_forward
 wait_until  playback.position_secs > 0 timeout=2s
 click       transport.seek_back

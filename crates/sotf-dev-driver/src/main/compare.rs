@@ -24,6 +24,12 @@ impl Compare {
             },
             (ExpectedValue::String(s), Value::String(a), ComparisonOp::Eq) => a == s,
             (ExpectedValue::String(s), Value::String(a), ComparisonOp::Ne) => a != s,
+            (ExpectedValue::Array(expected), Value::Array(actual), ComparisonOp::Eq) => {
+                actual == expected
+            }
+            (ExpectedValue::Array(expected), Value::Array(actual), ComparisonOp::Ne) => {
+                actual != expected
+            }
             (ExpectedValue::Null, Value::Null, ComparisonOp::Eq) => true,
             (ExpectedValue::Null, Value::Null, ComparisonOp::Ne) => false,
             (ExpectedValue::Null, _, ComparisonOp::Ne) => true,

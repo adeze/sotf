@@ -71,6 +71,7 @@ pub(crate) fn render_dense_multiband_header(
     let highlight_entity = entity.clone();
     let change_entity = entity.clone();
     let preset = Select::new(("multiband-preset", plugin_idx))
+        .aria_label(text.label("Preset"))
         .options(
             labels
                 .iter()

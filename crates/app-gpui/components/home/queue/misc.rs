@@ -33,7 +33,18 @@ macro_rules! dev_track {
 
 impl PlayerView {
     pub(crate) fn render_queue_page(&self, cx: &mut Context<Self>) -> AnyElement {
-        self.render_flat_queue(cx)
+        let state = self.state.read(cx);
+        let ui = &state.app.ui_state;
+        let sizing = crate::ui::resolve_sizing_context(
+            ui.window_width,
+            ui.window_height,
+            ui.font_scale,
+            ui.min_font_size_px,
+            ui.max_font_size_px,
+        );
+        let width =
+            sizing.desktop_content_width_rems(ui.primary_nav_collapsed) * sizing.effective_rem;
+        self.render_queue_screen(Some(width), cx).into_any_element()
     }
 
     pub(crate) fn render_queue_screen(
@@ -53,6 +64,7 @@ impl PlayerView {
         let window_height = state.app.ui_state.window_height;
         let window_width = state.app.ui_state.window_width;
         let font_scale = state.app.ui_state.font_scale;
+        let show_flat_queue = state.app.ui_state.current_screen == crate::app::types::Screen::Queue;
         let hide_meters_for_rack = state.app.layout.hide_queue_meters_for_rack;
         // Use the solved queue slot, rather than reconstructing its bounds from
         // persisted ratios. The solver accounts for panel minimums, collapsed
@@ -69,9 +81,12 @@ impl PlayerView {
         let meters_panel_tall = window_height > 700.0;
 
         // Hide meters when: explicitly collapsed, OR rack is visible in 3-panel layout
+        // The flat queue needs 300 logical pixels for its management actions
+        // beside the meter panel's 120-pixel minimum.
+        let minimum_queue_width = if show_flat_queue { 420.0 } else { 300.0 };
         let meters_collapsed = meters_ratio < 0.05
             || hide_meters_for_rack
-            || available_queue_width / font_scale.max(1.0) < 300.0;
+            || available_queue_width / font_scale.max(1.0) < minimum_queue_width;
         let lufs_ratio = layout.lufs_panel_ratio;
         let level_meters_collapsed = lufs_ratio >= 0.90;
 
@@ -154,8 +169,19 @@ impl PlayerView {
                     });
                 }),
             )
-            // Queue pane: album accordion with expanded album details
-            .child(self.render_queue_accordion_pane(&translations, cx))
+            // Keep legacy embedded album panes while the Queue page uses tracks.
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .child(if show_flat_queue {
+                        self.render_flat_queue(cx)
+                    } else {
+                        self.render_queue_accordion_pane(&translations, cx)
+                            .into_any_element()
+                    }),
+            )
             // Separator (Queue <-> Right meters)
             .child({
                 PaneDivider::vertical("meters-divider", CollapseDirection::Right)
@@ -329,6 +355,83 @@ impl PlayerView {
     // Level meter methods (render_lufs_panel, render_meters_panel, render_meter_group, etc.)
     // are now in ui/components/plugins/level_meters.rs
 
+    pub(super) fn render_queue_management_actions(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
+        let state = self.state.read(cx);
+        let translations = &state.app.ui_state.translations;
+        let theme = &state.app.ui_state.theme;
+        let queue_len = state.app.queue_state.len();
+        let can_undo_clear = state.app.queue_state.can_undo_clear();
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(d.gap)
+            .child(
+                dev_track!(
+                    Button::new(
+                        "queue-save-as-playlist",
+                        translations.queue_save_as_playlist,
+                    )
+                    .size(ButtonSize::Xs)
+                    .variant(ButtonVariant::Secondary)
+                    .theme(theme.to_button_theme())
+                    .disabled(queue_len == 0)
+                    .on_click_event(cx.listener(
+                        |view, _event: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, _| {
+                                state.app.playlist.name_input.clear();
+                                state.app.playlist.dialog =
+                                    crate::app::state::app::PlaylistDialog::CreateFromQueue;
+                                state.app.playlist.error = None;
+                                state.app.ui_state.current_screen = Screen::Playlists;
+                            });
+                            cx.notify();
+                        },
+                    )),
+                    "queue.save_as_playlist"
+                )
+                .into_any_element(),
+            )
+            .child(
+                dev_track!(
+                    Button::new("queue-clear", translations.queue_clear)
+                        .size(ButtonSize::Xs)
+                        .variant(ButtonVariant::Secondary)
+                        .theme(theme.to_button_theme())
+                        .disabled(queue_len == 0)
+                        .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, _| {
+                                state.app.clear_queue();
+                            });
+                            cx.notify();
+                        },)),
+                    "queue.clear"
+                )
+                .into_any_element(),
+            )
+            .child(
+                dev_track!(
+                    Button::new("queue-undo-clear", translations.queue_undo_clear)
+                        .size(ButtonSize::Xs)
+                        .variant(ButtonVariant::Secondary)
+                        .theme(theme.to_button_theme())
+                        .disabled(!can_undo_clear)
+                        .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, _| {
+                                let _ = state.app.undo_clear_queue();
+                            });
+                            cx.notify();
+                        },)),
+                    "queue.undo_clear"
+                )
+                .into_any_element(),
+            )
+    }
+
     pub(super) fn render_queue_accordion_pane(
         &self,
         translations: &crate::i18n::Translations,
@@ -338,19 +441,10 @@ impl PlayerView {
         // Extract only the tiny bits of queue data needed to build the
         // accordion. Previously this cloned the entire `Vec<QueueItem>`
         // (including every Track in every album) on every render.
-        let (
-            theme,
-            queue_len,
-            can_undo_clear,
-            can_undo_remove,
-            expanded_idx,
-            summaries,
-            max_title_chars,
-        ) = {
+        let (theme, queue_len, can_undo_remove, expanded_idx, summaries, max_title_chars) = {
             let state = self.state.read(cx);
             let layout = state.layout.read(cx);
             let queue_len = state.app.queue_state.len();
-            let can_undo_clear = state.app.queue_state.can_undo_clear();
             let can_undo_remove = state.app.queue_state.can_undo_remove();
             let selected_idx = if queue_len == 0 {
                 None
@@ -380,7 +474,6 @@ impl PlayerView {
             (
                 theme,
                 queue_len,
-                can_undo_clear,
                 can_undo_remove,
                 expanded_idx,
                 summaries,
@@ -462,70 +555,7 @@ impl PlayerView {
                             )),
                     )
                     .child(self.render_magic_radio_button(cx).into_any_element())
-                    .child(
-                        dev_track!(
-                            Button::new(
-                                "queue-save-as-playlist",
-                                translations.queue_save_as_playlist,
-                            )
-                            .size(ButtonSize::Xs)
-                            .variant(ButtonVariant::Secondary)
-                            .theme(theme.to_button_theme())
-                            .disabled(queue_len == 0)
-                            .on_click_event(cx.listener(
-                                |view, _event: &ClickEvent, _window, cx| {
-                                    view.state.update(cx, |state, _| {
-                                        state.app.playlist.name_input.clear();
-                                        state.app.playlist.dialog =
-                                            crate::app::state::app::PlaylistDialog::CreateFromQueue;
-                                        state.app.playlist.error = None;
-                                        state.app.ui_state.current_screen = Screen::Playlists;
-                                    });
-                                    cx.notify();
-                                },
-                            )),
-                            "queue.save_as_playlist"
-                        )
-                        .into_any_element(),
-                    )
-                    .child(
-                        dev_track!(
-                            Button::new("queue-clear", translations.queue_clear)
-                                .size(ButtonSize::Xs)
-                                .variant(ButtonVariant::Secondary)
-                                .theme(theme.to_button_theme())
-                                .disabled(queue_len == 0)
-                                .on_click_event(cx.listener(
-                                    |view, _event: &ClickEvent, _window, cx| {
-                                        view.state.update(cx, |state, _| {
-                                            state.app.clear_queue();
-                                        });
-                                        cx.notify();
-                                    },
-                                )),
-                            "queue.clear"
-                        )
-                        .into_any_element(),
-                    )
-                    .child(
-                        dev_track!(
-                            Button::new("queue-undo-clear", translations.queue_undo_clear)
-                                .size(ButtonSize::Xs)
-                                .variant(ButtonVariant::Secondary)
-                                .theme(theme.to_button_theme())
-                                .disabled(!can_undo_clear)
-                                .on_click_event(cx.listener(
-                                    |view, _event: &ClickEvent, _window, cx| {
-                                        view.state.update(cx, |state, _| {
-                                            let _ = state.app.undo_clear_queue();
-                                        });
-                                        cx.notify();
-                                    },
-                                )),
-                            "queue.undo_clear"
-                        )
-                        .into_any_element(),
-                    ),
+                    .child(self.render_queue_management_actions(cx)),
             )
             .child(
                 div()

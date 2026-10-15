@@ -79,9 +79,9 @@ click       recording.accept.0
 click       recording.accept.1
 click       recording.next
 assert      recording.step == "Saving"
-scroll      recording.content -600
-assert_enabled recording.save == true
-click       recording.save
+assert_in_viewport recording.save_footer
+assert_enabled recording.save_footer == true
+click       recording.save_footer
 wait_until  recording.save_status == "Current" timeout=10s
 assert      recording.saved_path != null
 assert      recording.status_severity == "Success"

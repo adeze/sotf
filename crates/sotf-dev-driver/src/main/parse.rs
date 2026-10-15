@@ -103,6 +103,11 @@ pub(super) fn parse_literal(s: &str) -> Result<ExpectedValue> {
     if s == "false" {
         return Ok(ExpectedValue::Bool(false));
     }
+    if s.starts_with('[') {
+        let values =
+            serde_json::from_str(s).with_context(|| format!("invalid array literal `{s}`"))?;
+        return Ok(ExpectedValue::Array(values));
+    }
     if let Ok(n) = s.parse::<f64>() {
         if !n.is_finite() {
             bail!("numeric literal must be finite");

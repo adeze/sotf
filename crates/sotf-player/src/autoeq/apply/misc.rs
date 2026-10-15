@@ -8,7 +8,8 @@ use sotf_audio::plugins::{PluginSettings, PluginType};
 /// carries.
 ///
 /// The optimizer emits multiple EQ plugins per channel — main room
-/// correction is **unlabeled**, broadband pre-correction is labeled
+/// correction is labeled `"room_eq_correction"` (or unlabeled in older output),
+/// broadband pre-correction is labeled
 /// `"broadband"` (see `autoeq::roomeq::spectral_align::create_alignment_plugins`),
 /// and other stages (`cea2034`, `user_preference`, `channel_matching`) are
 /// not user-editable and are filtered out.
@@ -28,7 +29,9 @@ pub fn classify_channel_eq_filters(
         let label = plugin.parameters.get("label").and_then(|l| l.as_str());
         match label {
             Some("broadband") => bb_filters.extend(parse_eq_filters_from_json(filters)),
-            None => main_filters.extend(parse_eq_filters_from_json(filters)),
+            None | Some("room_eq_correction") => {
+                main_filters.extend(parse_eq_filters_from_json(filters));
+            }
             _ => {} // Skip cea2034, user_preference, channel_matching, …
         }
     }

@@ -408,6 +408,17 @@ impl PlayerView {
                             state.app.set_screen(Screen::Settings, "CompactPreferences");
                             cx.notify();
                         });
+                    })
+                    .map(|button| {
+                        #[cfg(feature = "dev-api")]
+                        {
+                            use crate::app::dev_api::DevTrackExt;
+                            button.dev_track("navigation.preferences")
+                        }
+                        #[cfg(not(feature = "dev-api"))]
+                        {
+                            button
+                        }
                     }),
             )
             .into_any_element()

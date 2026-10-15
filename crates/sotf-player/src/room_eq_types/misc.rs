@@ -82,10 +82,19 @@ pub fn estimate_probe_sequence_ms(
 /// Returns true when a RoomEQ result cannot be represented as a single linear rack.
 pub fn requires_room_eq_graph(output: &DspChainOutput) -> bool {
     !output.global_plugins.is_empty()
-        || output
-            .channels
-            .values()
-            .any(|chain| chain.drivers.is_some())
+        || output.channels.values().any(|chain| {
+            chain.drivers.is_some()
+                || chain.plugins.iter().any(|plugin| {
+                    !plugin.plugin_type.eq_ignore_ascii_case("eq")
+                        || plugin
+                            .parameters
+                            .get("label")
+                            .and_then(|label| label.as_str())
+                            .is_some_and(|label| {
+                                !matches!(label, "broadband" | "room_eq_correction")
+                            })
+                })
+        })
         || output
             .metadata
             .as_ref()

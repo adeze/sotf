@@ -102,6 +102,7 @@ pub fn build_speakers_from_recordings(
                 measurements: measurement_refs,
                 speaker_name,
                 provenance: Default::default(),
+                estimated_position: None,
             })
         };
 

@@ -42,6 +42,7 @@ screenshot  roomeq-review
 click       roomeq.next
 assert      roomeq.step == "Export"
 assert_visible roomeq.export_file
+scroll_into_view roomeq.content roomeq.export_file
 click       roomeq.export_file
 wait_idle   2s
 assert      roomeq.export.exists == true

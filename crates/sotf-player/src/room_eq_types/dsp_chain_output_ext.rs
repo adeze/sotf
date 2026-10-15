@@ -8,11 +8,10 @@ pub use autoeq::roomeq::DspChainOutput;
 /// multi-driver graph? The autoeq crate doesn't know or care about the
 /// player's rack model.
 pub trait DspChainOutputExt {
-    /// Returns true if the DSP output can be applied to a linear rack
-    /// (no multi-driver crossovers requiring parallel paths).
+    /// Returns true when named main/broadband EQ plugins preserve every DSP stage.
     fn is_rack_compatible(&self) -> bool;
 
-    /// Returns true when this output needs graph playback to preserve routing.
+    /// Returns true when graph playback must preserve routing or additional stages.
     fn requires_room_eq_graph(&self) -> bool;
 }
 
