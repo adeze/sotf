@@ -1,8 +1,8 @@
 #![cfg(feature = "dev-api")]
 
 use sotf_audio_player::Player;
-use sotf_audio_player::PluginUpdateEffect;
 use sotf_audio_player::PluginType;
+use sotf_audio_player::PluginUpdateEffect;
 use sotf_audio_player_gpui::app::player_handle::{PlayerCommandReceipt, PlayerHandle};
 use sotf_audio_player_gpui::app::state::plugin::{
     DevParameterOutcome, DevParameterReceipt, PluginState,
@@ -67,7 +67,10 @@ fn offline_action_receipt_also_routes_failure_to_user_feedback() {
             assert_eq!(failure.error, "No engine running");
             break;
         }
-        assert!(Instant::now() < deadline, "action failure feedback was lost");
+        assert!(
+            Instant::now() < deadline,
+            "action failure feedback was lost"
+        );
         std::thread::sleep(Duration::from_millis(5));
     }
 }
@@ -93,8 +96,14 @@ fn direct_use_guards_are_scoped_to_stable_denoiser_instances() {
     }
     let first_id = state.graph.nodes[&first].plugin.id;
     let second_id = state.graph.nodes[&second].plugin.id;
-    assert_eq!(state.update_state.denoiser_direct_use_guard.get(&first_id), Some(&true));
-    assert_eq!(state.update_state.denoiser_direct_use_guard.get(&second_id), Some(&true));
+    assert_eq!(
+        state.update_state.denoiser_direct_use_guard.get(&first_id),
+        Some(&true)
+    );
+    assert_eq!(
+        state.update_state.denoiser_direct_use_guard.get(&second_id),
+        Some(&true)
+    );
 
     state.record_editor_effect(PluginUpdateEffect::Action {
         plugin_index: 0,
@@ -103,8 +112,16 @@ fn direct_use_guards_are_scoped_to_stable_denoiser_instances() {
         key: "clear_profile",
         value: true,
     });
-    assert_eq!(state.update_state.denoiser_direct_use_guard.get(&first_id), Some(&true));
-    assert!(!state.update_state.denoiser_direct_use_guard.contains_key(&second_id));
+    assert_eq!(
+        state.update_state.denoiser_direct_use_guard.get(&first_id),
+        Some(&true)
+    );
+    assert!(
+        !state
+            .update_state
+            .denoiser_direct_use_guard
+            .contains_key(&second_id)
+    );
 }
 
 #[test]
@@ -192,11 +209,18 @@ fn momentary_start_and_cancel_survive_a_pending_structural_update_in_order() {
             value,
         });
     }
-    assert!(matches!(state.update_state.pending_plugin_update, Some(PluginUpdateType::Structural)));
+    assert!(matches!(
+        state.update_state.pending_plugin_update,
+        Some(PluginUpdateType::Structural)
+    ));
     let first = state.update_state.pending_actions.pop_front().unwrap();
     let second = state.update_state.pending_actions.pop_front().unwrap();
-    assert!(matches!(first, PluginUpdateType::Action { value: true, request_id: 1, node_id: Some(id), .. } if id == node_id));
-    assert!(matches!(second, PluginUpdateType::Action { value: false, request_id: 2, node_id: Some(id), .. } if id == node_id));
+    assert!(
+        matches!(first, PluginUpdateType::Action { value: true, request_id: 1, node_id: Some(id), .. } if id == node_id)
+    );
+    assert!(
+        matches!(second, PluginUpdateType::Action { value: false, request_id: 2, node_id: Some(id), .. } if id == node_id)
+    );
     assert!(state.update_state.pending_actions.is_empty());
 }
 
@@ -214,7 +238,14 @@ fn failed_rebuild_cancels_actions_before_a_newer_graph_can_retry() {
         });
     }
     let rejected = state.update_state.settle_action_topology(false, false);
-    assert!(matches!(rejected, Some(PluginUpdateType::Action { value: false, request_id: 2, .. })));
+    assert!(matches!(
+        rejected,
+        Some(PluginUpdateType::Action {
+            value: false,
+            request_id: 2,
+            ..
+        })
+    ));
     assert!(state.update_state.pending_actions.is_empty());
     assert!(state.update_state.action_topology_unavailable);
     state.update_state.settle_action_topology(true, false);

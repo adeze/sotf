@@ -156,9 +156,9 @@ pub fn render_from_layout(
         relocate_globals: generated_header_globals(settings),
         hide_label: false,
     };
-    let layout = settings
-        .layout()
-        .expect("render_from_layout called on plugin without layout");
+    let Some(layout) = settings.layout() else {
+        return Empty.into_any_element();
+    };
     let localized_params = localized_parameter_specs(settings.param_specs(), text);
     let params = localized_params.as_slice();
     let mut values: Vec<f64> = (0..params.len())
@@ -722,6 +722,7 @@ pub(crate) fn render_editor_setup(
         .when(header, |row| row.flex_1());
     for spec in controls {
         let control = render_control(
+            text,
             d,
             entity.clone(),
             plugin_idx,
@@ -1077,6 +1078,9 @@ fn render_main_column(
     theme: &Theme,
     include_tabs: bool,
 ) -> impl IntoElement {
+    let text_or_default = text.unwrap_or_else(|| {
+        PluginCommonTranslations::for_language(crate::app::i18n::Language::English)
+    });
     let mut center = div()
         .flex()
         .flex_col()
@@ -1133,6 +1137,7 @@ fn render_main_column(
                 continue;
             }
             fallback = fallback.child(render_control(
+                text_or_default,
                 d,
                 entity.clone(),
                 plugin_idx,
@@ -1215,6 +1220,9 @@ fn render_main_column(
                     selected_param,
                     true,
                     theme,
+                    text.unwrap_or_else(|| {
+                        PluginCommonTranslations::for_language(crate::app::i18n::Language::English)
+                    }),
                 );
                 center = center.child(
                     div()
@@ -1318,6 +1326,7 @@ fn render_main_column(
             if let Some(band) = layout.main.iter().find(|group| group.id == selected_band) {
                 for spec in band.controls.iter().filter(|spec| !spec.hidden) {
                     primary = primary.child(render_control(
+                        text_or_default,
                         d,
                         entity.clone(),
                         plugin_idx,
@@ -1340,6 +1349,7 @@ fn render_main_column(
                     !spec.hidden && analog_primary_indices.contains(&spec.param_index)
                 }) {
                     primary = primary.child(render_control(
+                        text_or_default,
                         d,
                         entity.clone(),
                         plugin_idx,
@@ -1387,6 +1397,9 @@ fn render_main_column(
                     selected_param,
                     true,
                     theme,
+                    text.unwrap_or_else(|| {
+                        PluginCommonTranslations::for_language(crate::app::i18n::Language::English)
+                    }),
                 ));
             }
             let reduction = current_gain_reduction_db(plugin_data);
@@ -1416,6 +1429,7 @@ fn render_main_column(
                     .find(|spec| spec.param_index == idx && !spec.hidden)
                 {
                     primary = primary.child(render_control(
+                        text_or_default,
                         d,
                         entity.clone(),
                         plugin_idx,
@@ -1466,6 +1480,7 @@ fn render_main_column(
                     .find(|spec| spec.param_index == index && !spec.hidden)
                 {
                     primary = primary.child(render_control(
+                        text_or_default,
                         d,
                         entity.clone(),
                         plugin_idx,
@@ -1628,6 +1643,7 @@ fn render_main_column(
                         && matches!(spec.control_type, ControlType::BarMeter { .. }))
             }) {
                 meter_row = meter_row.child(render_control(
+                    text_or_default,
                     d,
                     entity.clone(),
                     plugin_idx,
@@ -1854,6 +1870,9 @@ fn render_group(
     text: Option<PluginCommonTranslations>,
     show_heading: bool,
 ) -> impl IntoElement {
+    let text_or_default = text.unwrap_or_else(|| {
+        PluginCommonTranslations::for_language(crate::app::i18n::Language::English)
+    });
     // Numeric controls share one dense grammar at every viewport width.
     // Each group wraps as a unit; rows keep the label, slider and exact value together.
     let mut col = div()
@@ -1937,6 +1956,7 @@ fn render_group(
             continue;
         }
         let control = render_control(
+            text_or_default,
             d,
             entity.clone(),
             plugin_idx,
@@ -2038,6 +2058,7 @@ fn render_group(
 
 /// Render a single control based on its ControlType.
 fn render_control(
+    text: PluginCommonTranslations,
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -2079,6 +2100,7 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_toggle(
+                    text,
                     d,
                     entity,
                     plugin_idx,
@@ -2101,6 +2123,7 @@ fn render_control(
                 // Five or more options crowd the title row; retain the full list in a dropdown.
                 if labels.len() > 4 && matches!(param.param_type, ParamType::Choice { .. }) {
                     return render_param_as_selector(
+                        text,
                         d,
                         entity,
                         plugin_idx,
@@ -2129,6 +2152,7 @@ fn render_control(
                     selected_param,
                     interactive,
                     theme,
+                    text,
                 )
             } else {
                 div().into_any_element()
@@ -2138,6 +2162,7 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_selector(
+                    text,
                     d,
                     entity,
                     plugin_idx,
@@ -2494,6 +2519,7 @@ fn render_param_as_number_input(
 
 /// Render a param as a toggle (for Bool and Choice types).
 fn render_param_as_toggle(
+    text: PluginCommonTranslations,
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -2528,6 +2554,7 @@ fn render_param_as_toggle(
                 selected_param,
                 interactive,
                 theme,
+                text,
             )
             .into_any_element()
         }
@@ -2545,6 +2572,7 @@ fn render_param_as_toggle(
             selected_param,
             interactive,
             theme,
+            text,
         )
         .into_any_element(),
         ParamType::Float { .. } | ParamType::Int { .. } => render_horizontal_param(
@@ -2648,6 +2676,7 @@ fn render_compact_selector_impl(
     hide_label: bool,
     selector_width: Option<f32>,
 ) -> AnyElement {
+    let text = PluginCommonTranslations::for_language(entity.read(cx).app.ui_state.language);
     let app = &entity.read(cx).app;
     let instance_id = app
         .plugin_state
@@ -2671,6 +2700,7 @@ fn render_compact_selector_impl(
         selector_width,
     };
     render_param_as_selector(
+        text,
         d,
         entity,
         plugin_idx,
@@ -2688,6 +2718,7 @@ fn render_compact_selector_impl(
 
 /// Render a choice parameter using its connected dropdown or button set.
 fn render_param_as_selector(
+    text: PluginCommonTranslations,
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -2707,7 +2738,26 @@ fn render_param_as_selector(
                 && choice_state.instance_id.is_some() =>
         {
             let selected_index = (value as usize).min(labels.len() - 1);
-            let menu_key = (choice_state.instance_id.expect("guarded above"), idx);
+            let Some(instance_id) = choice_state.instance_id else {
+                return render_param_as_button_set(
+                    d,
+                    entity,
+                    plugin_idx,
+                    idx,
+                    param,
+                    value,
+                    labels,
+                    true,
+                    knob_size == KnobSize::Xs,
+                    is_editing,
+                    selected_param,
+                    interactive,
+                    theme,
+                    text,
+                )
+                .into_any_element();
+            };
+            let menu_key = (instance_id, idx);
             let open = choice_state.open_menu == Some(menu_key);
             let toggle_entity = entity.downgrade();
             let highlight_entity = entity.downgrade();
@@ -2800,9 +2850,11 @@ fn render_param_as_selector(
             selected_param,
             interactive,
             theme,
+            text,
         ),
         // Non-choice params: fall back to toggle
         _ => render_param_as_toggle(
+            text,
             d,
             entity,
             plugin_idx,
@@ -2892,6 +2944,7 @@ fn render_param_as_button_set(
     selected_param: usize,
     interactive: bool,
     theme: &Theme,
+    text: PluginCommonTranslations,
 ) -> AnyElement {
     if matches!(param.engine_key, "learn_noise" | "clear_profile") {
         let capture_active = value > 0.5;
@@ -2899,12 +2952,12 @@ fn render_param_as_button_set(
         let command_value = if is_learn && capture_active { 0.0 } else { 1.0 };
         let label = if is_learn {
             if capture_active {
-                "Cancel Learn"
+                text.label("Cancel Learn")
             } else {
-                "Learn Noise"
+                text.label("Learn Noise")
             }
         } else {
-            "Clear Profile"
+            text.label("Clear Profile")
         };
         let action_entity = entity.clone();
         let button = Button::new(
@@ -3332,9 +3385,7 @@ fn render_transfer_curve_for_layout(
                 .gap(d.grid)
                 .child(chart)
                 .child(gpui_ui_kit::Text::caption(
-                    text.map_or("Target response", |translations| {
-                        translations.label("Target response")
-                    }),
+                    text.map_or("Target response", |text| text.label("Target response")),
                 ));
         #[cfg(feature = "dev-api")]
         let plot = plot.dev_track("plugin.transfer.target");
@@ -3394,6 +3445,9 @@ fn render_layout_tab_content(
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
     text: Option<PluginCommonTranslations>,
 ) -> AnyElement {
+    let text = text.unwrap_or_else(|| {
+        PluginCommonTranslations::for_language(crate::app::i18n::Language::English)
+    });
     match content {
         LayoutTabContent::Controls(controls) => {
             let mut tab_div = div().flex().flex_wrap().justify_center().gap(d.section);
@@ -3402,6 +3456,7 @@ fn render_layout_tab_content(
                     continue;
                 }
                 tab_div = tab_div.child(render_control(
+                    text,
                     d,
                     entity.clone(),
                     plugin_idx,
@@ -3442,7 +3497,7 @@ fn render_layout_tab_content(
                 plugin_data,
                 theme,
                 spider_snapshot,
-                text,
+                Some(text),
                 true,
             ))
             .into_any_element(),

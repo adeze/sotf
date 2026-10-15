@@ -62,6 +62,9 @@ fn submit(
             cx.notify();
             return;
         }
+        let Some(engine_index) = engine_index else {
+            return;
+        };
         let encoded = match value {
             // Debug retains a decimal point for integral floats. The engine's
             // typed parser must not reinterpret 1.0 as an integer.
@@ -80,11 +83,11 @@ fn submit(
             .update_state
             .profile_observation_revision
             .wrapping_add(1);
-        if let Err(error) = state.player.set_plugin_action(
-            engine_index.unwrap(),
-            parameter_id.as_str().to_owned(),
-            encoded,
-        ) {
+        if let Err(error) =
+            state
+                .player
+                .set_plugin_action(engine_index, parameter_id.as_str().to_owned(), encoded)
+        {
             state.app.ui_state.toast_message = Some(ToastMessage::error(error.to_string()));
         }
         cx.notify();
@@ -101,6 +104,9 @@ pub fn render_parameters(
     theme: &Theme,
     cx: &App,
 ) -> AnyElement {
+    let text = crate::app::i18n::PluginCommonTranslations::for_language(
+        entity.read(cx).app.ui_state.language,
+    );
     let d = Ds::from_cx(cx);
     let Some(instance_id) = data.plugin_instance_id else {
         return Empty.into_any_element();
@@ -135,6 +141,7 @@ pub fn render_parameters(
             state.external_plugin_ui.choice_menu == Some((instance_id, index)),
             state.external_plugin_ui.choice_highlight,
             theme,
+            text,
         ));
     }
     panel.into_any_element()
@@ -152,6 +159,7 @@ fn render_parameter(
     choice_open: bool,
     choice_highlight: Option<usize>,
     theme: &Theme,
+    text: crate::app::i18n::PluginCommonTranslations,
 ) -> AnyElement {
     let mut row = div()
         .flex()
@@ -175,7 +183,7 @@ fn render_parameter(
         );
     let Some(value) = value else {
         return row
-            .child(Text::caption("Value unavailable"))
+            .child(Text::caption(text.label("Value unavailable")))
             .into_any_element();
     };
     if parameter.read_only {
@@ -324,8 +332,8 @@ fn render_parameter(
             let id = parameter.id.clone();
             let buttons = ButtonSet::new(("external-bool", instance_id * 1000 + index))
                 .options(vec![
-                    ButtonSetOption::new("0", "Off"),
-                    ButtonSetOption::new("1", "On"),
+                    ButtonSetOption::new("0", text.label("Off")),
+                    ButtonSetOption::new("1", text.label("On")),
                 ])
                 .selected(if *value { "1" } else { "0" })
                 .size(ButtonSetSize::Xs)

@@ -232,6 +232,18 @@ fn test_param_isolation_all_plugins() {
                 if j == i {
                     continue;
                 }
+                // Loudness Compensation indexes 8 and 15 are one control
+                // exposed twice: 8 is the legacy bool alias of the
+                // canonical position choice at 15 (the plugin layout
+                // hides the alias). Setting either side updates the
+                // other by design, so the pair is exempt from isolation.
+                if matches!(
+                    pt,
+                    PluginType::LoudnessCompensation | PluginType::FletcherMunson
+                ) && matches!((i, j), (8, 15) | (15, 8))
+                {
+                    continue;
+                }
                 if is_file(&specs[j].param_type) {
                     continue;
                 }

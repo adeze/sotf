@@ -123,7 +123,7 @@ impl PlayerView {
                                 icon_selected: Some(theme.accent),
                                 ..theme.to_tabs_theme()
                             })
-                            .aria_label("Streaming sources")
+                            .aria_label(text.streaming_sources)
                             .on_change(move |index, _, cx| {
                                 if let Some((key, _)) = source_tabs.get(index)
                                     && let Some(state) = source_state.upgrade()

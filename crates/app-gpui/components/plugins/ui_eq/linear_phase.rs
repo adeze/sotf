@@ -376,7 +376,9 @@ pub(super) fn render(
                 .text_center()
                 .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
-                .child("Frequency (Hz)"),
+                .child(crate::app::i18n::EqViewTranslations::frequency_axis(
+                    language,
+                )),
         )
         .child(
             Text::caption(crate::app::i18n::EqViewTranslations::wheel_hint(language))

@@ -70,8 +70,9 @@ fn test_crossfeed_parameter_sync_deep() {
     let mut settings = PluginSettings::default_for(&PluginType::Crossfeed).unwrap();
     let descriptors = settings.get_descriptors();
 
-    // Crossfeed is expected to have 17 parameters (0-16)
-    assert_eq!(descriptors.len(), 17);
+    // Crossfeed is expected to have 18 parameters (0-17);
+    // index 17 (head_yaw_deg) was appended without reindexing 0-16.
+    assert_eq!(descriptors.len(), 18);
 
     for i in 0..descriptors.len() {
         let res = settings.adjust_param(i, 1.0);

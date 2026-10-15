@@ -2464,7 +2464,9 @@ pub fn render_eq_plugin(
         .when(
             !is_lp_mode && popup_open && selected_filter.is_some(),
             |graph| {
-                let filter = selected_filter.expect("guarded above");
+                let Some(filter) = selected_filter else {
+                    return graph;
+                };
                 let panel_width = graph_width
                     .min(if details_open { 440.0 } else { 240.0 } * state.layout_scale)
                     .max(1.0);
@@ -2815,7 +2817,9 @@ pub fn render_eq_plugin(
                 .text_center()
                 .text_size(ds.text_sm)
                 .text_color(theme.text_secondary)
-                .child("Frequency (Hz)"),
+                .child(crate::app::i18n::EqViewTranslations::frequency_axis(
+                    entity.read(cx).app.ui_state.language,
+                )),
         )
         .child(gpui_ui_kit::Text::caption(wheel_hint).color(theme.text_muted))
         .into_any_element()
@@ -3058,6 +3062,7 @@ pub(crate) fn render_eq_header_controls(
     theme: &Theme,
     cx: &App,
 ) -> AnyElement {
+    let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
     let PluginSettings::EQ {
         per_channel_mode,
@@ -3075,8 +3080,8 @@ pub(crate) fn render_eq_header_controls(
     let mode_entity = entity.clone();
     let mode = ButtonSet::new(("eq-header-mode", plugin_idx))
         .options(vec![
-            ButtonSetOption::new("all", "All channels"),
-            ButtonSetOption::new("per", "Per channel"),
+            ButtonSetOption::new("all", text.all_channels),
+            ButtonSetOption::new("per", text.per_channel),
         ])
         .selected(if *per_channel_mode { "per" } else { "all" })
         .size(ButtonSetSize::Xs)

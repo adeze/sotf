@@ -41,7 +41,7 @@ pub fn start(cx: &mut App, port: u16, window: AnyWindowHandle) {
         }
     };
     let endpoint = server.endpoint();
-    std::thread::Builder::new()
+    if let Err(error) = std::thread::Builder::new()
         .name("sotf-dev-api-owner".into())
         .spawn(move || {
             loop {
@@ -49,7 +49,10 @@ pub fn start(cx: &mut App, port: u16, window: AnyWindowHandle) {
                 std::thread::park_timeout(Duration::from_secs(3600));
             }
         })
-        .expect("failed to retain dev-api server handle");
+    {
+        log::error!("failed to retain dev-api server handle: {error}");
+        return;
+    }
     log::info!("dev-api protocol v2 listening on http://{endpoint}");
     task.detach();
 }
@@ -58,16 +61,14 @@ pub fn start(cx: &mut App, port: u16, window: AnyWindowHandle) {
 /// authenticated loopback route without process environment mutation.
 #[doc(hidden)]
 pub struct DevApiTestHandle {
+    endpoint: SocketAddr,
     server: Option<ServerHandle>,
     task: Option<Task<()>>,
 }
 
 impl DevApiTestHandle {
     pub fn endpoint(&self) -> SocketAddr {
-        self.server
-            .as_ref()
-            .expect("test API server is shut down")
-            .endpoint()
+        self.endpoint
     }
 
     pub fn shutdown(mut self) {
@@ -98,7 +99,9 @@ pub fn start_for_testing(
 ) -> Result<DevApiTestHandle> {
     let run_id = RunId::parse(run_id).map_err(anyhow::Error::from)?;
     let (server, task) = start_server_with_run_id(cx, port, window, run_id)?;
+    let endpoint = server.endpoint();
     Ok(DevApiTestHandle {
+        endpoint,
         server: Some(server),
         task: Some(task),
     })

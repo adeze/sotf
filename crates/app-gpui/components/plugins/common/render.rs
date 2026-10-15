@@ -1,6 +1,7 @@
 use super::TransferCurveElement;
 use super::param_section_style::ParamSectionStyle;
 use crate::app::AppState;
+use crate::app::i18n::PluginCommonTranslations;
 use crate::app::state::app::KnobDragState;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
@@ -373,6 +374,7 @@ pub fn render_toggle(
     selected_param: usize,
     is_editing: bool,
     theme: &Theme,
+    text: PluginCommonTranslations,
 ) -> impl IntoElement {
     render_toggle_enabled(
         entity,
@@ -384,6 +386,7 @@ pub fn render_toggle(
         selected_param,
         is_editing,
         theme,
+        text,
     )
 }
 
@@ -399,12 +402,13 @@ pub fn render_toggle_enabled(
     selected_param: usize,
     is_editing: bool,
     theme: &Theme,
+    text: PluginCommonTranslations,
 ) -> impl IntoElement {
     let _ = (selected_param, is_editing);
     let toggle = ButtonSet::new(("plugin-toggle", plugin_idx * 1000 + idx))
         .options(vec![
-            ButtonSetOption::new("0", "Off"),
-            ButtonSetOption::new("1", "On"),
+            ButtonSetOption::new("0", text.label("Off")),
+            ButtonSetOption::new("1", text.label("On")),
         ])
         .selected(if checked { "1" } else { "0" })
         .size(ButtonSetSize::Xs)
@@ -446,6 +450,7 @@ pub fn render_toggle_button(
     selected_param: usize,
     is_editing: bool,
     theme: &Theme,
+    text: PluginCommonTranslations,
 ) -> impl IntoElement {
     render_toggle_enabled(
         entity,
@@ -457,6 +462,7 @@ pub fn render_toggle_button(
         selected_param,
         is_editing,
         theme,
+        text,
     )
 }
 

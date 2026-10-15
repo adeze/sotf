@@ -359,7 +359,11 @@ fn recording_config_field_editing_roundtrip() {
     assert!(!app.recording.editing_output_dir);
     assert_eq!(app.recording.output_directory, "/tmp/sotf-recordings");
 
-    // Select a numeric field and edit it
+    // Select a numeric field and edit it. Duration edits the generic
+    // signal duration for noise signals; for sweeps it edits the bass
+    // octave duration instead (see events/conf_recordings tests).
+    app.recording.model.signal_type =
+        sotf_audio_player::recording_types::RecordingSignalType::WhiteNoise;
     app.recording.selected_field = 4; // Duration
     send_keys(&mut app, &[KeyCode::Enter]);
     assert!(app.recording.editing_value);

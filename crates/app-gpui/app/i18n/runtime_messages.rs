@@ -1286,6 +1286,54 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
     // Language-neutral joiner for composed status lines (message + warning
     // suffix). Must stay LAST: the specific patterns above win first.
     message!("{} — {}", "{} — {}", "{} — {}", "{} — {}"),
+    message!(
+        "Apply the routing graph before editing a hosted parameter.",
+        "Appliquez le graphe de routage avant de modifier un paramètre hébergé.",
+        "Wenden Sie das Routing-Diagramm an, bevor Sie einen gehosteten Parameter bearbeiten.",
+        "Aplique el grafo de enrutamiento antes de editar un parámetro alojado."
+    ),
+    message!(
+        "Apply the routing graph before using noise-profile actions.",
+        "Appliquez le graphe de routage avant d’utiliser les actions de profil de bruit.",
+        "Wenden Sie das Routing-Diagramm an, bevor Sie Rauschprofil-Aktionen verwenden.",
+        "Aplique el grafo de enrutamiento antes de usar las acciones de perfil de ruido."
+    ),
+    message!(
+        "Could not add {}: {error}",
+        "Impossible d’ajouter {} : {error}",
+        "Konnte {} nicht hinzufügen: {error}",
+        "No se pudo añadir {}: {error}"
+    ),
+    message!(
+        "External sidechain needs separate audio and sidechain inputs. Configure these in Studio Graph.",
+        "La sidechain externe nécessite des entrées audio et sidechain séparées. Configurez-les dans Studio Graph.",
+        "Die externe Sidechain benötigt getrennte Audio- und Sidechain-Eingänge. Konfigurieren Sie diese im Studio Graph.",
+        "La sidechain externa necesita entradas de audio y sidechain separadas. Configúrelas en Studio Graph."
+    ),
+    message!(
+        "Profile action needs an active plugin graph. Apply the graph before trying again.",
+        "L’action de profil nécessite un graphe de plugins actif. Appliquez le graphe avant de réessayer.",
+        "Die Profilaktion benötigt ein aktives Plugin-Diagramm. Wenden Sie das Diagramm an und versuchen Sie es erneut.",
+        "La acción de perfil necesita un grafo de plugins activo. Aplique el grafo antes de intentarlo de nuevo."
+    ),
+    message!(
+        "Profile action was not sent because the plugin graph could not be applied.",
+        "L’action de profil n’a pas été envoyée car le graphe de plugins n’a pas pu être appliqué.",
+        "Die Profilaktion wurde nicht gesendet, da das Plugin-Diagramm nicht angewendet werden konnte.",
+        "La acción de perfil no se envió porque no se pudo aplicar el grafo de plugins."
+    ),
+    message!(
+        "Saved to {}{}{}",
+        "Enregistré dans {}{}{}",
+        "Gespeichert in {}{}{}",
+        "Guardado en {}{}{}"
+    ),
+    message!(
+        "This profile action needs an active plugin. Start playback or apply the routing graph first.",
+        "Cette action de profil nécessite un plugin actif. Lancez la lecture ou appliquez d’abord le graphe de routage.",
+        "Diese Profilaktion benötigt ein aktives Plugin. Starten Sie die Wiedergabe oder wenden Sie zuerst das Routing-Diagramm an.",
+        "Esta acción de perfil necesita un plugin activo. Inicie la reproducción o aplique primero el grafo de enrutamiento."
+    ),
 ];
 
 fn translate_pattern(source: &str, target: &str, message: &str) -> Option<String> {

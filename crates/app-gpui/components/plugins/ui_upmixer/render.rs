@@ -56,6 +56,9 @@ fn upmixer_config_specs() -> &'static [UpmixerConfigSpec] {
         .as_slice()
 }
 
+// intentional: editor lanes use fixed rems min-widths so multi-lane
+// sections cannot collapse at narrow widths; spacing and padding come
+// from the Ds design tokens.
 /// Render the upmixer plugin controls
 pub fn render_upmixer_plugin(
     d: &Ds,
@@ -523,6 +526,7 @@ fn render_compact_config_content(
                                 state.auto_gain_enabled,
                                 param_idx::AUTO_GAIN_ENABLED,
                                 theme,
+                                text,
                             ),
                             compact_lane_enabled(
                                 d,
@@ -669,6 +673,7 @@ fn render_compact_config_content(
                     state.enable_subharmonic_synth,
                     param_idx::ENABLE_SUBHARMONIC_SYNTH,
                     theme,
+                    text,
                 ),
                 compact_lane(
                     d,
@@ -974,6 +979,7 @@ fn render_compact_config_content(
                     state.enable_hr_direct,
                     param_idx::ENABLE_HR_DIRECT,
                     theme,
+                    text,
                 ),
                 compact_lane_enabled(
                     d,
@@ -1062,6 +1068,7 @@ fn render_compact_config_content(
                     state.low_latency,
                     param_idx::LOW_LATENCY,
                     theme,
+                    text,
                 ),
                 render_compact_toggle_row(
                     d,
@@ -1071,6 +1078,7 @@ fn render_compact_config_content(
                     state.binaural_preview,
                     param_idx::BINAURAL_PREVIEW,
                     theme,
+                    text,
                 ),
                 render_compact_resolution_choices(
                     d,
@@ -1087,6 +1095,7 @@ fn render_compact_config_content(
                     state.multi_source_extraction,
                     param_idx::MULTI_SOURCE_EXTRACTION,
                     theme,
+                    text,
                 ),
                 compact_lane_enabled(
                     d,
@@ -1118,6 +1127,7 @@ fn render_compact_config_content(
                     diagnostic_param_value(state, param_idx::BYPASS_ALL_PROCESSING),
                     param_idx::BYPASS_ALL_PROCESSING,
                     theme,
+                    text,
                 ),
                 render_compact_toggle_row(
                     d,
@@ -1127,6 +1137,7 @@ fn render_compact_config_content(
                     diagnostic_param_value(state, param_idx::BYPASS_DECORRELATION),
                     param_idx::BYPASS_DECORRELATION,
                     theme,
+                    text,
                 ),
                 render_compact_toggle_row(
                     d,
@@ -1136,6 +1147,7 @@ fn render_compact_config_content(
                     diagnostic_param_value(state, param_idx::BYPASS_TRANSIENT_DETECTION),
                     param_idx::BYPASS_TRANSIENT_DETECTION,
                     theme,
+                    text,
                 ),
                 render_compact_toggle_row(
                     d,
@@ -1145,6 +1157,7 @@ fn render_compact_config_content(
                     diagnostic_param_value(state, param_idx::ENABLE_ML_DETECTION),
                     param_idx::ENABLE_ML_DETECTION,
                     theme,
+                    text,
                 ),
             ],
             theme,
@@ -1354,12 +1367,13 @@ fn render_compact_toggle_row(
     checked: bool,
     param_idx: usize,
     theme: &Theme,
+    text: PluginCommonTranslations,
 ) -> AnyElement {
     let toggle =
         gpui_ui_kit::ButtonSet::new(("upmix-compact-toggle", plugin_idx * 1000 + param_idx))
             .options(vec![
-                gpui_ui_kit::ButtonSetOption::new("0", "Off"),
-                gpui_ui_kit::ButtonSetOption::new("1", "On"),
+                gpui_ui_kit::ButtonSetOption::new("0", text.label("Off")),
+                gpui_ui_kit::ButtonSetOption::new("1", text.label("On")),
             ])
             .selected(if checked { "1" } else { "0" })
             .size(gpui_ui_kit::ButtonSetSize::Xs)

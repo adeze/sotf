@@ -330,7 +330,7 @@ pub(super) fn build_ref_channel_select(
             div()
                 .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
-                .child("Ref channel"),
+                .child(text.label("Ref channel")),
         )
         .child(div().key_context("SpatialReferenceSelect").child(select))
         .into_any_element()

@@ -279,7 +279,7 @@ fn render_dynamic_eq_response(
                 .text_size(d.text_sm)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_primary)
-                .child("Target response")
+                .child(text.label("Target response"))
                 .child(
                     div()
                         .text_size(d.text_xs)

@@ -144,7 +144,7 @@ impl PlayerView {
                             .size(SelectSize::Md)
                             .is_open(self.interface_model_menu().0)
                             .highlighted_index(self.interface_model_menu().1)
-                            .aria_label("Interface model")
+                            .aria_label(text.interface_model)
                             .options(
                                 std::iter::once(SelectOption::new("system", text.system))
                                     .chain(DesignLanguage::all().iter().map(|language| {

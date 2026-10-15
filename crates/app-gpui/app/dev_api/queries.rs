@@ -153,9 +153,10 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                     .map(|duration| duration.as_millis() as u64)
             )),
             field if field.starts_with("mtime_after.") => {
-                let other_index = field
-                    .strip_prefix("mtime_after.")
-                    .expect("prefix checked")
+                let Some(suffix) = field.strip_prefix("mtime_after.") else {
+                    return Err(anyhow!("invalid comparison take index in {field:?}"));
+                };
+                let other_index = suffix
                     .parse::<usize>()
                     .map_err(|_| anyhow!("invalid comparison take index in {field:?}"))?;
                 let other = state

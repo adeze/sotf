@@ -20,6 +20,18 @@ FIELD_LIMIT = 30
 ALLOWLIST: set[tuple[str, str]] = {
     # Data table generated from translation sources; decomposition plan TBD.
     ("crates/app-gpui/app/i18n/translations.rs", "Translations"),
+    # Per-screen translation tables split out of `Translations`; same
+    # generated-data rationale, no runtime decomposition planned.
+    ("crates/app-gpui/app/i18n/translations.rs", "PhoneTranslations"),
+    ("crates/app-gpui/app/i18n/translations.rs", "LevelMeterTranslations"),
+    # Recorder CLI surface mirrors the clap flag set; split into domain
+    # option groups only with a CLI compatibility review.
+    ("crates/app-cli/bin/sotf_recorder_cli/types.rs", "Cli"),
+    # Plugin editor UI state; planned MVVM split alongside `UIState`.
+    ("crates/app-gpui/app/state/plugin.rs", "PluginUiState"),
+    # TUI RoomEQ screen state; planned split into input, progress,
+    # preview, and export sub-states like `RoomEqScreenModel`.
+    ("crates/app-tui/app/types/room_eq_tui_state.rs", "RoomEqTuiState"),
     # UI state structs that mix view + transient state; target for MVVM split.
     ("crates/app-gpui/app/state/ui.rs", "UIState"),
     ("crates/app-gpui/ui/tick.rs", "TickSnapshot"),

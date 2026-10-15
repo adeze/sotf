@@ -763,6 +763,7 @@ impl AppearanceTranslations {
                 ghost_abbreviation: pseudo_static("Gho"),
                 outline_abbreviation: pseudo_static("Out"),
                 system: pseudo_static("System"),
+                interface_model: pseudo_static("Interface model"),
                 light: pseudo_static("Light"),
                 dark: pseudo_static("Dark"),
                 scheduled: pseudo_static("Scheduled"),
@@ -897,6 +898,7 @@ impl FederationTranslations {
     pub(super) fn pseudo() -> Self {
         Self {
                 streaming: pseudo_static("Streaming"),
+                streaming_sources: pseudo_static("Streaming sources"),
                 description: pseudo_static("Configure streaming services, radio stations, and remote players."),
                 status: pseudo_static("Status:"),
                 no_remote_sources: pseudo_static("No remote sources configured yet. Add one using the buttons above."),
@@ -956,6 +958,7 @@ impl SpectrumTranslations {
                 none: pseudo_static("None"),
                 standard: pseudo_static("Standard"),
                 custom: pseudo_static("Custom"),
+                frequency_axis: pseudo_static("Frequency (Hz)"),
                 min_frequency_short: pseudo_static("Min Freq"),
             }
     }

@@ -20,9 +20,9 @@ mod types;
 
 pub use app_impl::{App, FederationScanResult};
 pub use parameters::{TuiEditablePlugin, TuiParamDescriptor, TuiParamSpec, TuiParamType};
-pub(crate) use recording_duration::{
-    recording_acquisition_config, recording_acquisition_config_for_range,
-};
+pub(crate) use recording_duration::recording_acquisition_config;
+#[cfg(feature = "dev-api")]
+pub(crate) use recording_duration::recording_acquisition_config_for_range;
 pub use types::{
     AbTestingStep, AbTestingTuiState, ArtistNode, CastDeviceInfo, ChannelConflictChoice,
     ChannelFilter, ChannelGroup, ChannelInfo, ConfigureSubScreen, EarTrainingTab,

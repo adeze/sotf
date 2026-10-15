@@ -12,6 +12,7 @@ use super::misc::{cell_index, checked_matrix_cell_index};
 use super::types::MatrixRenderState;
 use super::types::MsdAction;
 use crate::app::AppState;
+use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use crate::components::themed_tooltip;
 use crate::theme::Theme;
@@ -63,6 +64,7 @@ pub fn render_matrix_plugin(
     theme: &Theme,
     route_labels: [&'static str; 2],
     scroll_handle: &ScrollHandle,
+    text: PluginCommonTranslations,
 ) -> impl IntoElement {
     let geometry = matrix_geometry(&state);
     // Keep a route editable even before the user can reach the grid.
@@ -103,10 +105,10 @@ pub fn render_matrix_plugin(
         .child(
             div().flex().flex_wrap().items_center().gap(d.grid)
                 .child(render_route_selectors(d, entity.clone(), &state, theme, route_labels))
-                .children(render_selected_cell_editor(d, entity.clone(), &state, theme)),
+                .children(render_selected_cell_editor(d, entity.clone(), &state, theme, text)),
         )
         .child(grid)
-        .child(Text::caption("Off silences the route; On starts at 0 dB. Alt+wheel adjusts gain; double-click a cell to clear it."))
+        .child(Text::caption(text.label("Off silences the route; On starts at 0 dB. Alt+wheel adjusts gain; double-click a cell to clear it.")))
 }
 
 fn render_route_selectors(
@@ -223,6 +225,7 @@ fn render_selected_cell_editor(
     entity: Entity<AppState>,
     state: &MatrixRenderState,
     theme: &Theme,
+    text: PluginCommonTranslations,
 ) -> Option<AnyElement> {
     let plugin_instance_id = state.plugin_instance_id;
     let (input_idx, output_idx) = state.selected_cell?;
@@ -314,8 +317,8 @@ fn render_selected_cell_editor(
         });
     let route = ButtonSet::new(("matrix-route-enabled", plugin_instance_id))
         .options(vec![
-            ButtonSetOption::new("off", "Off"),
-            ButtonSetOption::new("on", "On"),
+            ButtonSetOption::new("off", text.label("Off")),
+            ButtonSetOption::new("on", text.label("On")),
         ])
         .selected(if route_on { "on" } else { "off" })
         .size(ButtonSetSize::Xs)
@@ -395,9 +398,9 @@ fn render_selected_cell_editor(
             .flex_wrap()
             .items_center()
             .gap(d.grid)
-            .child(Text::label("Route"))
+            .child(Text::label(text.label("Route")))
             .child(route)
-            .child(Text::label("Polarity"))
+            .child(Text::label(text.label("Polarity")))
             .child(phase)
             .child(Text::label("Gain"))
             .child(slider)

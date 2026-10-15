@@ -4,9 +4,7 @@ use sotf_audio_player::{TrialAnswer, TrialMode};
 fn level_meter_matrix_sync_only_queues_changed_channel_state() {
     use sotf_audio_player::PluginSettings;
     use sotf_audio_player_gpui::{
-        App,
-        app::types::PluginUpdateType,
-        components::plugins::level_meters::LevelMeterManager,
+        App, app::types::PluginUpdateType, components::plugins::level_meters::LevelMeterManager,
     };
 
     let mut app = App::new();
@@ -14,7 +12,12 @@ fn level_meter_matrix_sync_only_queues_changed_channel_state() {
     assert!(!app.level_meters.groups.is_empty());
     app.plugin_state.update_state.pending_plugin_update = None;
     app.update_matrix_plugin();
-    assert!(app.plugin_state.update_state.pending_plugin_update.is_none());
+    assert!(
+        app.plugin_state
+            .update_state
+            .pending_plugin_update
+            .is_none()
+    );
     app.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Parameter {
         plugin_index: 0,
         param_index: 0,
@@ -46,7 +49,12 @@ fn level_meter_matrix_sync_only_queues_changed_channel_state() {
 
     app.plugin_state.update_state.pending_plugin_update = None;
     app.set_level_meter_mute(0, true);
-    assert!(app.plugin_state.update_state.pending_plugin_update.is_none());
+    assert!(
+        app.plugin_state
+            .update_state
+            .pending_plugin_update
+            .is_none()
+    );
     app.set_level_meter_dim(0, true);
     assert!(matches!(
         app.plugin_state.update_state.pending_plugin_update,
@@ -1443,6 +1451,7 @@ fn snapshot_measurement(channel: &str) -> sotf_audio_player::room_eq_types::Chan
             clarity_c80_db: None,
             spectrogram_db: None,
             quality: None,
+            stimulus_config: None,
         },
         is_group: false,
         group_drivers: Vec::new(),

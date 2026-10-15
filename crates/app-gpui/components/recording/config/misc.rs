@@ -238,6 +238,7 @@ impl PlayerView {
             .child({
                 let view = view.clone();
                 NumberInput::new("recording_channel_count")
+                    .label(translations.recording_num_channels)
                     .value(num_channels.min(max_input_channels) as f64)
                     .min(1.0)
                     .max(max_input_channels as f64)
@@ -310,6 +311,7 @@ impl PlayerView {
             .child({
                 let view = view.clone();
                 NumberInput::new("ctc_loopback_input")
+                    .label(text.loopback_input)
                     .value(ctc_loopback.map(|ch| ch + 1).unwrap_or(1) as f64)
                     .min(1.0)
                     .max(max_input_channels as f64)
@@ -348,6 +350,7 @@ impl PlayerView {
                     .child({
                         let view = view.clone();
                         NumberInput::new("recording_num_positions")
+                            .label(text.positions)
                             .value(num_positions as f64)
                             .min(1.0)
                             .max(8.0)
@@ -731,6 +734,7 @@ impl PlayerView {
                 )
                 .child(
                     NumberInput::new("pre_silence_s")
+                        .label(translations.recording_pre_silence)
                         .value(pre_s as f64)
                         .min(0.0)
                         .max(10.0)
@@ -761,6 +765,7 @@ impl PlayerView {
                 )
                 .child(
                     NumberInput::new("post_silence_s")
+                        .label(translations.recording_post_silence)
                         .value(post_s_opt.unwrap_or(0.0) as f64)
                         .min(0.0)
                         .max(30.0)
@@ -845,6 +850,7 @@ impl PlayerView {
                         )
                         .child(
                             NumberInput::new("num_sweeps")
+                                .label(recording_text.repeat.sweeps_per_channel)
                                 .value(num_sweeps as f64)
                                 .min(1.0)
                                 .max(8.0)
@@ -1521,13 +1527,10 @@ impl PlayerView {
         speaker_idx: usize,
         interface_ch: usize,
     ) -> impl IntoElement {
-        let label = self
-            .state
-            .read(cx)
-            .app
-            .ui_state
-            .translations
-            .recording_channel_label;
+        let label = {
+            let state = self.state.read(cx);
+            state.app.ui_state.translations.recording_channel_label
+        };
         let view = cx.weak_entity();
         let input = NumberInput::new(SharedString::from(format!("speaker_{speaker_idx}_ch_0")))
             .aria_label(format!("{label} {}", speaker_idx + 1))

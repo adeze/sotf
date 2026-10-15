@@ -378,7 +378,12 @@ pub(super) fn render_external(
             .advanced_instance
             == instance_id;
     let entity = ctx.entity.clone();
-    let advanced = Button::new(("external-advanced", ctx.plugin_idx), "Advanced")
+    let advanced_label = {
+        let text =
+            PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
+        text.label("Advanced")
+    };
+    let advanced = Button::new(("external-advanced", ctx.plugin_idx), advanced_label)
         .size(ButtonSize::Xs)
         .variant(if advanced_open {
             ButtonVariant::Secondary
@@ -1272,6 +1277,7 @@ pub(super) fn render_matrix(
                 ctx.entity.read(cx).app.ui_state.language,
             ),
             &ctx.matrix_scroll_handle,
+            PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language),
         )
         .into_any_element()
     } else {

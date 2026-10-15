@@ -37,8 +37,8 @@ pub mod player;
 pub mod plugin_categories;
 pub mod plugin_graph;
 pub mod queue;
-pub use sotf_capture::recording_helpers;
 pub use sotf_capture::quality as capture_quality;
+pub use sotf_capture::recording_helpers;
 mod recording_import;
 pub mod recording_types {
     //! Recording domain types (owned by sotf-capture) plus the

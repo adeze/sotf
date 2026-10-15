@@ -75,6 +75,41 @@ impl<'ast> Visit<'ast> for TextLabelVisitor {
 
         syn::visit::visit_expr_method_call(self, call);
     }
+
+    fn visit_expr_macro(&mut self, node: &'ast syn::ExprMacro) {
+        // Macro bodies (e.g. `vec![...]`) are unexpanded token streams:
+        // `syn::visit` does not descend into them, so `text.label("...")`
+        // calls written inside a macro would otherwise be missed.
+        collect_labels_from_macro_tokens(&node.mac.tokens.to_string(), &mut self.labels);
+        syn::visit::visit_expr_macro(self, node);
+    }
+}
+
+fn collect_labels_from_macro_tokens(tokens: &str, labels: &mut BTreeSet<String>) {
+    let mut rest = tokens;
+    while let Some(pos) = rest.find("text . label (") {
+        rest = &rest[pos + "text . label (".len()..];
+        let Some(quoted) = rest.trim_start().strip_prefix('"') else {
+            continue;
+        };
+        let mut end = 0;
+        let bytes = quoted.as_bytes();
+        while end < bytes.len() {
+            match bytes[end] {
+                b'\\' => end += 2,
+                b'"' => break,
+                _ => end += 1,
+            }
+        }
+        if end >= bytes.len() {
+            break;
+        }
+        let raw = &quoted[..end];
+        if let Ok(lit) = syn::parse_str::<syn::LitStr>(&format!("\"{raw}\"")) {
+            labels.insert(lit.value());
+        }
+        rest = &quoted[end + 1..];
+    }
 }
 
 fn app_source(relative: &str) -> String {
@@ -433,7 +468,7 @@ fn async_ab_picker_captures_graph_identity_before_await() {
         "graph identity must be captured before await"
     );
     assert!(
-        handler.contains("graph.nodes.contains_key(&node_id)")
+        handler.contains("resource_target.matches(&state.app.plugin_state)")
             && handler.contains("PluginUpdateEffect::Structural"),
         "async result must reject a removed node and update UI only after structural success"
     );
@@ -634,15 +669,15 @@ fn app_gpui_unwrap_expect_production_audit_is_current() {
 
     // Test-only calls in player_handle, midi_input and spatial_spider are
     // excluded; this baseline tracks production panic sites only.
+    // Baseline history: dev-api server/queries sites were made graceful
+    // (endpoint stored on the test handle, thread-spawn failure logged,
+    // prefix parsing returns an error) and layout/EQ/external renderers
+    // now return empty output instead of panicking on missing state, so
+    // those files no longer appear here.
     let expected = BTreeMap::from([
         ("app/cast.rs".to_string(), 2),
-        ("app/dev_api/server/parse.rs".to_string(), 1),
         ("app/federation/local.rs".to_string(), 2),
         ("app/remote/consts.rs".to_string(), 5),
-        (
-            "components/plugins/ui_layout_renderer/render.rs".to_string(),
-            1,
-        ),
     ]);
 
     assert_eq!(
@@ -687,11 +722,10 @@ fn plugin_ui_p1_hardcoded_pixels_are_documented_or_tokenized() {
 #[test]
 fn channel_mute_solo_buttons_have_click_handlers() {
     let mute_solo = app_source("components/plugins/ui_mute_solo.rs");
+    // Channel buttons are toolkit `Button`s: the shared builder wires each
+    // M/S/D button to `toggle_msd_state` through its click handler.
     assert!(
-        mute_solo
-            .matches(".on_mouse_down(MouseButton::Left")
-            .count()
-            >= 3,
+        mute_solo.contains(".on_click_event(") && mute_solo.contains("toggle_msd_state"),
         "channel mute/solo/dim controls must be clickable"
     );
     assert!(mute_solo.contains("MsdAction::Mute"));
@@ -4678,7 +4712,8 @@ fn application_visible_literal_sinks_require_explicit_technical_allowlist() {
 
     // Stable product/format identifiers are deliberately not translated. This
     // list is restricted to symbols, units, channel layouts, brands, and the
-    // canonical plugin names shared with presets and the engine registry.
+    // canonical plugin and EQ filter-type names shared with presets and the
+    // engine registry.
     let allowed = [
         "",
         "!",
@@ -4739,6 +4774,14 @@ fn application_visible_literal_sinks_require_explicit_technical_allowlist() {
         "A/B Compare",
         "AEC",
         "AirPlay",
+        "All Pass",
+        "Band Pass",
+        "High Pass",
+        "High Shelf",
+        "Low Pass",
+        "Low Shelf",
+        "Notch",
+        "iOS / iPadOS",
         "Binaural Decoder",
         "Channel Mute/Solo",
         "Compressor",

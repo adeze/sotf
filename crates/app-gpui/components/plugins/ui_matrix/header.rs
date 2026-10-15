@@ -3,6 +3,7 @@
 // Rust guideline compliant 2026-02-21
 
 use crate::app::AppState;
+use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::{AnyElement, Entity, InteractiveElement, IntoElement, ParentElement, Styled, div};
@@ -30,6 +31,7 @@ pub(crate) fn render_header(
     else {
         return div().into_any_element();
     };
+    let text = PluginCommonTranslations::for_language(entity.read(cx).app.ui_state.language);
     let current = detect_matrix_preset(*input_channels, *output_channels, matrix);
     let mut options: Vec<_> = available_matrix_presets(*input_channels, *output_channels)
         .into_iter()
@@ -38,7 +40,7 @@ pub(crate) fn render_header(
                 .disabled(*input_channels > 2 && matches!(name, "M/S Encode" | "M/S Decode"))
         })
         .collect();
-    options.push(SelectOption::new("Custom", "Custom").disabled(true));
+    options.push(SelectOption::new("Custom", text.label("Custom")).disabled(true));
     let open = entity
         .read(cx)
         .app
@@ -58,7 +60,7 @@ pub(crate) fn render_header(
     let highlight_entity = entity.downgrade();
     let toggle = entity.downgrade();
     let select = Select::new(("matrix-preset", instance_id))
-        .aria_label("Matrix preset")
+        .aria_label(text.label("Matrix preset"))
         .options(options)
         .selected(current)
         .size(SelectSize::Xs)
@@ -127,7 +129,7 @@ pub(crate) fn render_header(
         .flex()
         .items_center()
         .gap(d.grid)
-        .child(Text::label("Preset"))
+        .child(Text::label(text.label("Preset")))
         .child(select)
         .into_any_element()
 }

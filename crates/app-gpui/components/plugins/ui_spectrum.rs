@@ -471,7 +471,7 @@ pub fn render_spectrum_analyzer_plugin(
         .gap(d.grid)
         .child(primary)
         .child(spectrum_display)
-        .child(Text::caption("Frequency (Hz)"))
+        .child(Text::caption(text.frequency_axis))
 }
 
 #[cfg(test)]

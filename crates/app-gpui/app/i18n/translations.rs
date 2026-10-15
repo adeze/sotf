@@ -4572,6 +4572,16 @@ impl EqViewTranslations {
         }
     }
 
+    pub fn frequency_axis(language: Language) -> &'static str {
+        match language {
+            Language::English => "Frequency (Hz)",
+            Language::French => "Fréquence (Hz)",
+            Language::German => "Frequenz (Hz)",
+            Language::Spanish => "Frecuencia (Hz)",
+            Language::Pseudo => "[Frèqüèncÿ (Hz)]",
+        }
+    }
+
     pub fn order(language: Language) -> &'static str {
         match language {
             Language::English => "Order",
@@ -4779,6 +4789,7 @@ pub struct AppearanceTranslations {
     pub ghost_abbreviation: &'static str,
     pub outline_abbreviation: &'static str,
     pub system: &'static str,
+    pub interface_model: &'static str,
     pub light: &'static str,
     pub dark: &'static str,
     pub scheduled: &'static str,
@@ -4813,6 +4824,7 @@ impl AppearanceTranslations {
                 ghost_abbreviation: "Gho",
                 outline_abbreviation: "Out",
                 system: "System",
+                interface_model: "Interface model",
                 light: "Light",
                 dark: "Dark",
                 scheduled: "Scheduled",
@@ -4842,6 +4854,7 @@ impl AppearanceTranslations {
                 ghost_abbreviation: "Fan",
                 outline_abbreviation: "Con",
                 system: "Système",
+                interface_model: "Modèle d’interface",
                 light: "Clair",
                 dark: "Sombre",
                 scheduled: "Planifié",
@@ -4871,6 +4884,7 @@ impl AppearanceTranslations {
                 ghost_abbreviation: "Tra",
                 outline_abbreviation: "Kon",
                 system: "System",
+                interface_model: "Interfacemodell",
                 light: "Hell",
                 dark: "Dunkel",
                 scheduled: "Zeitplan",
@@ -4900,6 +4914,7 @@ impl AppearanceTranslations {
                 ghost_abbreviation: "Fan",
                 outline_abbreviation: "Con",
                 system: "Sistema",
+                interface_model: "Modelo de interfaz",
                 light: "Claro",
                 dark: "Oscuro",
                 scheduled: "Programado",
@@ -5396,6 +5411,7 @@ const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
         "Disconnect selected node",
         "Déconnecter le nœud sélectionné",
     ),
+    ("Ear Training", "Entraînement auditif"),
     ("Edit plugin", "Modifier le module"),
     ("Edit selected EQ", "Modifier l’égaliseur sélectionné"),
     ("Edit selected plugin", "Modifier le module sélectionné"),
@@ -5599,6 +5615,7 @@ const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Devices", "Geräte"),
     ("Directory Manager", "Ordnerverwaltung"),
     ("Disconnect selected node", "Ausgewählten Knoten trennen"),
+    ("Ear Training", "Gehörbildung"),
     ("Edit plugin", "Plugin bearbeiten"),
     ("Edit selected EQ", "Ausgewählten EQ bearbeiten"),
     ("Edit selected plugin", "Ausgewähltes Plugin bearbeiten"),
@@ -5808,6 +5825,7 @@ const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
         "Disconnect selected node",
         "Desconectar el nodo seleccionado",
     ),
+    ("Ear Training", "Entrenamiento auditivo"),
     ("Edit plugin", "Editar complemento"),
     ("Edit selected EQ", "Editar el ecualizador seleccionado"),
     ("Edit selected plugin", "Editar el complemento seleccionado"),
@@ -6253,6 +6271,7 @@ impl RecordingTranslations {
 #[derive(Debug, Clone, Copy)]
 pub struct FederationTranslations {
     pub streaming: &'static str,
+    pub streaming_sources: &'static str,
     pub description: &'static str,
     pub status: &'static str,
     pub no_remote_sources: &'static str,
@@ -6278,6 +6297,7 @@ impl FederationTranslations {
             Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 streaming: "Streaming",
+                streaming_sources: "Streaming sources",
                 description: "Configure streaming services, radio stations, and remote players.",
                 status: "Status:",
                 no_remote_sources: "No remote sources configured yet. Add one using the buttons above.",
@@ -6298,6 +6318,7 @@ impl FederationTranslations {
             },
             Language::French => Self {
                 streaming: "Diffusion",
+                streaming_sources: "Sources de streaming",
                 description: "Configurez les services de diffusion, les radios et les lecteurs distants.",
                 status: "État :",
                 no_remote_sources: "Aucune source distante configurée. Ajoutez-en une avec les boutons ci-dessus.",
@@ -6318,6 +6339,7 @@ impl FederationTranslations {
             },
             Language::German => Self {
                 streaming: "Streaming",
+                streaming_sources: "Streaming-Quellen",
                 description: "Konfigurieren Sie Streamingdienste, Radiosender und entfernte Player.",
                 status: "Status:",
                 no_remote_sources: "Noch keine entfernten Quellen konfiguriert. Fügen Sie oben eine hinzu.",
@@ -6338,6 +6360,7 @@ impl FederationTranslations {
             },
             Language::Spanish => Self {
                 streaming: "Emisiones",
+                streaming_sources: "Fuentes de streaming",
                 description: "Configure servicios de emisión, emisoras de radio y reproductores remotos.",
                 status: "Estado:",
                 no_remote_sources: "Aún no hay fuentes remotas configuradas. Añada una con los botones superiores.",
@@ -6470,6 +6493,7 @@ pub struct SpectrumTranslations {
     pub none: &'static str,
     pub standard: &'static str,
     pub custom: &'static str,
+    pub frequency_axis: &'static str,
     pub min_frequency_short: &'static str,
 }
 
@@ -6491,6 +6515,7 @@ impl SpectrumTranslations {
                 none: "None",
                 standard: "Standard",
                 custom: "Custom",
+                frequency_axis: "Frequency (Hz)",
                 min_frequency_short: "Min Freq",
             },
             Language::French => Self {
@@ -6507,6 +6532,7 @@ impl SpectrumTranslations {
                 none: "Aucune",
                 standard: "Standard",
                 custom: "Personnalisé",
+                frequency_axis: "Fréquence (Hz)",
                 min_frequency_short: "Fréq. min.",
             },
             Language::German => Self {
@@ -6523,6 +6549,7 @@ impl SpectrumTranslations {
                 none: "Keine",
                 standard: "Standard",
                 custom: "Benutzerdefiniert",
+                frequency_axis: "Frequenz (Hz)",
                 min_frequency_short: "Min. Frequenz",
             },
             Language::Spanish => Self {
@@ -6539,6 +6566,7 @@ impl SpectrumTranslations {
                 none: "Ninguna",
                 standard: "Estándar",
                 custom: "Personalizado",
+                frequency_axis: "Frecuencia (Hz)",
                 min_frequency_short: "Frec. mín.",
             },
         }
@@ -7591,6 +7619,22 @@ const FRENCH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Voice Hi", "Voix haute"),
     ("Voice Lo", "Voix basse"),
     ("Weight", "Pondération"),
+    ("Advanced", "Avancé"),
+    ("Cancel Learn", "Annuler l’apprentissage"),
+    ("Clear Profile", "Effacer le profil"),
+    ("Custom", "Personnalisé"),
+    ("Frequency (Hz)", "Fréquence (Hz)"),
+    ("Learn Noise", "Apprendre le bruit"),
+    ("Matrix preset", "Préréglage matrice"),
+    ("Polarity", "Polarité"),
+    ("Ref channel", "Canal de référence"),
+    ("Route", "Route"),
+    ("Target response", "Réponse cible"),
+    ("Value unavailable", "Valeur indisponible"),
+    (
+        "Off silences the route; On starts at 0 dB. Alt+wheel adjusts gain; double-click a cell to clear it.",
+        "Off coupe la route ; On démarre à 0 dB. Alt+molette ajuste le gain ; double-cliquez sur une cellule pour l’effacer.",
+    ),
 ];
 
 const GERMAN_PLUGIN_LABELS: &[(&str, &str)] = &[
@@ -7742,6 +7786,22 @@ const GERMAN_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Voice Hi", "Stimme hoch"),
     ("Voice Lo", "Stimme tief"),
     ("Weight", "Gewichtung"),
+    ("Advanced", "Erweitert"),
+    ("Cancel Learn", "Lernen abbrechen"),
+    ("Clear Profile", "Profil löschen"),
+    ("Custom", "Benutzerdefiniert"),
+    ("Frequency (Hz)", "Frequenz (Hz)"),
+    ("Learn Noise", "Rauschen lernen"),
+    ("Matrix preset", "Matrix-Preset"),
+    ("Polarity", "Polarität"),
+    ("Ref channel", "Referenzkanal"),
+    ("Route", "Route"),
+    ("Target response", "Zielantwort"),
+    ("Value unavailable", "Wert nicht verfügbar"),
+    (
+        "Off silences the route; On starts at 0 dB. Alt+wheel adjusts gain; double-click a cell to clear it.",
+        "Aus schaltet die Route stumm; Ein startet bei 0 dB. Alt+Mausrad stellt den Gain ein; Doppelklick auf eine Zelle löscht sie.",
+    ),
 ];
 
 const SPANISH_PLUGIN_LABELS: &[(&str, &str)] = &[
@@ -7893,6 +7953,22 @@ const SPANISH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Voice Hi", "Voz alta"),
     ("Voice Lo", "Voz baja"),
     ("Weight", "Peso"),
+    ("Advanced", "Avanzado"),
+    ("Cancel Learn", "Cancelar aprendizaje"),
+    ("Clear Profile", "Borrar perfil"),
+    ("Custom", "Personalizado"),
+    ("Frequency (Hz)", "Frecuencia (Hz)"),
+    ("Learn Noise", "Aprender ruido"),
+    ("Matrix preset", "Preajuste de matriz"),
+    ("Polarity", "Polaridad"),
+    ("Ref channel", "Canal de referencia"),
+    ("Route", "Ruta"),
+    ("Target response", "Respuesta objetivo"),
+    ("Value unavailable", "Valor no disponible"),
+    (
+        "Off silences the route; On starts at 0 dB. Alt+wheel adjusts gain; double-click a cell to clear it.",
+        "Off silencia la ruta; On empieza en 0 dB. Alt+rueda ajusta la ganancia; doble clic en una celda para borrarla.",
+    ),
 ];
 
 #[derive(Debug, Clone, Copy)]

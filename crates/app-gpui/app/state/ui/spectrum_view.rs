@@ -106,8 +106,9 @@ impl SpectrumViewState {
                 *value = magnitudes[left] + fraction * (magnitudes[right] - magnitudes[left]);
             }
         }
-        let last = *measured.last().unwrap();
-        display[last + 1..].fill(magnitudes[last]);
+        if let Some(&last) = measured.last() {
+            display[last + 1..].fill(magnitudes[last]);
+        }
         display.into()
     }
 
