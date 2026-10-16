@@ -109,7 +109,10 @@ itest:
 	EXCLUDE='not (test(test_play_to_audible_latency) | test(test_loudness_compensation_zero_alloc) | test(test_upmixer_plugin_timing))'
 	SERIAL='test(test_play_to_audible_latency) | test(test_loudness_compensation_zero_alloc) | test(test_upmixer_plugin_timing)'
 	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off {{cargo}} nextest run --release --no-fail-fast --workspace --tests {{release_test_features}} -E "$EXCLUDE"
-	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off {{cargo}} nextest run --release --no-fail-fast --workspace --tests {{release_test_features}} --test-threads=1 -E "$SERIAL"
+	# The serial tests live in the sotf-daw workspace (sotf-engine /
+	# sotf-plugins), so run that pass against its manifest; from this
+	# workspace the filter matches nothing and nextest errors out.
+	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off {{cargo}} nextest run --release --no-fail-fast --manifest-path ../sotf-daw/Cargo.toml -p sotf-engine -p sotf-plugins --features sotf-plugins/qa --tests --test-threads=1 -E "$SERIAL"
 
 [group('test')]
 atest: test-negative test-proptest ntest itest

@@ -22,6 +22,7 @@ RUN apk add --no-cache \
         gfortran \
         git \
         linux-headers \
+        mold \
         ninja \
         openblas-dev \
         openssl-dev \

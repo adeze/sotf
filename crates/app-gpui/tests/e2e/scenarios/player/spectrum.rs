@@ -67,8 +67,7 @@ impl TestScenario for SpectrumScreenScenario {
 
 #[gpui::test]
 async fn test_spectrum_screen_navigation(cx: &mut TestAppContext) {
-    let profile = tempfile::tempdir().expect("Create private spectrum test profile");
-    sotf_audio_player::config::set_config_dir_override(profile.path().to_path_buf());
+    crate::runner::ensure_shared_test_config_dir();
     let scenario = SpectrumScreenScenario;
     let runner = E2ERunner::new(scenario);
     let result = runner.run(cx).await;

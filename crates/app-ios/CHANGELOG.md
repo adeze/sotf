@@ -1,4 +1,4 @@
-# 0.6.8 (unreleased)
+# 0.7.15
 
 ## iOS / GPUI P1 hardening
 

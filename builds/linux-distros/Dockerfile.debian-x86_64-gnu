@@ -37,6 +37,7 @@ RUN apt-get update && \
         libssl-dev \
         libwebkit2gtk-4.1-dev \
         libxkbcommon-x11-dev \
+        mold \
         ninja-build \
         patchelf \
         perl \

@@ -89,6 +89,23 @@ pub trait TestScenario {
     }
 }
 
+/// Install the process-global config directory override exactly once.
+///
+/// GPUI e2e tests run as parallel threads in a single process, and
+/// `set_config_dir_override` panics when called twice, so tests must share
+/// one profile directory instead of racing to install their own. The
+/// temporary directory is leaked on purpose: the override is process-global
+/// and must outlive any individual test.
+pub fn ensure_shared_test_config_dir() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let dir = tempfile::tempdir().expect("create shared e2e config directory");
+        let path = dir.path().to_path_buf();
+        std::mem::forget(dir);
+        sotf_audio_player::config::set_config_dir_override(path);
+    });
+}
+
 use sotf_audio_player::Player;
 use sotf_audio_player_gpui::app::player_handle::PlayerHandle;
 use sotf_audio_player_gpui::app::state::ui::LayoutState;

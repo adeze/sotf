@@ -153,8 +153,7 @@ impl TestScenario for StudioPickerTooltipScenario {
 
 #[gpui::test]
 async fn test_studio_picker_description_tooltip(cx: &mut TestAppContext) {
-    let profile = tempfile::tempdir().expect("Create private Studio tooltip profile");
-    sotf_audio_player::config::set_config_dir_override(profile.path().to_path_buf());
+    crate::runner::ensure_shared_test_config_dir();
     let result = E2ERunner::new(StudioPickerTooltipScenario)
         .run(cx)
         .await

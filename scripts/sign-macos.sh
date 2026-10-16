@@ -156,12 +156,29 @@ sign_payload_code() {
     local root_dir="$1"
 
     log_info "  Signing nested Mach-O payloads..."
+    # Sign the desktop's main executable last: codesign seals the enclosing
+    # bundle when it signs the bundle's main executable and rejects the seal
+    # while nested helpers are still unsigned. `find` order is filesystem
+    # dependent, so partition explicitly instead of relying on it.
+    local -a macho_candidates=()
     while IFS= read -r -d '' candidate; do
         if is_macho_file "$candidate"; then
-            sign_macho_file "$candidate"
-            log_info "    Signed Mach-O: ${candidate#$root_dir/}"
+            macho_candidates+=("$candidate")
         fi
     done < <(find "$root_dir" -type f -print0)
+    local pass candidate
+    for pass in helpers desktop; do
+        for candidate in "${macho_candidates[@]}"; do
+            if [ "$pass" = helpers ] && is_desktop_code "$candidate"; then
+                continue
+            fi
+            if [ "$pass" = desktop ] && ! is_desktop_code "$candidate"; then
+                continue
+            fi
+            sign_macho_file "$candidate"
+            log_info "    Signed Mach-O: ${candidate#$root_dir/}"
+        done
+    done
 
     log_info "  Signing code bundles..."
     while IFS= read -r bundle; do

@@ -3139,7 +3139,10 @@ pub(crate) fn render_eq_header_controls(
             .iter()
             .position(|(candidate, _)| *candidate == value)
             .unwrap_or(0);
-        let toggle_entity = entity.clone();
+        // Weak capture: gpui-ui-kit's Select retains its blur subscription
+        // (and thus this closure) in a thread-local registry beyond the
+        // element's lifetime, so a strong handle would leak the app state.
+        let toggle_entity = entity.downgrade();
         let highlight_entity = entity.clone();
         let change_entity = entity.clone();
         let select = Select::new(("eq-header-select", plugin_idx * 2 + menu))
@@ -3163,6 +3166,9 @@ pub(crate) fn render_eq_header_controls(
             })
             .theme(theme.to_select_theme())
             .on_toggle(move |open, _, cx| {
+                let Some(toggle_entity) = toggle_entity.upgrade() else {
+                    return;
+                };
                 toggle_entity.update(cx, |state, cx| {
                     state.app.plugin_state.plugin_ui_state.eq_header_menu = open.then_some(menu);
                     state.app.plugin_state.plugin_ui_state.eq_header_highlight =

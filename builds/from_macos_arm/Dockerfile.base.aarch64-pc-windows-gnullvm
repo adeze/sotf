@@ -53,6 +53,17 @@ RUN curl -fsSL "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_
     tar -xJ -C /opt && \
     mv "/opt/llvm-mingw-${LLVM_MINGW_VERSION}-${LLVM_MINGW_CRT}-ubuntu-${LLVM_MINGW_UBUNTU}-${LLVM_MINGW_HOST}" /opt/llvm-mingw
 
+# Some crates (e.g. rappct) emit MSVC-style capitalized link names
+# (Userenv, Advapi32, Kernel32). LLD searches the mingw sysroot
+# case-sensitively and only ships lowercase import libraries, so provide
+# capitalized aliases or the gnullvm link fails.
+RUN for pair in userenv:Userenv advapi32:Advapi32 kernel32:Kernel32; do \
+        lower="${pair%%:*}"; upper="${pair##*:}"; \
+        for dir in /opt/llvm-mingw/*-w64-mingw32/lib; do \
+            if [ -f "$dir/lib${lower}.a" ]; then cp "$dir/lib${lower}.a" "$dir/lib${upper}.a"; fi; \
+        done; \
+    done
+
 ENV PATH="/opt/llvm-mingw/bin:${PATH}"
 ENV CC_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-clang
 ENV CXX_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-clang++

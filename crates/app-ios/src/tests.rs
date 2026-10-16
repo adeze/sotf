@@ -27,8 +27,8 @@ fn ios_project_builds_rust_library_instead_of_requiring_committed_archive() {
 fn ios_bundle_metadata_has_required_shipping_assets() {
     let project_yml = std::fs::read_to_string(ios_path("project.yml")).unwrap();
     let plist = std::fs::read_to_string(app_path("Info.plist")).unwrap();
-    assert!(project_yml.contains("MARKETING_VERSION: 0.6.8"));
-    assert!(project_yml.contains("CURRENT_PROJECT_VERSION: 0.6.8"));
+    assert!(project_yml.contains("MARKETING_VERSION: 0.7.15"));
+    assert!(project_yml.contains("CURRENT_PROJECT_VERSION: 0.7.15"));
     assert!(plist.contains("<string>$(MARKETING_VERSION)</string>"));
     assert!(plist.contains("<string>$(CURRENT_PROJECT_VERSION)</string>"));
     assert!(plist.contains("<string>LaunchScreen</string>"));
