@@ -318,6 +318,11 @@ fn main() {
                 MenuItem::action(translations.screen_listening_test, SwitchToListeningTest),
                 MenuItem::action(translations.screen_recording, SwitchToRecording),
             ];
+            #[cfg(feature = "speaker-workbench")]
+            view_menu_items.push(MenuItem::action(
+                "Speaker Workbench",
+                SwitchToSpeakerWorkbench,
+            ));
             if release_channel.allows(Screen::RoomEq.maturity()) {
                 view_menu_items.push(MenuItem::action(
                     translations.screen_room_eq,

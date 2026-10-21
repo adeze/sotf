@@ -6,6 +6,7 @@ members = [
     "crates/sotf-dev-driver",
     "crates/app-cli",
     "crates/app-gpui",
+    "crates/sotf-speaker-workbench",
     "crates/app-tui",
     "crates/sotf-media-controls",
     "crates/sotf-server/crates/sotf-mpd",

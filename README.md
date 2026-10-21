@@ -25,6 +25,11 @@ What can you do with it?
 
 ## How to use?
 
+The Adeze integration checkout includes an opt-in
+[Speaker Workbench](crates/sotf-speaker-workbench/README.md): Sonium's passive
+designer plus an active preview using SOTF's crossover plugin. Enable
+`speaker-workbench` in `sotf-gpui` to open it from the View menu.
+
 - Windows: [download from Microsoft Store](https://apps.microsoft.com/detail/9NXCMV37NXJ7).
 - Apple: [download from the App Store](https://apps.apple.com/ch/app/sound-of-the-future/id6754237332).
 

@@ -77,6 +77,7 @@ actions!(
         ListeningToggleMetadata,
         ListeningToggleTrialDetails,
         SwitchToRoomEQ,
+        SwitchToSpeakerWorkbench,
         SwitchToSpectrum,
         SwitchToSettings,
         SwitchToRecording,

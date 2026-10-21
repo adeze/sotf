@@ -1,0 +1,26 @@
+[package]
+name = "sotf-speaker-workbench"
+version = "0.1.0"
+description = "Measured passive speaker design and explicit SOTF active crossover preview"
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+desktop = ["dep:gpui", "dep:gpui-ui-kit", "sonium-speaker-designer/desktop"]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+sonium-speaker-designer = { path = "../../../sonium/crates/sonium-speaker-designer" }
+sotf-plugin-crossover = { path = "../../../sotf-daw/crates/sotf-plugins/crates/sotf-plugin-crossover" }
+sotf-host = { path = "../../../sotf-daw/crates/sotf-plugins/crates/sotf-host" }
+num-complex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+gpui = { workspace = true, optional = true }
+gpui-ui-kit = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

@@ -6,6 +6,8 @@ impl Screen {
     /// Returns the maturity level of this screen.
     pub fn maturity(&self) -> ReleaseChannel {
         match self {
+            #[cfg(feature = "speaker-workbench")]
+            Screen::SpeakerWorkbench => ReleaseChannel::Prod,
             Screen::Home
             | Screen::HomeShelf
             | Screen::Library

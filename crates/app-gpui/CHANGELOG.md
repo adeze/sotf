@@ -1,5 +1,10 @@
 # 0.7.11 (unreleased)
 
+## Speaker workbench
+
+- Add opt-in `speaker-workbench` feature embedding Sonium's passive editor in the main content view, with View menu and Studio navigation and persistent session state.
+- Preview an explicit active LR24 design with the existing SOTF crossover plugin; imports and driver delay/polarity are shared, while playback and routing remain unchanged.
+
 ## Developer tooling
 
 - The `export-design-tokens` / `import-design-tokens` binaries moved here

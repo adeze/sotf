@@ -119,6 +119,8 @@ impl PlayerView {
     ) -> AnyElement {
         let translations = self.state.read(cx).app.ui_state.translations.clone();
         match screen {
+            #[cfg(feature = "speaker-workbench")]
+            Screen::SpeakerWorkbench => self.render_speaker_workbench(cx),
             Screen::NowPlaying => self.render_phone_now_playing(cx),
             Screen::Settings => self.render_settings_screen_phone(cx),
             Screen::SettingsDetail => self.render_settings_detail_phone(cx),

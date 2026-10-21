@@ -142,6 +142,8 @@ impl ViewScrollHandles {
 /// extraction remains tracked alongside the existing Plugin Controller Phase-3
 /// effort (see auto-memory: "Controller Consolidation — Phase 3").
 pub struct PlayerView {
+    #[cfg(feature = "speaker-workbench")]
+    pub(super) speaker_workbench: Option<Entity<sotf_speaker_workbench::desktop::Workbench>>,
     pub state: Entity<AppState>,
     pub focus_handle: FocusHandle,
     pub(crate) command_palette: Option<CommandPaletteState>,
@@ -644,6 +646,8 @@ impl PlayerView {
 
         Self {
             state,
+            #[cfg(feature = "speaker-workbench")]
+            speaker_workbench: None,
             focus_handle,
             command_palette: None,
             volume_focus_handle,
