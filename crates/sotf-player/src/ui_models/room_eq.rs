@@ -394,6 +394,56 @@ impl RoomEqScreenModel {
         self.optimization_status == OptimizationStatus::Running
     }
 
+    /// Shared UI/agent edit boundary. Validate the complete proposal before changing state.
+    pub fn update_design_limits(
+        &mut self,
+        min_freq: Option<f64>,
+        max_freq: Option<f64>,
+        min_db: Option<f64>,
+        max_db: Option<f64>,
+    ) -> Result<(), String> {
+        if self.is_optimizing() {
+            return Err("Cannot edit Designer parameters while a study is running".into());
+        }
+        let current = &self.optimizer_config;
+        let values = (
+            min_freq.unwrap_or(current.min_freq),
+            max_freq.unwrap_or(current.max_freq),
+            min_db.unwrap_or(current.min_db),
+            max_db.unwrap_or(current.max_db),
+        );
+        let (low, high, cut, boost) = values;
+        if ![low, high, cut, boost].iter().all(|v| v.is_finite())
+            || !(20.0..=20_000.0).contains(&low)
+            || !(20.0..=20_000.0).contains(&high)
+            || low >= high
+            || high >= current.sample_rate as f64 / 2.0
+            || !(-25.0..=25.0).contains(&cut)
+            || !(-25.0..=25.0).contains(&boost)
+            || cut > boost
+        {
+            return Err("Invalid Designer limits: frequencies must be 20–20000 Hz, ordered below Nyquist; gains must be ordered within -25–25 dB".into());
+        }
+        if values
+            == (
+                current.min_freq,
+                current.max_freq,
+                current.min_db,
+                current.max_db,
+            )
+        {
+            return Err("Designer update contains no changes".into());
+        }
+        let config = &mut self.optimizer_config;
+        config.min_freq = low;
+        config.max_freq = high;
+        config.min_db = cut;
+        config.max_db = boost;
+        // Explicit limits must not be replaced by the simple wizard at study start.
+        self.wizard_mode = crate::room_eq_types::RoomEqWizardMode::Full;
+        Ok(())
+    }
+
     /// True when the last optimization completed successfully.
     pub fn is_optimization_complete(&self) -> bool {
         self.optimization_status == OptimizationStatus::Completed

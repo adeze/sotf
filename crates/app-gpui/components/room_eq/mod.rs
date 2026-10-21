@@ -28,6 +28,8 @@ macro_rules! dev_track {
 }
 
 mod actions;
+mod pipeline_graph;
+pub use pipeline_graph::room_eq_pipeline_graph;
 mod custom_target_modal;
 pub mod render;
 mod step_1_load;

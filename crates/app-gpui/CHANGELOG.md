@@ -1,5 +1,17 @@
 # 0.7.11 (unreleased)
 
+## Workbench views
+
+- Show the canonical Rust RoomEQ stages as a selectable graph in Configure, with stage explanations, actual study lifecycle, and draft parameter summaries alongside the existing editing form. Conditional stages may be skipped; connections cannot be rewired and do not introduce a second executor.
+
+- Give the embedded speaker editor separate Passive circuit and Active crossover tabs, preserving drafts and using the host toolkit controls and theme.
+
+## Shared offline workbench capabilities
+
+- Add opt-in authenticated loopback workbench API and stdio MCP adapter for live Room EQ inspection, atomic Designer limit edits and offline study start/cancel.
+- Reuse UI validation/calculation paths, reject stale revisions and keep chat/providers disabled. Existing QA actions remain separate.
+- See `crates/sotf-dev-driver/WORKBENCH_MCP.md` for connection, supported controls and verification.
+
 ## Speaker workbench
 
 - Add opt-in `speaker-workbench` feature embedding Sonium's passive editor in the main content view, with View menu and Studio navigation and persistent session state.

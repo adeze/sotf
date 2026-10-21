@@ -19,14 +19,20 @@ impl PlayerView {
         let state = self.state.read(cx);
         let wizard_mode = state.app.measurement_state.room_eq_state.wizard_mode;
 
-        match wizard_mode {
+        let controls = match wizard_mode {
             crate::app::types::room_eq::RoomEqWizardMode::Simple => {
                 self.render_simple_configure(cx).into_any_element()
             }
             crate::app::types::room_eq::RoomEqWizardMode::Full => {
                 self.render_full_configure(cx).into_any_element()
             }
-        }
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(Ds::from_cx(cx).section)
+            .child(self.render_room_eq_pipeline(cx))
+            .child(controls)
     }
 
     /// Full wizard — all parameters in Acoustic + Optimizer blocks.
@@ -446,12 +452,10 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .min_db = value;
+                        let room = &mut state.app.measurement_state.room_eq_state;
+                        room.error_message = room
+                            .update_design_limits(None, None, Some(value), None)
+                            .err();
                         cx.notify();
                     });
                 }
@@ -460,12 +464,10 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .max_db = value;
+                        let room = &mut state.app.measurement_state.room_eq_state;
+                        room.error_message = room
+                            .update_design_limits(None, None, None, Some(value))
+                            .err();
                         cx.notify();
                     });
                 }
@@ -474,12 +476,10 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .min_freq = value;
+                        let room = &mut state.app.measurement_state.room_eq_state;
+                        room.error_message = room
+                            .update_design_limits(Some(value), None, None, None)
+                            .err();
                         cx.notify();
                     });
                 }
@@ -488,12 +488,10 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .max_freq = value;
+                        let room = &mut state.app.measurement_state.room_eq_state;
+                        room.error_message = room
+                            .update_design_limits(None, Some(value), None, None)
+                            .err();
                         cx.notify();
                     });
                 }

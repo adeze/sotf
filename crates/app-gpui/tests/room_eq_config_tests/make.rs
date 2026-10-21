@@ -521,3 +521,94 @@ fn test_import_preserves_seed_and_refine() {
         "local_algo must survive smart defaults"
     );
 }
+
+#[test]
+fn designer_limits_validate_atomically_and_preserve_measurements() {
+    let mut state = RoomEqState::default();
+    state.model.channel_measurements = vec![make_dummy_measurement("L")];
+    let original = state.optimizer_config.clone();
+    for values in [
+        (Some(f64::NAN), None, None, None),
+        (Some(1000.0), Some(100.0), None, None),
+        (None, None, Some(-26.0), None),
+        (None, None, None, Some(26.0)),
+        (None, None, Some(10.0), Some(-10.0)),
+        (None, None, None, None),
+    ] {
+        assert!(
+            state
+                .update_design_limits(values.0, values.1, values.2, values.3)
+                .is_err()
+        );
+        assert_eq!(state.optimizer_config.min_freq, original.min_freq);
+        assert_eq!(state.optimizer_config.max_freq, original.max_freq);
+        assert_eq!(state.optimizer_config.min_db, original.min_db);
+        assert_eq!(state.optimizer_config.max_db, original.max_db);
+    }
+    state
+        .update_design_limits(Some(30.0), Some(18_000.0), Some(-12.0), Some(2.0))
+        .unwrap();
+    assert_eq!(state.optimizer_config.min_freq, 30.0);
+    assert_eq!(state.optimizer_config.max_db, 2.0);
+    assert_eq!(state.model.channel_measurements.len(), 1);
+    assert_eq!(
+        state.wizard_mode,
+        sotf_audio_player::room_eq_types::RoomEqWizardMode::Full
+    );
+}
+
+#[test]
+fn designer_limits_refuse_running_studies_and_invalidate_result_identity() {
+    let mut state = RoomEqState::default();
+    state.result_inputs = Some(state.optimization_input_snapshot());
+    assert!(state.result_is_current());
+    state.model.optimization_status =
+        sotf_audio_player_gpui::app::types::OptimizationStatus::Running;
+    assert!(
+        state
+            .update_design_limits(Some(30.0), None, None, None)
+            .is_err()
+    );
+    state.model.optimization_status = sotf_audio_player_gpui::app::types::OptimizationStatus::Idle;
+    state
+        .update_design_limits(Some(30.0), None, None, None)
+        .unwrap();
+    assert!(!state.result_is_current());
+    state.model.optimizer_config.sample_rate = 32_000;
+    assert!(
+        state
+            .update_design_limits(None, Some(18_000.0), None, None)
+            .is_err()
+    );
+}
+
+#[test]
+fn calibration_graph_uses_canonical_engine_stage_order() {
+    use sotf_audio_player::autoeq::PipelineStepId;
+    use sotf_audio_player_gpui::components::room_eq::room_eq_pipeline_graph;
+    let graph = room_eq_pipeline_graph();
+    assert_eq!(graph.nodes.len(), PipelineStepId::ALL.len());
+    assert_eq!(graph.connections.len(), PipelineStepId::ALL.len() - 1);
+    for (index, step) in PipelineStepId::ALL.iter().enumerate() {
+        let node = graph
+            .nodes
+            .values()
+            .find(|node| node.user_data["stage_index"] == index)
+            .unwrap();
+        assert_eq!(node.title, format!("{:02} {}", index + 1, step.label()));
+        assert_eq!(node.input_count, usize::from(index > 0));
+        assert_eq!(
+            node.output_count,
+            usize::from(index + 1 < PipelineStepId::ALL.len())
+        );
+    }
+    for edge in &graph.connections {
+        let source = graph.nodes[&edge.from_node].user_data["stage_index"]
+            .as_u64()
+            .unwrap();
+        let target = graph.nodes[&edge.to_node].user_data["stage_index"]
+            .as_u64()
+            .unwrap();
+        assert_eq!(target, source + 1);
+    }
+}

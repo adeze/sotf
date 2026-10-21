@@ -10,6 +10,8 @@ keywords = ["audio", "testing"]
 categories = ["development-tools"]
 
 [dependencies]
+rmcp = { version = "=3.6.0", default-features = false, features = ["server", "macros", "schemars", "transport-io"] }
+tokio = { workspace = true, features = ["io-std"] }
 anyhow = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
@@ -26,7 +28,13 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+rmcp = { version = "=3.6.0", default-features = false, features = ["client"] }
+sotf-dev-api = { path = "../sotf-dev-api", features = ["workbench-server"] }
 
 [[bin]]
 name = "sotf-dev-driver"
 path = "src/main.rs"
+
+[[bin]]
+name = "sotf-workbench-mcp"
+path = "src/workbench_mcp.rs"

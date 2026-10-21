@@ -29,11 +29,13 @@ spotify = ["dep:sotf-service-spotify", "sotf-player/spotify"]
 qa = []
 # Native host for the shared AutoEQ WASM report on macOS and Windows.
 report-webview = ["dep:wry"]
+workbench-api = ["dep:sotf-dev-api", "sotf-dev-api/workbench-server"]
 dev-api = [
     "dep:hound",
     "sotf-player/dev-api",
     "visual-qa",
     "dep:sotf-dev-api",
+    "sotf-dev-api/server",
     "mimalloc-allocator",
     "mimalloc/extended",
     "mimalloc/debug_in_debug",
@@ -66,7 +68,7 @@ glam = { workspace = true }
 
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-player = { workspace = true }
-sotf-dev-api = { path = "../sotf-dev-api", optional = true, features = ["server"] }
+sotf-dev-api = { path = "../sotf-dev-api", optional = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-midi = { workspace = true }
@@ -273,3 +275,8 @@ path = "tests/eq_chart_tests.rs"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 wry = { version = "0.57", default-features = false, features = ["os-webview"], optional = true }
+
+[[test]]
+name = "workbench_api"
+path = "tests/workbench_api.rs"
+required-features = ["workbench-api"]

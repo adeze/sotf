@@ -1,13 +1,17 @@
 //! Embeds Sonium's passive editor without changing player routing or playback.
 use crate::{ActiveCrossoverSettings, Evaluation};
 use gpui::*;
-use gpui_ui_kit::{Button, NumberInput, Text, theme::ThemeExt};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, NumberInput, TabItem, TabVariant, Tabs, Text,
+    theme::ThemeExt,
+};
 use sonium_speaker_designer::desktop::{Designer, create, response_plot};
 use std::sync::Arc;
 
 /// Persistent tool view embedded in the player's existing content area.
 pub struct Workbench {
     designer: Entity<Designer>,
+    selected_tab: usize,
     settings: ActiveCrossoverSettings,
     preview: Option<Arc<Evaluation>>,
     generation: u64,
@@ -22,11 +26,12 @@ impl Workbench {
             .detach();
         Self {
             designer,
+            selected_tab: 0,
             settings: ActiveCrossoverSettings::default(),
             preview: None,
             generation: 0,
             busy: false,
-            message: "Import driver responses above, then preview the separate active design."
+            message: "Import driver responses in Passive circuit, then preview the active design."
                 .into(),
         }
     }
@@ -99,11 +104,13 @@ impl Workbench {
 impl Render for Workbench {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let tabs_entity = cx.entity();
         let preview_entity = cx.entity();
         let copy_entity = cx.entity();
         let entity = cx.entity();
         let cutoff = NumberInput::new("active-cutoff")
-            .label("LR24 crossover")
+            .label("Crossover frequency")
+            .width(180.0)
             .unit("Hz")
             .value(self.settings.frequency_hz)
             .range(20.0, 20_000.0)
@@ -118,6 +125,7 @@ impl Render for Workbench {
         let entity = cx.entity();
         let rate = NumberInput::new("active-sample-rate")
             .label("Sample rate")
+            .width(180.0)
             .unit("Hz")
             .value(f64::from(self.settings.sample_rate_hz))
             .range(8_000.0, 192_000.0)
@@ -129,17 +137,88 @@ impl Render for Workbench {
                     this.invalidate(cx);
                 })
             });
-        div().size_full().flex().flex_col().bg(theme.background).text_color(theme.text_primary)
-            .child(div().flex_1().min_h_0().child(self.designer.clone()))
-            .child(div().flex_shrink_0().p_4().border_t_1().border_color(theme.border).flex().flex_col().gap_2()
-                .child(Text::section_header("Active crossover · SOTF").color(theme.text_primary))
-                .child(Text::caption("Separate from the passive circuit above. Low output → woofer; high output → tweeter. Preview only.").color(theme.text_secondary))
-                .child(div().flex().gap_4().items_end().child(cutoff).child(rate)
-                    .child(Button::new("preview-active", if self.busy { "Calculating…" } else { "Preview active" })
-                        .on_click(move |_, cx| preview_entity.update(cx, |this, cx| this.calculate(cx))))
-                    .child(Button::new("copy-active", "Copy crossover parameters")
-                        .on_click(move |_, cx| copy_entity.update(cx, |this, cx| this.copy_parameters(cx)))))
+        let tabs = Tabs::new("speaker-workbench-tabs")
+            .tabs(vec![
+                TabItem::new("passive", "Passive circuit"),
+                TabItem::new("active", "Active crossover"),
+            ])
+            .selected_index(self.selected_tab)
+            .variant(TabVariant::Underline)
+            .aria_label("Speaker design mode")
+            .on_change(move |index, _, cx| {
+                tabs_entity.update(cx, |this, cx| {
+                    this.selected_tab = index;
+                    cx.notify();
+                });
+            });
+        let content = if self.selected_tab == 0 {
+            div()
+                .size_full()
+                .min_h_0()
+                .child(self.designer.clone())
+                .into_any_element()
+        } else {
+            div()
+                .id("active-crossover-scroll")
+                .size_full()
+                .min_w_0()
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .gap_4()
+                .p_4()
+                .child(Text::section_header("Two-way active crossover").color(theme.text_primary))
+                .child(Text::caption("LR24 · low output → woofer; high output → tweeter. Uses the driver responses from Passive circuit.").color(theme.text_secondary))
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_end()
+                        .gap_4()
+                        .child(cutoff)
+                        .child(rate)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    Button::new("preview-active", if self.busy { "Calculating…" } else { "Preview response" })
+                                        .variant(ButtonVariant::Primary)
+                                        .size(ButtonSize::Sm)
+                                        .disabled(self.busy)
+                                        .on_click(move |_, cx| preview_entity.update(cx, |this, cx| this.calculate(cx))),
+                                )
+                                .child(
+                                    Button::new("copy-active", "Copy parameters")
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Sm)
+                                        .on_click(move |_, cx| copy_entity.update(cx, |this, cx| this.copy_parameters(cx))),
+                                ),
+                        ),
+                )
                 .child(Text::caption(self.message.clone()).color(theme.text_primary))
-                .children(self.preview.clone().map(|preview| response_plot("Active branches and acoustic sum", Some(preview), theme.border.into()))))
+                .children(self.preview.clone().map(|preview| {
+                    response_plot("Active branches and acoustic sum", Some(preview), theme.border.into())
+                }))
+                .child(Text::caption("Prediction only · ideal amplifiers. Passive component values do not set this cutoff. Copying parameters does not configure routing or driver protection.").color(theme.text_secondary))
+                .into_any_element()
+        };
+        div()
+            .size_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .bg(theme.background)
+            .text_color(theme.text_primary)
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .child(tabs),
+            )
+            .child(div().flex_1().min_h_0().min_w_0().child(content))
     }
 }

@@ -7,6 +7,8 @@
 //! - Plugin editing: ui/components/host/plugin_editing.rs
 //! - Level meters: ui/components/plugins/level_meters.rs
 
+#[cfg(feature = "workbench-api")]
+pub mod workbench_api;
 pub mod actions;
 mod autocomplete;
 pub mod cast;

@@ -19,6 +19,9 @@ pub struct RoomEqState {
     pub result_inputs: Option<serde_json::Value>,
     pub delivery: sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery,
 
+    /// Presentation of the canonical engine stages; never an alternate executor.
+    pub pipeline_canvas: Option<gpui::Entity<gpui_ui_kit::workflow::WorkflowCanvas>>,
+
     // === UI State ===
     pub dropdowns: RoomEqDropdowns,
     /// Review graph smoothing level in octaves (0 = none, 1 = 1 octave, etc.)
@@ -52,6 +55,7 @@ impl Default for RoomEqState {
     fn default() -> Self {
         Self {
             model: RoomEqScreenModel::default(),
+            pipeline_canvas: None,
             result_inputs: None,
             delivery: Default::default(),
             dropdowns: RoomEqDropdowns::default(),
