@@ -406,41 +406,54 @@ impl RoomEqScreenModel {
             return Err("Cannot edit Designer parameters while a study is running".into());
         }
         let current = &self.optimizer_config;
-        let values = (
-            min_freq.unwrap_or(current.min_freq),
-            max_freq.unwrap_or(current.max_freq),
-            min_db.unwrap_or(current.min_db),
-            max_db.unwrap_or(current.max_db),
-        );
-        let (low, high, cut, boost) = values;
-        if ![low, high, cut, boost].iter().all(|v| v.is_finite())
-            || !(20.0..=20_000.0).contains(&low)
-            || !(20.0..=20_000.0).contains(&high)
-            || low >= high
-            || high >= current.sample_rate as f64 / 2.0
-            || !(-25.0..=25.0).contains(&cut)
-            || !(-25.0..=25.0).contains(&boost)
-            || cut > boost
-        {
-            return Err("Invalid Designer limits: frequencies must be 20–20000 Hz, ordered below Nyquist; gains must be ordered within -25–25 dB".into());
+        let limits = autoeq::roomeq::DesignerLimits {
+            min_freq: current.min_freq,
+            max_freq: current.max_freq,
+            min_db: current.min_db,
+            max_db: current.max_db,
         }
-        if values
-            == (
-                current.min_freq,
-                current.max_freq,
-                current.min_db,
-                current.max_db,
-            )
-        {
-            return Err("Designer update contains no changes".into());
-        }
+        .updated(
+            min_freq,
+            max_freq,
+            min_db,
+            max_db,
+            current.sample_rate as f64,
+        )?;
         let config = &mut self.optimizer_config;
-        config.min_freq = low;
-        config.max_freq = high;
-        config.min_db = cut;
-        config.max_db = boost;
+        config.min_freq = limits.min_freq;
+        config.max_freq = limits.max_freq;
+        config.min_db = limits.min_db;
+        config.max_db = limits.max_db;
         // Explicit limits must not be replaced by the simple wizard at study start.
         self.wizard_mode = crate::room_eq_types::RoomEqWizardMode::Full;
+        Ok(())
+    }
+
+    /// Shared target edit boundary; explicit choices survive simple-preset resolution.
+    pub fn update_design_target(
+        &mut self,
+        slope: Option<f64>,
+        bass_shelf: Option<f64>,
+    ) -> Result<(), String> {
+        if self.is_optimizing() {
+            return Err("Cannot edit Designer goals while a study is running".into());
+        }
+        if slope.is_none() && bass_shelf.is_none()
+            || slope.is_some_and(|v| !v.is_finite() || !(-3.0..=3.0).contains(&v))
+            || bass_shelf.is_some_and(|v| !v.is_finite() || !(0.0..=12.0).contains(&v))
+        {
+            return Err("Invalid target: slope must be -3–3 dB/octave; bass shelf 0–12 dB".into());
+        }
+        let target = &mut self.optimizer_config.target_response;
+        target.enabled = true;
+        if let Some(value) = slope {
+            target.shape = "custom".into();
+            target.slope_db_per_octave = value;
+        }
+        if let Some(value) = bass_shelf {
+            target.bass_shelf_db = value;
+        }
+        self.wizard_mode = RoomEqWizardMode::Full;
         Ok(())
     }
 

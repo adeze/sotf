@@ -225,6 +225,7 @@ impl PlayerView {
             .unwrap_or(0);
         let state_for_tool = self.state.downgrade();
         let subtools = Tabs::new("studio-subtools")
+            .aria_label(ui.translations.screen_studio)
             .tabs(
                 tools
                     .iter()

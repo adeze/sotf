@@ -19,8 +19,11 @@ pub struct RoomEqState {
     pub result_inputs: Option<serde_json::Value>,
     pub delivery: sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery,
 
-    /// Presentation of the canonical engine stages; never an alternate executor.
-    pub pipeline_canvas: Option<gpui::Entity<gpui_ui_kit::workflow::WorkflowCanvas>>,
+    /// Local plugin view state; the shared model remains configuration authority.
+    #[cfg(feature = "calibration-designer")]
+    pub calibration_designer: Option<gpui::Entity<sotf_calibration_workbench::desktop::Designer>>,
+    #[cfg(feature = "calibration-designer")]
+    pub configure_designer_selected: bool,
 
     // === UI State ===
     pub dropdowns: RoomEqDropdowns,
@@ -55,7 +58,10 @@ impl Default for RoomEqState {
     fn default() -> Self {
         Self {
             model: RoomEqScreenModel::default(),
-            pipeline_canvas: None,
+            #[cfg(feature = "calibration-designer")]
+            calibration_designer: None,
+            #[cfg(feature = "calibration-designer")]
+            configure_designer_selected: false,
             result_inputs: None,
             delivery: Default::default(),
             dropdowns: RoomEqDropdowns::default(),
@@ -110,6 +116,15 @@ impl RoomEqState {
 
     pub fn result_is_current(&self) -> bool {
         self.result_inputs.as_ref() == Some(&self.optimization_input_snapshot())
+    }
+
+    /// Bounded presentation identity, using the same complete inputs as result currentness.
+    pub fn optimization_input_digest(&self) -> String {
+        use sha2::Digest;
+        sha2::Sha256::digest(self.optimization_input_snapshot().to_string().as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
     }
 
     /// Load Room EQ domain state from the app-specific RecordingState.

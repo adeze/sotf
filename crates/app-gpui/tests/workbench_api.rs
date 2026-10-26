@@ -72,12 +72,138 @@ async fn live_workbench_commands_share_ui_state_and_enforce_boundaries(cx: &mut 
     let endpoint = service.endpoint();
     let mut visual = VisualTestContext::from_window(window.into(), cx);
     visual.run_until_parked();
+    #[cfg(feature = "calibration-designer")]
+    {
+        use sotf_audio_player_gpui::{RoomEqStep, Screen};
+        use sotf_calibration_workbench::DesignerCommand;
+        let designer = window
+            .update(&mut visual, |view, _, cx| {
+                view.state.update(cx, |state, _| {
+                    let room = &mut state.app.measurement_state.room_eq_state;
+                    assert!(!room.configure_designer_selected);
+                    room.configure_designer_selected = true;
+                    room.step = RoomEqStep::Configure;
+                    state.app.set_screen(Screen::RoomEq, "test-designer");
+                    assert!(state.app.is_screen_available(&Screen::Library));
+                });
+                view.calibration_designer(cx)
+            })
+            .unwrap();
+        for command in [DesignerCommand::RunStudy, DesignerCommand::MaximumCut(-2.0)] {
+            designer.update(&mut visual, |_, cx| cx.emit(command));
+            visual.run_until_parked();
+            window
+                .update(&mut visual, |view, _, cx| {
+                    let room = &view.state.read(cx).app.measurement_state.room_eq_state;
+                    assert!(room.error_message.is_some());
+                    assert!(!room.is_optimizing());
+                    assert!(room.optimizer_config.min_db <= 0.0);
+                })
+                .unwrap();
+        }
+        designer.update(&mut visual, |_, cx| {
+            cx.emit(DesignerCommand::MinimumFrequency(77.0))
+        });
+        visual.run_until_parked();
+        designer.update(&mut visual, |_, cx| {
+            cx.emit(DesignerCommand::TargetSlope(-0.6));
+            cx.emit(DesignerCommand::BassShelf(2.0));
+        });
+        visual.run_until_parked();
+        window
+            .update(&mut visual, |view, _, cx| {
+                let room = &view.state.read(cx).app.measurement_state.room_eq_state;
+                assert_eq!(room.optimizer_config.target_response.shape, "custom");
+                assert_eq!(
+                    room.optimizer_config.target_response.slope_db_per_octave,
+                    -0.6
+                );
+                assert_eq!(room.optimizer_config.target_response.bass_shelf_db, 2.0);
+                assert!(room.error_message.is_none());
+            })
+            .unwrap();
+        window
+            .update(&mut visual, |view, _, cx| {
+                view.state.update(cx, |state, _| {
+                    let room = &mut state.app.measurement_state.room_eq_state;
+                    assert_eq!(room.optimizer_config.min_freq, 77.0);
+                    assert!(room.error_message.is_none());
+                    room.configure_designer_selected = false;
+                    room.calibration_designer = None;
+                    room.step = RoomEqStep::LoadData;
+                    state.app.set_screen(Screen::Home, "test-designer-return");
+                });
+            })
+            .unwrap();
+        drop(designer);
+        visual.run_until_parked();
+    }
     let unauthenticated = request(endpoint, &mut visual, json!({"operation":"inspect"}), false);
     assert_ne!(unauthenticated["ok"], true);
     let inspection = request(endpoint, &mut visual, json!({"operation":"inspect"}), true);
     assert_eq!(inspection["ok"], true);
     assert_eq!(inspection["value"]["chat_enabled"], false);
     assert_eq!(inspection["value"]["project"]["measurement_count"], 0);
+    #[cfg(not(feature = "calibration-designer"))]
+    {
+        assert_eq!(
+            inspection["value"]["presentation"]["designer_available"],
+            false
+        );
+        let unavailable = request(
+            endpoint,
+            &mut visual,
+            json!({
+                "operation":"select_designer_panel", "expected_revision":inspection["value"]["revision"],
+                "panel":"goals"
+            }),
+            true,
+        );
+        assert_eq!(unavailable["ok"], false);
+    }
+    assert_eq!(
+        inspection["value"]["capabilities"]["recording_spectrogram"]["selected_result_available"],
+        false
+    );
+    #[cfg(feature = "calibration-designer")]
+    {
+        let selected = request(
+            endpoint,
+            &mut visual,
+            json!({
+                "operation":"select_designer_panel", "expected_revision":inspection["value"]["revision"],
+                "panel":"goals"
+            }),
+            true,
+        );
+        assert_eq!(selected["ok"], true, "{selected}");
+        assert_eq!(selected["value"]["presentation"]["selected_panel"], "goals");
+        assert_eq!(
+            selected["value"]["revision"],
+            inspection["value"]["revision"]
+        );
+        assert_eq!(selected["value"]["config"], inspection["value"]["config"]);
+        let stale = request(
+            endpoint,
+            &mut visual,
+            json!({
+                "operation":"select_designer_panel", "expected_revision":"stale",
+                "panel":"study"
+            }),
+            true,
+        );
+        assert_eq!(stale["ok"], false);
+        let unavailable = request(
+            endpoint,
+            &mut visual,
+            json!({
+                "operation":"select_measurement", "expected_revision":inspection["value"]["revision"],
+                "index":0
+            }),
+            true,
+        );
+        assert_eq!(unavailable["ok"], false);
+    }
     let revision = inspection["value"]["revision"]
         .as_str()
         .unwrap()
@@ -220,6 +346,40 @@ async fn live_workbench_commands_share_ui_state_and_enforce_boundaries(cx: &mut 
         })
         .unwrap();
     let loaded = request(endpoint, &mut visual, json!({"operation":"inspect"}), true);
+    #[cfg(feature = "calibration-designer")]
+    {
+        let selected = request(
+            endpoint,
+            &mut visual,
+            json!({
+                "operation":"select_measurement", "expected_revision":loaded["value"]["revision"],
+                "index":0
+            }),
+            true,
+        );
+        assert_eq!(selected["ok"], true, "{selected}");
+        assert_eq!(selected["value"]["presentation"]["selected_panel"], "data");
+        assert_eq!(selected["value"]["presentation"]["selected_measurement"], 0);
+        assert!(
+            selected["value"]["presentation"]["selected_response"]["samples_hz_db"]
+                .as_array()
+                .unwrap()
+                .len()
+                > 2
+        );
+        assert_eq!(selected["value"]["config"], loaded["value"]["config"]);
+        assert_eq!(selected["value"]["revision"], loaded["value"]["revision"]);
+        let invalid = request(
+            endpoint,
+            &mut visual,
+            json!({
+                "operation":"select_measurement", "expected_revision":loaded["value"]["revision"],
+                "index":127
+            }),
+            true,
+        );
+        assert_eq!(invalid["ok"], false);
+    }
     let started = request(
         endpoint,
         &mut visual,

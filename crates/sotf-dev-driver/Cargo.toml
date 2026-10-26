@@ -10,7 +10,8 @@ keywords = ["audio", "testing"]
 categories = ["development-tools"]
 
 [dependencies]
-rmcp = { version = "=3.6.0", default-features = false, features = ["server", "macros", "schemars", "transport-io"] }
+rmcp = { version = "=3.6.0", default-features = false, features = ["server", "macros", "schemars", "transport-io", "transport-streamable-http-server"] }
+axum = "0.8"
 tokio = { workspace = true, features = ["io-std"] }
 anyhow = { workspace = true }
 clap = { workspace = true }
@@ -28,7 +29,7 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-rmcp = { version = "=3.6.0", default-features = false, features = ["client"] }
+rmcp = { version = "=3.6.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
 sotf-dev-api = { path = "../sotf-dev-api", features = ["workbench-server"] }
 
 [[bin]]

@@ -28,9 +28,9 @@ macro_rules! dev_track {
 }
 
 mod actions;
-mod pipeline_graph;
-pub use pipeline_graph::room_eq_pipeline_graph;
 mod custom_target_modal;
+#[cfg(feature = "calibration-designer")]
+mod pipeline_graph;
 pub mod render;
 mod step_1_load;
 mod step_2_delay_detection;
@@ -72,6 +72,18 @@ impl PlayerView {
             RoomEqStep::Review => self.render_room_eq_review(cx).into_any_element(),
             RoomEqStep::Export => self.render_room_eq_export(cx).into_any_element(),
         };
+        #[cfg(feature = "rerun-viewer")]
+        let content = div()
+            .flex()
+            .flex_col()
+            .gap(d.section)
+            .child(self.render_scientific_viewer_controls(cx))
+            .child(if self.scientific_viewer_open {
+                self.render_scientific_viewer(cx)
+            } else {
+                content
+            })
+            .into_any_element();
 
         div()
             .flex()

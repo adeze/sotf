@@ -37,4 +37,6 @@ pub use misc::*;
 pub use player_view::*;
 
 pub(crate) mod report_window;
+#[cfg(feature = "rerun-viewer")]
+pub(crate) mod scientific_viewer;
 mod spectrum_poll;

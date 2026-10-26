@@ -142,6 +142,20 @@ impl ViewScrollHandles {
 /// extraction remains tracked alongside the existing Plugin Controller Phase-3
 /// effort (see auto-memory: "Controller Consolidation — Phase 3").
 pub struct PlayerView {
+    // Drop the native child before stopping its owned viewer servers.
+    #[cfg(feature = "rerun-viewer")]
+    pub(crate) scientific_viewer_panel:
+        Option<Entity<super::scientific_viewer::ScientificViewerPanel>>,
+    #[cfg(feature = "rerun-viewer")]
+    pub(crate) scientific_viewer_session: Option<std::sync::Arc<sotf_rerun_viewer::ViewerSession>>,
+    #[cfg(feature = "rerun-viewer")]
+    pub(crate) scientific_viewer_room_path: Option<std::path::PathBuf>,
+    #[cfg(feature = "rerun-viewer")]
+    pub(crate) scientific_viewer_error: Option<String>,
+    #[cfg(feature = "rerun-viewer")]
+    pub(crate) scientific_viewer_open: bool,
+    #[cfg(feature = "rerun-viewer")]
+    pub(crate) scientific_viewer_starting: bool,
     #[cfg(feature = "speaker-workbench")]
     pub(super) speaker_workbench: Option<Entity<sotf_speaker_workbench::desktop::Workbench>>,
     pub state: Entity<AppState>,
@@ -646,6 +660,18 @@ impl PlayerView {
 
         Self {
             state,
+            #[cfg(feature = "rerun-viewer")]
+            scientific_viewer_session: None,
+            #[cfg(feature = "rerun-viewer")]
+            scientific_viewer_room_path: None,
+            #[cfg(feature = "rerun-viewer")]
+            scientific_viewer_error: None,
+            #[cfg(feature = "rerun-viewer")]
+            scientific_viewer_open: false,
+            #[cfg(feature = "rerun-viewer")]
+            scientific_viewer_starting: false,
+            #[cfg(feature = "rerun-viewer")]
+            scientific_viewer_panel: None,
             #[cfg(feature = "speaker-workbench")]
             speaker_workbench: None,
             focus_handle,

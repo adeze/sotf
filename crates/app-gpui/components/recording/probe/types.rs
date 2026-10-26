@@ -149,7 +149,7 @@ impl PlayerView {
             ),
             ProbeCaptureStatus::Running { .. } => {
                 let pct = running_progress
-                    .map(|p| format!("{:.0}%", p * 100.0))
+                    .map(|p| format!("estimated {:.0}%", p * 100.0))
                     .unwrap_or_else(|| "…".to_string());
                 (format!("Running... {}", pct), theme.accent)
             }

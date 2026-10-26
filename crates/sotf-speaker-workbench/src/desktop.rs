@@ -15,6 +15,7 @@ pub struct Workbench {
     settings: ActiveCrossoverSettings,
     preview: Option<Arc<Evaluation>>,
     generation: u64,
+    designer_calculation_generation: u64,
     busy: bool,
     message: String,
 }
@@ -22,14 +23,22 @@ pub struct Workbench {
 impl Workbench {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let designer = create(cx);
-        cx.observe(&designer, |this, _, cx| this.invalidate(cx))
-            .detach();
+        let designer_calculation_generation = designer.read(cx).calculation_generation();
+        cx.observe(&designer, |this, designer, cx| {
+            let generation = designer.read(cx).calculation_generation();
+            if generation != this.designer_calculation_generation {
+                this.designer_calculation_generation = generation;
+                this.invalidate(cx);
+            }
+        })
+        .detach();
         Self {
             designer,
             selected_tab: 0,
             settings: ActiveCrossoverSettings::default(),
             preview: None,
             generation: 0,
+            designer_calculation_generation,
             busy: false,
             message: "Import driver responses in Passive circuit, then preview the active design."
                 .into(),
@@ -144,6 +153,10 @@ impl Render for Workbench {
             ])
             .selected_index(self.selected_tab)
             .variant(TabVariant::Underline)
+            .theme(gpui_ui_kit::TabsTheme {
+                text_selected: theme.text_primary,
+                ..gpui_ui_kit::TabsTheme::from(theme.as_ref())
+            })
             .aria_label("Speaker design mode")
             .on_change(move |index, _, cx| {
                 tabs_entity.update(cx, |this, cx| {
@@ -220,5 +233,43 @@ impl Render for Workbench {
                     .child(tabs),
             )
             .child(div().flex_1().min_h_0().min_w_0().child(content))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Arc, Evaluation, Workbench};
+    use gpui::{AppContext, TestAppContext};
+
+    #[gpui::test]
+    fn presentation_notifications_preserve_preview_but_active_changes_invalidate(
+        cx: &mut TestAppContext,
+    ) {
+        let workbench = cx.new(Workbench::new);
+        let preview = Arc::new(Evaluation::default());
+        workbench.update(cx, |workbench, _| {
+            workbench.preview = Some(preview.clone());
+            workbench.message = "Existing preview".into();
+            workbench.generation = 7;
+        });
+        let designer = cx.read(|cx| workbench.read(cx).designer.clone());
+        designer.update(cx, |_, cx| cx.notify());
+        cx.run_until_parked();
+        cx.read(|cx| {
+            let state = workbench.read(cx);
+            assert_eq!(state.generation, 7);
+            assert_eq!(state.message, "Existing preview");
+            assert!(Arc::ptr_eq(state.preview.as_ref().unwrap(), &preview));
+        });
+        workbench.update(cx, |workbench, cx| {
+            workbench.settings.frequency_hz = 2500.0;
+            workbench.invalidate(cx);
+        });
+        cx.read(|cx| {
+            let state = workbench.read(cx);
+            assert_eq!(state.generation, 8);
+            assert!(state.preview.is_none());
+            assert!(state.message.contains("Recalculate"));
+        });
     }
 }

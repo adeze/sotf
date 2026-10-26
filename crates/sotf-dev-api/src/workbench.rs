@@ -3,6 +3,18 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Actual panels of the embedded calibration Designer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignerPanel {
+    Data,
+    Checks,
+    Goals,
+    Constraints,
+    Advice,
+    Study,
+}
+
 /// Only supported offline Room EQ configuration controls are exposed.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +42,14 @@ pub struct DesignerPatch {
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WorkbenchRequest {
     Inspect {},
+    SelectDesignerPanel {
+        expected_revision: String,
+        panel: DesignerPanel,
+    },
+    SelectMeasurement {
+        expected_revision: String,
+        index: usize,
+    },
     UpdateDesigner {
         expected_revision: String,
         patch: DesignerPatch,
@@ -54,6 +74,8 @@ mod tests {
             json!({"operation":"inspect","path":"arbitrary"}),
             json!({"operation":"run_study"}),
             json!({"operation":"update_designer","expected_revision":"r1","patch":{"gain":2}}),
+            json!({"operation":"select_designer_panel","expected_revision":"r1","panel":"waterfall"}),
+            json!({"operation":"select_measurement","expected_revision":"r1","index":-1}),
         ] {
             assert!(serde_json::from_value::<WorkbenchRequest>(value).is_err());
         }

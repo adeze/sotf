@@ -9,6 +9,8 @@
 
 #[cfg(feature = "workbench-api")]
 pub mod workbench_api;
+#[cfg(feature = "rerun-viewer")]
+mod scientific_viewer_data;
 pub mod actions;
 mod autocomplete;
 pub mod cast;

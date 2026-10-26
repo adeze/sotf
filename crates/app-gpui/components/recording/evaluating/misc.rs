@@ -305,6 +305,7 @@ impl PlayerView {
             .child(self.render_rt60_plot(cx))
             .child(self.render_clarity_plot(cx))
             .child(self.render_impulse_response_plot(cx))
+            .child(self.render_waterfall_plot(cx))
             .child(self.render_spectrogram_plot(cx))
             .child(self.render_channel_summary(cx))
     }

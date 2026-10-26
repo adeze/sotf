@@ -77,6 +77,8 @@ pub(crate) struct PendingGeometrySave {
 
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(feature = "rerun-viewer")]
+        self.prepare_scientific_viewer_frame(cx);
         if cx.has_global::<AccessibilityTree>() {
             cx.global_mut::<AccessibilityTree>().clear();
         }

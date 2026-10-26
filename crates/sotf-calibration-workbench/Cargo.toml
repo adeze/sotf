@@ -1,0 +1,19 @@
+[package]
+name = "sotf-calibration-workbench"
+version = "0.1.0"
+description = "Embedded calibration Designer over shared Room EQ commands"
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+desktop = ["dep:gpui", "dep:gpui-ui-kit", "dep:serde_json"]
+
+[dependencies]
+sotf-player = { workspace = true }
+gpui = { workspace = true, optional = true }
+gpui-ui-kit = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

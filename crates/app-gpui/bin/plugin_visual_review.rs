@@ -62,6 +62,12 @@ mod macos {
         Preferences,
         Recording,
         RoomEq,
+        #[cfg(feature = "calibration-designer")]
+        CalibrationDesigner,
+        #[cfg(feature = "calibration-designer")]
+        CalibrationDesignerControls,
+        #[cfg(feature = "speaker-workbench")]
+        SpeakerWorkbench,
         HeadphoneEq,
         SpinoramaEq,
         Routing,
@@ -85,6 +91,15 @@ mod macos {
         /// User UI zoom, independent of window dimensions.
         #[arg(long, default_value_t = 1.0)]
         zoom: f32,
+        /// Review the light application palette in isolated QA state.
+        #[arg(long)]
+        light: bool,
+        /// Calibration Designer phase, 1 (Data) through 6 (Study).
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=6))]
+        designer_step: u8,
+        /// Read real saved measurement responses into isolated Designer QA state.
+        #[arg(long)]
+        measurement_file: Option<PathBuf>,
     }
 
     fn external_descriptor(path: &Path) -> PluginDescriptor {
@@ -289,6 +304,9 @@ mod macos {
         external_fixture: &'a Path,
         surface: ReviewSurface,
         zoom: f32,
+        light: bool,
+        designer_step: u8,
+        measurement_file: Option<&'a Path>,
     }
 
     fn capture_viewport(
@@ -304,6 +322,9 @@ mod macos {
             external_fixture,
             surface,
             zoom,
+            light,
+            designer_step,
+            measurement_file,
         } = capture;
         for (ordinal, requested_type) in plugin_types.iter().cloned().enumerate() {
             if matches!(surface, ReviewSurface::Settings) && requested_type != PluginType::External
@@ -323,6 +344,11 @@ mod macos {
                     state.app.ui_state.window_width = width as f32;
                     state.app.ui_state.window_height = height as f32;
                     state.app.ui_state.font_scale = zoom;
+                    if light {
+                        use sotf_audio_player_gpui::app::theme::{Theme, ThemeId};
+                        state.app.ui_state.theme_id = ThemeId::Light;
+                        state.app.ui_state.theme = Theme::from_id(ThemeId::Light);
+                    }
                     state.app.plugin_state = PluginState::new();
                     if requested_type == PluginType::External {
                         seed_external_plugin_state(state, external_fixture)?;
@@ -359,6 +385,24 @@ mod macos {
                 ReviewSurface::Preferences => Screen::Settings,
                 ReviewSurface::Recording => Screen::Recording,
                 ReviewSurface::RoomEq => Screen::RoomEq,
+                #[cfg(feature = "calibration-designer")]
+                            ReviewSurface::CalibrationDesigner | ReviewSurface::CalibrationDesignerControls => {
+                    let room = &mut state.app.measurement_state.room_eq_state;
+                    room.step = sotf_audio_player_gpui::RoomEqStep::Configure;
+                    room.configure_designer_selected = true;
+                    if let Some(path) = measurement_file {
+                        let json = std::fs::read_to_string(path)
+                            .with_context(|| format!("reading QA measurements {}", path.display()))?;
+                        room.channel_measurements = sotf_audio_player::room_eq_types::RoomEqMeasurementsFile::load_from_json(&json, path.parent())
+                            .map_err(|error| anyhow!("loading QA measurements: {error}"))?;
+                        if room.channel_measurements.is_empty() {
+                            return Err(anyhow!("QA measurement file contains no response channels"));
+                        }
+                    }
+                    Screen::RoomEq
+                },
+                #[cfg(feature = "speaker-workbench")]
+                ReviewSurface::SpeakerWorkbench => Screen::SpeakerWorkbench,
                 ReviewSurface::HeadphoneEq => Screen::HeadphoneEq,
                 ReviewSurface::SpinoramaEq => Screen::Spinorama,
                 ReviewSurface::Routing => Screen::PluginGraph,
@@ -393,6 +437,39 @@ mod macos {
             // Let the platform finish its initial frame so `refresh()` below
             // runs from DrawPhase::None and invalidates the entire view tree.
             cx.run_until_parked();
+            #[cfg(feature = "calibration-designer")]
+            if matches!(
+                surface,
+                ReviewSurface::CalibrationDesigner | ReviewSurface::CalibrationDesignerControls
+            ) {
+                window.update(cx, |view, _, cx| {
+                    view.calibration_designer(cx).update(cx, |designer, cx| {
+                        designer.select_step(
+                            sotf_calibration_workbench::DesignerStep::ALL
+                                [usize::from(designer_step - 1)],
+                            cx,
+                        );
+                    });
+                })?;
+            }
+            #[cfg(not(feature = "calibration-designer"))]
+            let _ = designer_step;
+            #[cfg(feature = "calibration-designer")]
+            if matches!(surface, ReviewSurface::CalibrationDesignerControls) {
+                let position = cx.update_window(window.into(), |_, window, _| {
+                    let size = window.viewport_size();
+                    gpui::point(size.width - px(8.0), size.height / 2.0)
+                })?;
+                cx.simulate_event(
+                    window.into(),
+                    gpui::ScrollWheelEvent {
+                        position,
+                        delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(-10000.0))),
+                        modifiers: Default::default(),
+                        touch_phase: gpui::TouchPhase::Moved,
+                    },
+                );
+            }
             // Measured content boxes publish their width after layout. Drain
             // that update before capture so the image represents settled UI.
             cx.update_window(window.into(), |_, window, cx| {
@@ -473,6 +550,12 @@ mod macos {
                 ReviewSurface::Preferences => "preferences",
                 ReviewSurface::Recording => "recording",
                 ReviewSurface::RoomEq => "roomeq",
+                #[cfg(feature = "calibration-designer")]
+                ReviewSurface::CalibrationDesigner => "calibration-designer",
+                #[cfg(feature = "calibration-designer")]
+                ReviewSurface::CalibrationDesignerControls => "calibration-designer-controls",
+                #[cfg(feature = "speaker-workbench")]
+                ReviewSurface::SpeakerWorkbench => "speaker-workbench",
                 ReviewSurface::HeadphoneEq => "headphoneeq",
                 ReviewSurface::SpinoramaEq => "spinoramaeq",
                 ReviewSurface::Routing => "routing",
@@ -496,8 +579,10 @@ mod macos {
                 "rendered_plugin": rendered_name,
                 "surface": surface_name,
                 "viewport": { "width": width, "height": height },
+                "image_pixels": { "width": image.width(), "height": image.height() },
                 "file": filename,
                 "accessibility": accessibility,
+                "measurement_file": measurement_file.and_then(Path::file_name).map(|name| name.to_string_lossy()),
             }));
 
             let empty_root = cx.update_window(window.into(), |_, window, cx| {
@@ -576,6 +661,9 @@ mod macos {
                     external_fixture: &external_fixture,
                     surface: args.surface,
                     zoom: args.zoom,
+                    light: args.light,
+                    designer_step: args.designer_step,
+                    measurement_file: args.measurement_file.as_deref(),
                 },
                 &mut manifest,
             )?;

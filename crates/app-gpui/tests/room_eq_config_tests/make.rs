@@ -583,32 +583,55 @@ fn designer_limits_refuse_running_studies_and_invalidate_result_identity() {
 }
 
 #[test]
-fn calibration_graph_uses_canonical_engine_stage_order() {
+#[cfg(feature = "calibration-designer")]
+fn calibration_panels_keep_user_decisions_separate_from_engine_order() {
     use sotf_audio_player::autoeq::PipelineStepId;
-    use sotf_audio_player_gpui::components::room_eq::room_eq_pipeline_graph;
-    let graph = room_eq_pipeline_graph();
-    assert_eq!(graph.nodes.len(), PipelineStepId::ALL.len());
-    assert_eq!(graph.connections.len(), PipelineStepId::ALL.len() - 1);
-    for (index, step) in PipelineStepId::ALL.iter().enumerate() {
-        let node = graph
-            .nodes
-            .values()
-            .find(|node| node.user_data["stage_index"] == index)
-            .unwrap();
-        assert_eq!(node.title, format!("{:02} {}", index + 1, step.label()));
-        assert_eq!(node.input_count, usize::from(index > 0));
+    use sotf_calibration_workbench::{DesignerSnapshot, DesignerStep};
+    let mut state = RoomEqState::default();
+    assert_eq!(DesignerStep::ALL.len(), 6);
+    assert_eq!(DesignerStep::ALL[0], DesignerStep::Data);
+    assert_eq!(DesignerStep::ALL[5], DesignerStep::Study);
+    assert_eq!(
+        DesignerSnapshot::from_model(&state.model)
+            .stages
+            .iter()
+            .map(|s| s.step)
+            .collect::<Vec<_>>(),
+        PipelineStepId::ALL
+    );
+    state.model.channel_measurements = vec![make_dummy_measurement("L")];
+    let first_identity = state.optimization_input_digest();
+    state.model.channel_measurements[0].measurement.magnitude_db[0] += 1.0;
+    assert_ne!(state.optimization_input_digest(), first_identity);
+    state.result_inputs = Some(state.optimization_input_snapshot());
+    state
+        .model
+        .update_design_target(Some(-0.5), Some(3.0))
+        .unwrap();
+    assert!(!state.result_is_current());
+    assert_eq!(state.optimizer_config.target_response.shape, "custom");
+    assert_eq!(state.optimizer_config.target_response.bass_shelf_db, 3.0);
+    let mut snapshot = DesignerSnapshot::from_model(&state.model);
+    assert!(
+        !snapshot.can_run(),
+        "A host-bound input identity is required"
+    );
+    snapshot.input_identity = state.optimization_input_digest();
+    assert!(snapshot.can_run());
+    for (slope, shelf) in [
+        (Some(f64::NAN), Some(1.0)),
+        (Some(-4.0), None),
+        (None, Some(13.0)),
+        (None, None),
+    ] {
+        assert!(state.model.update_design_target(slope, shelf).is_err());
+        assert_eq!(state.optimizer_config.target_response.bass_shelf_db, 3.0);
         assert_eq!(
-            node.output_count,
-            usize::from(index + 1 < PipelineStepId::ALL.len())
+            state.optimizer_config.target_response.slope_db_per_octave,
+            -0.5
         );
     }
-    for edge in &graph.connections {
-        let source = graph.nodes[&edge.from_node].user_data["stage_index"]
-            .as_u64()
-            .unwrap();
-        let target = graph.nodes[&edge.to_node].user_data["stage_index"]
-            .as_u64()
-            .unwrap();
-        assert_eq!(target, source + 1);
-    }
+    state.model.optimization_status =
+        sotf_audio_player_gpui::app::types::OptimizationStatus::Running;
+    assert!(state.model.update_design_target(None, Some(2.0)).is_err());
 }
