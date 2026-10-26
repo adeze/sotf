@@ -49,6 +49,8 @@ impl PlayerView {
 
         // Determine studio button label based on current screen
         let studio_label = match current_screen {
+            #[cfg(feature = "speaker-workbench")]
+            crate::app::Screen::SpeakerWorkbench => "Speaker Workbench",
             crate::app::Screen::Studio => translations.screen_studio_rack,
             crate::app::Screen::PluginGraph => translations.screen_studio_full,
             crate::app::Screen::Recording => translations.screen_recording,

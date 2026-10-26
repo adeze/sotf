@@ -754,19 +754,7 @@ impl App {
             );
             self.ui_state.current_screen = target;
             self.ui_state.navigation.remember_studio(target);
-            if matches!(
-                target,
-                crate::app::Screen::Studio
-                    | crate::app::Screen::StudioHub
-                    | crate::app::Screen::EqCurve
-                    | crate::app::Screen::Recording
-                    | crate::app::Screen::RoomEq
-                    | crate::app::Screen::HeadphoneEq
-                    | crate::app::Screen::Spinorama
-                    | crate::app::Screen::PluginGraph
-                    | crate::app::Screen::Spectrum
-                    | crate::app::Screen::ListeningTest
-            ) {
+            if target.is_studio_surface() {
                 self.ui_state.navigation.last_studio_screen = target;
             } else if matches!(
                 target,

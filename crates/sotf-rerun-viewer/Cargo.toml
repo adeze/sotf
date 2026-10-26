@@ -1,0 +1,19 @@
+[package]
+name = "sotf-rerun-viewer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Read-only scientific recording and loopback viewer for SOTF"
+repository.workspace = true
+
+[dependencies]
+rerun = { version = "0.40.0", default-features = false, features = ["sdk", "web_viewer"] }
+re-web-viewer-server = { package = "re_web_viewer_server", version = "0.40.0" }
+serde_json.workspace = true
+sha2.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+sotf-player.workspace = true
+autoeq.workspace = true

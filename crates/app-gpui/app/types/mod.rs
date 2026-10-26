@@ -21,6 +21,8 @@ pub enum Screen {
     Studio,
     Recording,
     RoomEq,
+    #[cfg(feature = "speaker-workbench")]
+    SpeakerWorkbench,
     HeadphoneEq,
     Spinorama,
     PluginGraph,
@@ -65,6 +67,8 @@ impl Screen {
             Self::Studio,
             Self::Recording,
             Self::RoomEq,
+            #[cfg(feature = "speaker-workbench")]
+            Self::SpeakerWorkbench,
             Self::HeadphoneEq,
             Self::Spinorama,
             Self::PluginGraph,
@@ -124,6 +128,10 @@ impl Screen {
     }
 
     pub fn is_studio_tool(self) -> bool {
+        #[cfg(feature = "speaker-workbench")]
+        if self == Self::SpeakerWorkbench {
+            return true;
+        }
         matches!(
             self,
             Screen::PluginGraph
@@ -149,6 +157,8 @@ impl Screen {
             "plugingraph" => Some(Screen::PluginGraph),
             "recording" => Some(Screen::Recording),
             "roomeq" => Some(Screen::RoomEq),
+            #[cfg(feature = "speaker-workbench")]
+            "speaker-workbench" => Some(Screen::SpeakerWorkbench),
             "headphoneeq" => Some(Screen::HeadphoneEq),
             "spinorama" => Some(Screen::Spinorama),
             "listening-test" => Some(Screen::ListeningTest),

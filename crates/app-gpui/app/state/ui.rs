@@ -166,6 +166,8 @@ impl Default for NavigationHistory {
 impl NavigationHistory {
     pub fn remember_studio(&mut self, screen: Screen) {
         let category = match screen {
+            #[cfg(feature = "speaker-workbench")]
+            Screen::SpeakerWorkbench => 2,
             Screen::Studio | Screen::PluginGraph | Screen::Spectrum => 0,
             Screen::Recording => 1,
             Screen::RoomEq | Screen::HeadphoneEq | Screen::Spinorama => 2,

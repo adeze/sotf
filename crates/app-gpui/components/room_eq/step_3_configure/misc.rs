@@ -15,10 +15,69 @@ use gpui_ui_kit::{
 };
 
 impl PlayerView {
-    pub(crate) fn render_room_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let wizard_mode = state.app.measurement_state.room_eq_state.wizard_mode;
+    pub(crate) fn render_room_eq_configure(&self, cx: &mut Context<Self>) -> AnyElement {
+        #[cfg(feature = "calibration-designer")]
+        {
+            use gpui_ui_kit::{TabItem, TabVariant, Tabs};
+            let selected = self
+                .state
+                .read(cx)
+                .app
+                .measurement_state
+                .room_eq_state
+                .configure_designer_selected;
+            let state = self.state.clone();
+            let tab_theme = {
+                let theme = &self.state.read(cx).app.ui_state.theme;
+                gpui_ui_kit::TabsTheme {
+                    text_selected: theme.text_primary,
+                    ..theme.to_tabs_theme()
+                }
+            };
+            let tabs = Tabs::new("room-eq-configure-tabs")
+                .tabs(vec![
+                    TabItem::new("parameters", "Parameters"),
+                    TabItem::new("designer", "Designer"),
+                ])
+                .selected_index(usize::from(selected))
+                .variant(TabVariant::Underline)
+                .theme(tab_theme)
+                .aria_label("Calibration configuration view")
+                .on_change(move |index, _, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .configure_designer_selected = index == 1;
+                        cx.notify();
+                    })
+                });
+            let content = if selected {
+                self.calibration_designer(cx).into_any_element()
+            } else {
+                self.render_room_eq_parameters(cx)
+            };
+            div()
+                .flex()
+                .flex_col()
+                .gap(Ds::from_cx(cx).section)
+                .child(tabs)
+                .child(content)
+                .into_any_element()
+        }
+        #[cfg(not(feature = "calibration-designer"))]
+        self.render_room_eq_parameters(cx)
+    }
 
+    fn render_room_eq_parameters(&self, cx: &mut Context<Self>) -> AnyElement {
+        let wizard_mode = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .room_eq_state
+            .wizard_mode;
         match wizard_mode {
             crate::app::types::room_eq::RoomEqWizardMode::Simple => {
                 self.render_simple_configure(cx).into_any_element()
@@ -446,12 +505,10 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .min_db = value;
+                        let room = &mut state.app.measurement_state.room_eq_state;
+                        room.error_message = room
+                            .update_design_limits(None, None, Some(value), None)
+                            .err();
                         cx.notify();
                     });
                 }
@@ -460,12 +517,10 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .max_db = value;
+                        let room = &mut state.app.measurement_state.room_eq_state;
+                        room.error_message = room
+                            .update_design_limits(None, None, None, Some(value))
+                            .err();
                         cx.notify();
                     });
                 }
@@ -474,12 +529,10 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .min_freq = value;
+                        let room = &mut state.app.measurement_state.room_eq_state;
+                        room.error_message = room
+                            .update_design_limits(Some(value), None, None, None)
+                            .err();
                         cx.notify();
                     });
                 }
@@ -488,12 +541,10 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .max_freq = value;
+                        let room = &mut state.app.measurement_state.room_eq_state;
+                        room.error_message = room
+                            .update_design_limits(None, Some(value), None, None)
+                            .err();
                         cx.notify();
                     });
                 }

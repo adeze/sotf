@@ -77,6 +77,8 @@ pub(crate) struct PendingGeometrySave {
 
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(feature = "rerun-viewer")]
+        self.prepare_scientific_viewer_frame(cx);
         if cx.has_global::<AccessibilityTree>() {
             cx.global_mut::<AccessibilityTree>().clear();
         }
@@ -462,6 +464,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_settings))
             .on_action(cx.listener(Self::switch_to_recording))
             .on_action(cx.listener(Self::switch_to_room_eq))
+            .on_action(cx.listener(Self::switch_to_speaker_workbench))
             .on_action(cx.listener(Self::switch_to_headphone_eq))
             .on_action(cx.listener(Self::switch_to_spinorama))
             .on_action(cx.listener(Self::switch_to_spectrum))
@@ -970,6 +973,21 @@ impl Render for PlayerView {
 
 // Screen rendering helper
 impl PlayerView {
+    #[cfg(feature = "speaker-workbench")]
+    pub(super) fn render_speaker_workbench(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let workbench = self
+            .speaker_workbench
+            .get_or_insert_with(|| cx.new(sotf_speaker_workbench::desktop::Workbench::new))
+            .clone();
+        div()
+            .id("speaker-workbench")
+            .size_full()
+            .min_w_0()
+            .min_h_0()
+            .child(workbench)
+            .into_any_element()
+    }
+
     /// Render the current screen based on layout mode.
     /// Most screens render identically regardless of layout mode.
     /// Only Library/Queue differ: Expanded uses split view, Compact uses separate screens.
@@ -992,6 +1010,8 @@ impl PlayerView {
             Screen::Studio => self.render_plugins_screen(None, cx).into_any_element(),
             Screen::Recording => self.render_recording_screen(cx).into_any_element(),
             Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
+            #[cfg(feature = "speaker-workbench")]
+            Screen::SpeakerWorkbench => self.render_speaker_workbench(cx),
             Screen::HeadphoneEq => self.render_headphone_eq_screen(cx).into_any_element(),
             Screen::Spinorama => self.render_spinorama_eq_screen(cx).into_any_element(),
             Screen::PluginGraph => self.render_plugin_graph_screen(cx).into_any_element(),
@@ -1018,6 +1038,8 @@ impl PlayerView {
                     | Screen::Spinorama
                     | Screen::ListeningTest
             );
+            #[cfg(feature = "speaker-workbench")]
+            let owns_scroll = owns_scroll || screen == Screen::SpeakerWorkbench;
             let workspace = div()
                 .id("studio-workspace")
                 .track_scroll(&self.scroll.studio_workspace)
@@ -1322,6 +1344,21 @@ impl PlayerView {
                             &d,
                             cx,
                         ))
+                    })
+                    .map(|el| {
+                        #[cfg(feature = "speaker-workbench")]
+                        let el = el.child(self.render_sidebar_screen_item(
+                            "nav-speaker-workbench",
+                            "Speaker Workbench",
+                            IconName::Speaker,
+                            Screen::SpeakerWorkbench,
+                            current_screen == Screen::SpeakerWorkbench,
+                            collapsed,
+                            &theme,
+                            &d,
+                            cx,
+                        ));
+                        el
                     })
                     .child(self.render_sidebar_separator(&d, &theme))
                     .child(self.render_sidebar_section(

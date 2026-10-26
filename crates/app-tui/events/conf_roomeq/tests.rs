@@ -17,6 +17,7 @@ mod poll_tests {
         app.room_eq.model.optimization_status = OptimizationStatus::Running;
 
         let progress = RoomOptimizationProgress {
+            response: None,
             current_speaker: "Left".to_string(),
             speaker_index: 0,
             total_speakers: 2,

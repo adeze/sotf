@@ -191,6 +191,22 @@ fn test_view_menu_ids_map_to_screens() {
         Some(Screen::SettingsDetail)
     );
     assert_eq!(Screen::from_view_menu_id("unknown"), None);
+    #[cfg(feature = "speaker-workbench")]
+    {
+        let workbench = Screen::SpeakerWorkbench;
+        assert_eq!(
+            Screen::from_view_menu_id("speaker-workbench"),
+            Some(workbench)
+        );
+        assert!(Screen::all().contains(&workbench));
+        assert!(workbench.is_studio_surface());
+        assert_eq!(
+            workbench.primary_destination_index(),
+            Screen::Studio.primary_destination_index()
+        );
+    }
+    #[cfg(not(feature = "speaker-workbench"))]
+    assert_eq!(Screen::from_view_menu_id("speaker-workbench"), None);
 }
 
 #[test]

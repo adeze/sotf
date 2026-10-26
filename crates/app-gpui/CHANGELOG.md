@@ -1,5 +1,40 @@
 # 0.7.11 (unreleased)
 
+## Workbench views
+
+- Add opt-in `rerun-viewer` inside the existing Room EQ content area. A bounded native webview hosts owned loopback Rerun services, with room, measurement and live-solver views; navigation and overlays hide the child view. Original app shell and disabled chat remain unchanged.
+- Use Rerun's documented `renderer=webgl` option for the macOS inline view after native WKWebView WebGPU shader-compilation failures; SDK/external-browser URLs keep their default renderer.
+- Publish current measurement arrays and explicitly selected, digest-bound registered room geometry. Record real callback responses from existing AutoEQ calculations without changing objectives or candidate realization; unsupported response payloads remain unavailable.
+
+- Add an IR-derived fixed 3D waterfall preview in recording evaluation using the existing DSP STFT. Report the 32 ms Hann window, FFT bin spacing and peak-relative level; reject missing or inconsistent impulse/time/rate data and omit unsupported recording tails. This preview does not provide long-window bass-decay resolution.
+
+- Add real measurement-response thumbnails and a selected response plot to the isolated Designer Data panel. Share logarithmic frequency and magnitude scales; bound display samples while retaining original data. Selection changes presentation only. Native visual review can load an explicit measurement file into isolated QA state.
+
+- Surface backend-reported offline study progress and label existing probe wall-clock percentages as estimates. Record component choices for settings, inspectors and loading polish without changing the shell.
+
+- Replace the isolated calibration Designer canvas with six decision panels: Data, Checks, Goals, Constraints, Advice and Study. Preserve panel selection, invalidate local review on snapshot changes and delegate to existing data/alignment/parameter/result routes.
+- Add validated target slope and bass preference edits through the shared player model; preserve explicit settings against Simple-preset replacement. Add a channel-role schematic and clipboard draft brief; chat and physical-room predictions remain disabled/unavailable.
+
+- Add optional `calibration-designer` integration for the isolated `sotf-calibration-workbench` component. Room EQ Configure defaults to its existing Parameters form; local Parameters/Designer tabs leave the application shell unchanged.
+- Designer shows canonical engine order, stage explanations, actual study lifecycle and draft summaries. Four supported limits and offline study start/cancel delegate through existing shared commands; connections cannot be rewired and do not introduce a second executor.
+- Give the embedded speaker editor separate Passive circuit and Active crossover tabs, preserving drafts and using the host toolkit controls and theme.
+- Preserve active speaker previews across passive-editor selection and calculation-completion notifications; invalidate them when the passive calculation generation or active settings change.
+- Reuse toolkit-owned controls, workflow canvas and plot primitives; keep domain state and execution with the workbench/player owners.
+- Use compact Designer nodes and readable selected-tab text in the workbenches. Add the missing Studio subtools accessibility label without changing shell layout or navigation.
+- Extend isolated Metal visual review with calibration Designer/speaker surfaces and a light-palette option.
+
+## Shared offline workbench capabilities
+
+- Add opt-in authenticated loopback workbench API and Streamable HTTP MCP adapter for live Room EQ inspection, atomic Designer limit edits and offline study start/cancel.
+- Expose supported Designer panel and measurement selection through the same retained UI handlers; inspection includes current selection, bounded response previews and explicit unavailable capabilities.
+- Reuse UI validation/calculation paths, reject stale revisions and keep chat/providers disabled. Existing QA actions remain separate.
+- See `crates/sotf-dev-driver/WORKBENCH_MCP.md` for connection, supported controls and verification.
+
+## Speaker workbench
+
+- Add opt-in `speaker-workbench` feature embedding Sonium's passive editor in the main content view, with View menu and Studio navigation and persistent session state.
+- Preview an explicit active LR24 design with the existing SOTF crossover plugin; imports and driver delay/polarity are shared, while playback and routing remain unchanged.
+
 ## Developer tooling
 
 - The `export-design-tokens` / `import-design-tokens` binaries moved here

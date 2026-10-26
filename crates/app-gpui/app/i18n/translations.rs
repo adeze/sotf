@@ -2943,6 +2943,8 @@ impl DialogTranslations {
         use crate::app::types::Screen;
 
         match (self.language, screen) {
+            #[cfg(feature = "speaker-workbench")]
+            (_, Screen::SpeakerWorkbench) => "Speaker Workbench",
             (Language::Pseudo, screen) => pseudo_borrowed(
                 self.language,
                 Self::for_language(Language::English).screen_name(screen),
@@ -3018,6 +3020,10 @@ impl DialogTranslations {
         use crate::app::types::Screen;
 
         match (self.language, screen) {
+            #[cfg(feature = "speaker-workbench")]
+            (_, Screen::SpeakerWorkbench) => {
+                "Design a measured passive crossover and compare an active crossover prediction."
+            }
             (Language::Pseudo, screen) => pseudo_borrowed(
                 self.language,
                 Self::for_language(Language::English).screen_overview(screen),

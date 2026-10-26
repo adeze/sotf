@@ -1273,6 +1273,9 @@ impl PlayerView {
         })
         .detach();
 
+        #[cfg(feature = "rerun-viewer")]
+        let scientific_viewer = self.scientific_viewer_session.clone();
+
         // Spawn the optimization task
         cx.spawn(async move |_, cx| {
             #[cfg(feature = "dev-api")]
@@ -1291,8 +1294,30 @@ impl PlayerView {
             // Create progress callback
             let progress_tx_clone = progress_tx.clone();
             let cancel_for_cb = cancel_flag.clone();
+            #[cfg(feature = "rerun-viewer")]
+            let viewer_for_callback = scientific_viewer.clone();
+            #[cfg(feature = "rerun-viewer")]
+            let viewer_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            #[cfg(feature = "rerun-viewer")]
+            let viewer_failed_for_callback = viewer_failed.clone();
             let callback: RoomOptimizationCallback =
                 Box::new(move |progress: &RoomOptimizationProgress| {
+                    #[cfg(feature = "rerun-viewer")]
+                    if let Some(viewer) = viewer_for_callback.as_ref().filter(|_| !viewer_failed_for_callback.load(std::sync::atomic::Ordering::Relaxed)) {
+                        let stage = format!("{:?}/{:?}", progress.step_id, progress.step_status);
+                        let response = progress.response.as_ref().map(|r| sotf_rerun_viewer::SolverResponse {
+                            frequency_hz: &r.frequency_hz, prepared_measurement_db: &r.prepared_measurement_db,
+                            target_db: &r.target_db, filter_db: &r.filter_db, predicted_db: &r.predicted_db,
+                        });
+                        let loss = (!progress.current_speaker.is_empty() && progress.loss.is_finite()).then_some(progress.loss);
+                        if let Err(error) = viewer.log_solver_progress(&progress.current_speaker,
+                            progress.iteration, loss, progress.overall_progress, &stage,
+                            progress.message.as_deref(), response) {
+                            log::warn!("Scientific recording stopped; solver continues unchanged: {error}");
+                            viewer_failed_for_callback.store(true, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+
                     if cancel_for_cb.load(std::sync::atomic::Ordering::Relaxed) {
                         return CallbackAction::Stop;
                     }
@@ -1362,6 +1387,14 @@ impl PlayerView {
             // it had finished when the callback returned Stop, but we want
             // Cancelled status and to stay on the Optimise step.
             let was_cancelled = cancel_flag.load(std::sync::atomic::Ordering::Relaxed);
+            #[cfg(feature = "rerun-viewer")]
+            if let Some(viewer) = &scientific_viewer {
+                let outcome = if was_cancelled { "cancelled" } else if result.is_ok() { "completed" } else { "failed" };
+                if let Err(error) = viewer.log_solver_progress("", 0, None, 1.0, outcome,
+                    Some(if viewer_failed.load(std::sync::atomic::Ordering::Relaxed) { "Native solver returned; recording is incomplete after a telemetry failure" } else { "Native solver returned; prior callback records remain observations" }), None) {
+                    log::warn!("Scientific outcome recording unavailable: {error}");
+                }
+            }
             if was_cancelled {
                 state_clone.update(&mut cx.clone(), |state, cx| {
                     let room_eq = &mut state.app.measurement_state.room_eq_state;

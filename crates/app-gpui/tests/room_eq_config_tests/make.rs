@@ -521,3 +521,117 @@ fn test_import_preserves_seed_and_refine() {
         "local_algo must survive smart defaults"
     );
 }
+
+#[test]
+fn designer_limits_validate_atomically_and_preserve_measurements() {
+    let mut state = RoomEqState::default();
+    state.model.channel_measurements = vec![make_dummy_measurement("L")];
+    let original = state.optimizer_config.clone();
+    for values in [
+        (Some(f64::NAN), None, None, None),
+        (Some(1000.0), Some(100.0), None, None),
+        (None, None, Some(-26.0), None),
+        (None, None, None, Some(26.0)),
+        (None, None, Some(10.0), Some(-10.0)),
+        (None, None, None, None),
+    ] {
+        assert!(
+            state
+                .update_design_limits(values.0, values.1, values.2, values.3)
+                .is_err()
+        );
+        assert_eq!(state.optimizer_config.min_freq, original.min_freq);
+        assert_eq!(state.optimizer_config.max_freq, original.max_freq);
+        assert_eq!(state.optimizer_config.min_db, original.min_db);
+        assert_eq!(state.optimizer_config.max_db, original.max_db);
+    }
+    state
+        .update_design_limits(Some(30.0), Some(18_000.0), Some(-12.0), Some(2.0))
+        .unwrap();
+    assert_eq!(state.optimizer_config.min_freq, 30.0);
+    assert_eq!(state.optimizer_config.max_db, 2.0);
+    assert_eq!(state.model.channel_measurements.len(), 1);
+    assert_eq!(
+        state.wizard_mode,
+        sotf_audio_player::room_eq_types::RoomEqWizardMode::Full
+    );
+}
+
+#[test]
+fn designer_limits_refuse_running_studies_and_invalidate_result_identity() {
+    let mut state = RoomEqState::default();
+    state.result_inputs = Some(state.optimization_input_snapshot());
+    assert!(state.result_is_current());
+    state.model.optimization_status =
+        sotf_audio_player_gpui::app::types::OptimizationStatus::Running;
+    assert!(
+        state
+            .update_design_limits(Some(30.0), None, None, None)
+            .is_err()
+    );
+    state.model.optimization_status = sotf_audio_player_gpui::app::types::OptimizationStatus::Idle;
+    state
+        .update_design_limits(Some(30.0), None, None, None)
+        .unwrap();
+    assert!(!state.result_is_current());
+    state.model.optimizer_config.sample_rate = 32_000;
+    assert!(
+        state
+            .update_design_limits(None, Some(18_000.0), None, None)
+            .is_err()
+    );
+}
+
+#[test]
+#[cfg(feature = "calibration-designer")]
+fn calibration_panels_keep_user_decisions_separate_from_engine_order() {
+    use sotf_audio_player::autoeq::PipelineStepId;
+    use sotf_calibration_workbench::{DesignerSnapshot, DesignerStep};
+    let mut state = RoomEqState::default();
+    assert_eq!(DesignerStep::ALL.len(), 6);
+    assert_eq!(DesignerStep::ALL[0], DesignerStep::Data);
+    assert_eq!(DesignerStep::ALL[5], DesignerStep::Study);
+    assert_eq!(
+        DesignerSnapshot::from_model(&state.model)
+            .stages
+            .iter()
+            .map(|s| s.step)
+            .collect::<Vec<_>>(),
+        PipelineStepId::ALL
+    );
+    state.model.channel_measurements = vec![make_dummy_measurement("L")];
+    let first_identity = state.optimization_input_digest();
+    state.model.channel_measurements[0].measurement.magnitude_db[0] += 1.0;
+    assert_ne!(state.optimization_input_digest(), first_identity);
+    state.result_inputs = Some(state.optimization_input_snapshot());
+    state
+        .model
+        .update_design_target(Some(-0.5), Some(3.0))
+        .unwrap();
+    assert!(!state.result_is_current());
+    assert_eq!(state.optimizer_config.target_response.shape, "custom");
+    assert_eq!(state.optimizer_config.target_response.bass_shelf_db, 3.0);
+    let mut snapshot = DesignerSnapshot::from_model(&state.model);
+    assert!(
+        !snapshot.can_run(),
+        "A host-bound input identity is required"
+    );
+    snapshot.input_identity = state.optimization_input_digest();
+    assert!(snapshot.can_run());
+    for (slope, shelf) in [
+        (Some(f64::NAN), Some(1.0)),
+        (Some(-4.0), None),
+        (None, Some(13.0)),
+        (None, None),
+    ] {
+        assert!(state.model.update_design_target(slope, shelf).is_err());
+        assert_eq!(state.optimizer_config.target_response.bass_shelf_db, 3.0);
+        assert_eq!(
+            state.optimizer_config.target_response.slope_db_per_octave,
+            -0.5
+        );
+    }
+    state.model.optimization_status =
+        sotf_audio_player_gpui::app::types::OptimizationStatus::Running;
+    assert!(state.model.update_design_target(None, Some(2.0)).is_err());
+}

@@ -7,6 +7,10 @@
 //! - Plugin editing: ui/components/host/plugin_editing.rs
 //! - Level meters: ui/components/plugins/level_meters.rs
 
+#[cfg(feature = "workbench-api")]
+pub mod workbench_api;
+#[cfg(feature = "rerun-viewer")]
+mod scientific_viewer_data;
 pub mod actions;
 mod autocomplete;
 pub mod cast;

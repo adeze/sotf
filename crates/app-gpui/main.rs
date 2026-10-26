@@ -61,6 +61,9 @@ fn main() {
 
     // Capture the optional --size override so the GPUI `move` closure can use
     // it after `args` is partially consumed below. Option<(f32, f32)> is Copy.
+    #[cfg(feature = "workbench-api")]
+    let workbench_api_port = args.workbench_api;
+
     let cli_size_override: Option<(f32, f32)> = args.size;
 
     // Apply QA directory override before any config dir access.
@@ -318,6 +321,11 @@ fn main() {
                 MenuItem::action(translations.screen_listening_test, SwitchToListeningTest),
                 MenuItem::action(translations.screen_recording, SwitchToRecording),
             ];
+            #[cfg(feature = "speaker-workbench")]
+            view_menu_items.push(MenuItem::action(
+                "Speaker Workbench",
+                SwitchToSpeakerWorkbench,
+            ));
             if release_channel.allows(Screen::RoomEq.maturity()) {
                 view_menu_items.push(MenuItem::action(
                     translations.screen_room_eq,
@@ -558,6 +566,23 @@ fn main() {
                 }
             }
 
+            #[cfg(feature = "workbench-api")]
+            if let Some(port) = workbench_api_port {
+                match window.as_ref() {
+                    Ok(handle) => {
+                        if let Err(error) = sotf_audio_player_gpui::app::workbench_api::start(
+                            cx,
+                            port,
+                            (*handle).into(),
+                        ) {
+                            log::error!("workbench API could not start: {error:#}");
+                            eprintln!("workbench API could not start: {error:#}");
+                            cx.quit();
+                        }
+                    }
+                    Err(error) => log::error!("workbench API requires an open window: {error:#}"),
+                }
+            }
             let _ = window;
         });
 }

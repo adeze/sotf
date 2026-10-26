@@ -369,6 +369,8 @@ fn documentation_specs() -> Vec<DocumentationSpec> {
 
 fn screen_documentation_specs(screen: Screen) -> Vec<DocumentationSpec> {
     match screen {
+        #[cfg(feature = "speaker-workbench")]
+        Screen::SpeakerWorkbench => Vec::new(),
         Screen::Home | Screen::HomeShelf => vec![
             documentation!(
                 Navigation,

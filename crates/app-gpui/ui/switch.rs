@@ -177,6 +177,25 @@ impl PlayerView {
         self.focus_handle.focus(window, cx);
     }
 
+    fn switch_to_speaker_workbench(
+        &mut self,
+        _: &SwitchToSpeakerWorkbench,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        #[cfg(feature = "speaker-workbench")]
+        {
+            self.switch_screen_with_trigger(
+                Screen::SpeakerWorkbench,
+                "SwitchToSpeakerWorkbench",
+                cx,
+            );
+            self.focus_handle.focus(window, cx);
+        }
+        #[cfg(not(feature = "speaker-workbench"))]
+        let _ = (window, cx);
+    }
+
     fn switch_to_room_eq(
         &mut self,
         _: &SwitchToRoomEQ,

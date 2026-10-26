@@ -32,6 +32,8 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let selected = match screen {
+            #[cfg(feature = "speaker-workbench")]
+            Screen::SpeakerWorkbench => 2,
             Screen::Studio | Screen::PluginGraph | Screen::Spectrum => 0,
             Screen::Recording => 1,
             Screen::RoomEq | Screen::HeadphoneEq | Screen::Spinorama => 2,
@@ -53,6 +55,8 @@ impl PlayerView {
                 ),
                 (Screen::Recording, 1, ui.translations.screen_recording),
                 (Screen::RoomEq, 2, ui.translations.screen_room_eq),
+                #[cfg(feature = "speaker-workbench")]
+                (Screen::SpeakerWorkbench, 2, "Speaker Workbench"),
                 (Screen::HeadphoneEq, 2, ui.translations.screen_headphone_eq),
                 (Screen::Spinorama, 2, ui.translations.screen_spinorama),
                 (
@@ -203,6 +207,8 @@ impl PlayerView {
                 ),
             ],
             2 => vec![
+                #[cfg(feature = "speaker-workbench")]
+                (Screen::SpeakerWorkbench, "Speaker Workbench"),
                 (Screen::RoomEq, ui.translations.screen_room_eq),
                 (Screen::HeadphoneEq, ui.translations.screen_headphone_eq),
                 (Screen::Spinorama, ui.translations.screen_spinorama),
@@ -219,6 +225,7 @@ impl PlayerView {
             .unwrap_or(0);
         let state_for_tool = self.state.downgrade();
         let subtools = Tabs::new("studio-subtools")
+            .aria_label(ui.translations.screen_studio)
             .tabs(
                 tools
                     .iter()
@@ -442,6 +449,8 @@ impl PlayerView {
             vec![(Screen::Recording, t.screen_recording)],
             vec![
                 (Screen::RoomEq, t.screen_room_eq),
+                #[cfg(feature = "speaker-workbench")]
+                (Screen::SpeakerWorkbench, "Speaker Workbench"),
                 (Screen::HeadphoneEq, t.screen_headphone_eq),
                 (Screen::Spinorama, t.screen_spinorama),
             ],

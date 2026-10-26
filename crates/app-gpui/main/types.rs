@@ -15,6 +15,11 @@ pub(super) struct Args {
     #[arg(long, hide = true)]
     pub(super) qa_onboarding: bool,
 
+    /// Enable the authenticated local offline workbench capability service.
+    #[cfg(feature = "workbench-api")]
+    #[arg(long, value_name = "PORT")]
+    pub(super) workbench_api: Option<u16>,
+
     /// Run in headless server mode (MPD/DLNA) without UI
     #[arg(long)]
     pub(super) server: bool,

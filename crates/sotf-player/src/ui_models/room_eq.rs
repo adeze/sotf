@@ -394,6 +394,69 @@ impl RoomEqScreenModel {
         self.optimization_status == OptimizationStatus::Running
     }
 
+    /// Shared UI/agent edit boundary. Validate the complete proposal before changing state.
+    pub fn update_design_limits(
+        &mut self,
+        min_freq: Option<f64>,
+        max_freq: Option<f64>,
+        min_db: Option<f64>,
+        max_db: Option<f64>,
+    ) -> Result<(), String> {
+        if self.is_optimizing() {
+            return Err("Cannot edit Designer parameters while a study is running".into());
+        }
+        let current = &self.optimizer_config;
+        let limits = autoeq::roomeq::DesignerLimits {
+            min_freq: current.min_freq,
+            max_freq: current.max_freq,
+            min_db: current.min_db,
+            max_db: current.max_db,
+        }
+        .updated(
+            min_freq,
+            max_freq,
+            min_db,
+            max_db,
+            current.sample_rate as f64,
+        )?;
+        let config = &mut self.optimizer_config;
+        config.min_freq = limits.min_freq;
+        config.max_freq = limits.max_freq;
+        config.min_db = limits.min_db;
+        config.max_db = limits.max_db;
+        // Explicit limits must not be replaced by the simple wizard at study start.
+        self.wizard_mode = crate::room_eq_types::RoomEqWizardMode::Full;
+        Ok(())
+    }
+
+    /// Shared target edit boundary; explicit choices survive simple-preset resolution.
+    pub fn update_design_target(
+        &mut self,
+        slope: Option<f64>,
+        bass_shelf: Option<f64>,
+    ) -> Result<(), String> {
+        if self.is_optimizing() {
+            return Err("Cannot edit Designer goals while a study is running".into());
+        }
+        if slope.is_none() && bass_shelf.is_none()
+            || slope.is_some_and(|v| !v.is_finite() || !(-3.0..=3.0).contains(&v))
+            || bass_shelf.is_some_and(|v| !v.is_finite() || !(0.0..=12.0).contains(&v))
+        {
+            return Err("Invalid target: slope must be -3–3 dB/octave; bass shelf 0–12 dB".into());
+        }
+        let target = &mut self.optimizer_config.target_response;
+        target.enabled = true;
+        if let Some(value) = slope {
+            target.shape = "custom".into();
+            target.slope_db_per_octave = value;
+        }
+        if let Some(value) = bass_shelf {
+            target.bass_shelf_db = value;
+        }
+        self.wizard_mode = RoomEqWizardMode::Full;
+        Ok(())
+    }
+
     /// True when the last optimization completed successfully.
     pub fn is_optimization_complete(&self) -> bool {
         self.optimization_status == OptimizationStatus::Completed
