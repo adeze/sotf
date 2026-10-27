@@ -115,10 +115,15 @@ impl ViewerSession {
     }
 
     /// Adds read-only canonical project metadata without replacing scientific entities.
-    pub fn log_project_entity(&self, path: &str, metadata: &serde_json::Value) -> Result<(), String> {
+    pub fn log_project_entity(
+        &self,
+        path: &str,
+        metadata: &serde_json::Value,
+    ) -> Result<(), String> {
         let text = project_entity_text(path, metadata)?;
         for stream in self.streams() {
-            stream.log_static(path, &rerun::TextDocument::new(text.clone()))
+            stream
+                .log_static(path, &rerun::TextDocument::new(text.clone()))
                 .map_err(|error| error.to_string())?;
         }
         Ok(())
@@ -207,20 +212,23 @@ impl ViewerSession {
             ];
         }
         *bounds = Some(extent);
+        let frequency_tensor = tensor(frequency_hz);
+        let magnitude_tensor = tensor(magnitude_db);
+        let points = frequency_hz
+            .iter()
+            .zip(magnitude_db)
+            .map(|(&f, &db)| [display_frequency(f), -db as f32])
+            .collect::<Vec<_>>();
+        let response = rerun::LineStrips2D::new([points]);
         for stream in self.streams() {
             stream
-                .log_static(format!("{path}/frequency_hz"), &tensor(frequency_hz))
+                .log_static(format!("{path}/frequency_hz"), &frequency_tensor)
                 .map_err(|e| e.to_string())?;
             stream
-                .log_static(format!("{path}/magnitude_db"), &tensor(magnitude_db))
+                .log_static(format!("{path}/magnitude_db"), &magnitude_tensor)
                 .map_err(|e| e.to_string())?;
-            let points = frequency_hz
-                .iter()
-                .zip(magnitude_db)
-                .map(|(&f, &db)| [display_frequency(f), -db as f32])
-                .collect::<Vec<_>>();
             stream
-                .log_static(path.as_str(), &rerun::LineStrips2D::new([points]))
+                .log_static(path.as_str(), &response)
                 .map_err(|e| e.to_string())?;
             log_chart_axes(stream, "measurements/chart_axes", extent, true)?;
             stream.log_static(format!("{path}/axes"), &rerun::TextDocument::new(
@@ -232,33 +240,74 @@ impl ViewerSession {
 
     /// Starts another study without leaving previous proposals or final output visible.
     pub fn begin_solver_study(&self, identity: &str) -> Result<(), String> {
-        let mut index = self.callback_index.lock().map_err(|_| "Viewer callback lock poisoned")?;
+        let mut index = self
+            .callback_index
+            .lock()
+            .map_err(|_| "Viewer callback lock poisoned")?;
         *index += 1;
         for stream in self.streams() {
             // Static clears suppress later temporal proposals at every callback time.
             stream.set_time_sequence("callback", *index as i64);
-            stream.log("solver/channels", &rerun::Clear::recursive()).map_err(|e| e.to_string())?;
-            stream.log_static("solver/final", &rerun::Clear::recursive()).map_err(|e| e.to_string())?;
-            stream.log("solver/study", &rerun::TextDocument::new(identity)).map_err(|e| e.to_string())?;
+            stream
+                .log("solver/channels", &rerun::Clear::recursive())
+                .map_err(|e| e.to_string())?;
+            stream
+                .log_static("solver/final", &rerun::Clear::recursive())
+                .map_err(|e| e.to_string())?;
+            stream
+                .log("solver/study", &rerun::TextDocument::new(identity))
+                .map_err(|e| e.to_string())?;
         }
         self.flush()
     }
 
     /// Canonical post-finalization output, kept separate from optimizer proposals.
-    pub fn log_final_response(&self, channel: &str, frequency_hz: &[f64], initial_db: &[f64], final_db: &[f64]) -> Result<(), String> {
+    pub fn log_final_response(
+        &self,
+        channel: &str,
+        frequency_hz: &[f64],
+        initial_db: &[f64],
+        final_db: &[f64],
+    ) -> Result<(), String> {
         validate_curve(frequency_hz, initial_db)?;
         validate_curve(frequency_hz, final_db)?;
         let path = format!("solver/final/{}", entity_name(channel));
         for stream in self.streams() {
-            stream.log_static(format!("{path}/frequency_hz"), &tensor(frequency_hz)).map_err(|e| e.to_string())?;
-            for (label, samples) in [("measured_input", initial_db), ("realized_output", final_db)] {
-                let points: Vec<_> = frequency_hz.iter().zip(samples).map(|(&f, &db)| [display_frequency(f), -db as f32]).collect();
-                stream.log_static(format!("{path}/{label}"), &rerun::LineStrips2D::new([points])).map_err(|e| e.to_string())?;
-                stream.log_static(format!("{path}/{label}/db"), &tensor(samples)).map_err(|e| e.to_string())?;
+            stream
+                .log_static(format!("{path}/frequency_hz"), &tensor(frequency_hz))
+                .map_err(|e| e.to_string())?;
+            for (label, samples) in [
+                ("measured_input", initial_db),
+                ("realized_output", final_db),
+            ] {
+                let points: Vec<_> = frequency_hz
+                    .iter()
+                    .zip(samples)
+                    .map(|(&f, &db)| [display_frequency(f), -db as f32])
+                    .collect();
+                stream
+                    .log_static(
+                        format!("{path}/{label}"),
+                        &rerun::LineStrips2D::new([points]),
+                    )
+                    .map_err(|e| e.to_string())?;
+                stream
+                    .log_static(format!("{path}/{label}/db"), &tensor(samples))
+                    .map_err(|e| e.to_string())?;
             }
             let a = curve_bounds(frequency_hz, initial_db);
             let b = curve_bounds(frequency_hz, final_db);
-            log_chart_axes(stream, &format!("{path}/axes"), [a[0].min(b[0]), a[1].max(b[1]), a[2].min(b[2]), a[3].max(b[3])], true)?;
+            log_chart_axes(
+                stream,
+                &format!("{path}/axes"),
+                [
+                    a[0].min(b[0]),
+                    a[1].max(b[1]),
+                    a[2].min(b[2]),
+                    a[3].max(b[3]),
+                ],
+                true,
+            )?;
         }
         self.flush()
     }
@@ -357,10 +406,7 @@ impl ViewerSession {
                     .map_err(|e| e.to_string())?;
                 let mut extent =
                     curve_bounds(response.frequency_hz, response.prepared_measurement_db);
-                for values in [
-                    response.target_db,
-                    response.predicted_db,
-                ] {
+                for values in [response.target_db, response.predicted_db] {
                     let other = curve_bounds(response.frequency_hz, values);
                     extent[2] = extent[2].min(other[2]);
                     extent[3] = extent[3].max(other[3]);
@@ -376,7 +422,9 @@ impl ViewerSession {
                         .log(format!("{path}/arrays/{name}_db"), &tensor(values))
                         .map_err(|e| e.to_string())?;
                     // Electrical filter gain has a different reference from acoustic level.
-                    if name == "filter" { continue; }
+                    if name == "filter" {
+                        continue;
+                    }
                     let points = response
                         .frequency_hz
                         .iter()
@@ -386,13 +434,12 @@ impl ViewerSession {
                     stream
                         .log(
                             format!("{path}/response/{name}"),
-                            &rerun::LineStrips2D::new([points])
-                                .with_colors([match name {
-                                    "prepared_measurement" => 0x8A96A8FFu32,
-                                    "target" => 0xD99838FF,
-                                    "filter" => 0xA979CFFF,
-                                    _ => 0x398FD9FF,
-                                }]),
+                            &rerun::LineStrips2D::new([points]).with_colors([match name {
+                                "prepared_measurement" => 0x8A96A8FFu32,
+                                "target" => 0xD99838FF,
+                                "filter" => 0xA979CFFF,
+                                _ => 0x398FD9FF,
+                            }]),
                         )
                         .map_err(|e| e.to_string())?;
                 }
@@ -523,10 +570,14 @@ fn tensor(values: &[f64]) -> rerun::Tensor {
 }
 
 fn project_entity_text(path: &str, metadata: &serde_json::Value) -> Result<String, String> {
-    if !path.starts_with("project/") || path.len() > 1024
+    if !path.starts_with("project/")
+        || path.len() > 1024
         || path.chars().any(|c| c.is_control() || c == '\\')
-        || path.split('/').any(|part| matches!(part, "" | "." | "..")) {
-        return Err("Project metadata requires a bounded path beneath project/ without traversal".into());
+        || path.split('/').any(|part| matches!(part, "" | "." | ".."))
+    {
+        return Err(
+            "Project metadata requires a bounded path beneath project/ without traversal".into(),
+        );
     }
     let text = serde_json::to_string_pretty(metadata).map_err(|error| error.to_string())?;
     if text.len() > 64 * 1024 {
@@ -554,10 +605,19 @@ mod tests {
     fn project_metadata_cannot_replace_scientific_entities() {
         let value = serde_json::json!({"role":"speaker"});
         assert!(project_entity_text("project/speakers/4c", &value).is_ok());
-        for path in ["room/geometry", "project/../room", "project//x", "project/x\n", "project/x\\y", "project/."] {
+        for path in [
+            "room/geometry",
+            "project/../room",
+            "project//x",
+            "project/x\n",
+            "project/x\\y",
+            "project/.",
+        ] {
             assert!(project_entity_text(path, &value).is_err());
         }
-        assert!(project_entity_text("project/config", &serde_json::json!("x".repeat(65537))).is_err());
+        assert!(
+            project_entity_text("project/config", &serde_json::json!("x".repeat(65537))).is_err()
+        );
     }
     #[test]
     fn curve_validation_and_entity_paths_preserve_boundaries() {

@@ -28,7 +28,12 @@ pub(crate) fn blueprint() -> Blueprint {
     .with_row_shares(vec![0.6, 0.3, 0.1]);
     let final_output = Spatial2DView::new("Final realized output · after safety gates")
         .with_contents(["/solver/final/**"]);
-    Blueprint::new(Tabs::new([measurements, room, live.into(), final_output.into()]))
-        .with_auto_layout(false)
-        .with_auto_views(false)
+    Blueprint::new(Tabs::new([
+        measurements,
+        room,
+        live.into(),
+        final_output.into(),
+    ]))
+    .with_auto_layout(false)
+    .with_auto_views(false)
 }

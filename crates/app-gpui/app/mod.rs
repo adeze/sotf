@@ -7,10 +7,6 @@
 //! - Plugin editing: ui/components/host/plugin_editing.rs
 //! - Level meters: ui/components/plugins/level_meters.rs
 
-#[cfg(feature = "workbench-api")]
-pub mod workbench_api;
-#[cfg(feature = "rerun-viewer")]
-mod scientific_viewer_data;
 pub mod actions;
 mod autocomplete;
 pub mod cast;
@@ -30,9 +26,13 @@ pub mod navigation;
 pub mod player_handle;
 pub mod queue;
 pub mod remote;
+#[cfg(feature = "rerun-viewer")]
+mod scientific_viewer_data;
 pub mod state;
 pub mod theme;
 pub mod types;
+#[cfg(feature = "workbench-api")]
+pub mod workbench_api;
 
 pub use i18n::{Language, Translations};
 pub use keybindings::{
