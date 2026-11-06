@@ -1,9 +1,7 @@
 # tvOS (Apple TV) builds
 #
-# tvOS is a Tier 3 Rust target — no pre-built stdlib.
-# Requires: nightly toolchain + rust-src component.
-#   rustup toolchain install nightly
-#   rustup component add rust-src --toolchain nightly
+# Requires stable Rust with the distributed ARM64 tvOS standard libraries:
+#   rustup target add --toolchain stable aarch64-apple-tvos aarch64-apple-tvos-sim
 
 # ----------------------------------------------------------------------
 # SOTF tvOS App (crates/app-tvos)
@@ -12,12 +10,12 @@
 # Build SotF tvOS Rust static library for simulator (arm64)
 [group('tvos')]
 tvos-rust-sim:
-	cargo +nightly build -p sotf-tvos --target aarch64-apple-tvos-sim --release -Zbuild-std
+	PLATFORM_NAME=appletvsimulator bash crates/app-tvos/tvos/build-rust.sh
 
 # Build SotF tvOS Rust static library for device (arm64)
 [group('tvos')]
 tvos-rust-device:
-	cargo +nightly build -p sotf-tvos --target aarch64-apple-tvos --release -Zbuild-std
+	PLATFORM_NAME=appletvos bash crates/app-tvos/tvos/build-rust.sh
 
 # Generate SotF tvOS Xcode project with XcodeGen
 [group('tvos')]

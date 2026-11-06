@@ -5,7 +5,7 @@
 # It detects the target architecture from PLATFORM_NAME/ARCHS (set by Xcode)
 # or defaults to the tvOS simulator.
 #
-# tvOS is a Tier 3 Rust target, so this script uses nightly + -Zbuild-std.
+# ARM64 tvOS targets ship standard libraries through stable rustup.
 #
 # Output: $SOTF_TVOS_RUST_LIB_DIR/libsotf_tvos.a, or Xcode's DERIVED_FILE_DIR/rust.
 
@@ -19,9 +19,8 @@ echo "=== Building SotF tvOS static library ==="
 echo "  Workspace: $WORKSPACE_ROOT"
 echo "  tvOS dir:  $TVOS_DIR"
 
-CARGO_BIN="${CARGO:-}"
 RUSTUP_BIN="${RUSTUP:-}"
-if [ -z "$CARGO_BIN" ] || [ -z "$RUSTUP_BIN" ]; then
+if [ -z "$RUSTUP_BIN" ]; then
     if command -v rustup >/dev/null 2>&1; then
         RUSTUP_BIN="$(command -v rustup)"
     elif [ -x "$HOME/.cargo/bin/rustup" ]; then
@@ -31,19 +30,12 @@ if [ -z "$CARGO_BIN" ] || [ -z "$RUSTUP_BIN" ]; then
         echo "       Install Rust or set RUSTUP=/path/to/rustup before running this script." >&2
         exit 127
     fi
-    CARGO_BIN="${CARGO:-$($RUSTUP_BIN which cargo --toolchain nightly 2>/dev/null || true)}"
 fi
-if [ -z "$CARGO_BIN" ] || [ ! -x "$CARGO_BIN" ]; then
-    if command -v cargo >/dev/null 2>&1; then
-        CARGO_BIN="$(command -v cargo)"
-    elif [ -x "$HOME/.cargo/bin/cargo" ]; then
-        CARGO_BIN="$HOME/.cargo/bin/cargo"
-    else
-        echo "error: cargo not found on PATH or at \$HOME/.cargo/bin/cargo" >&2
-        echo "       Install Rust or set CARGO=/path/to/cargo before running this script." >&2
-        exit 127
-    fi
-fi
+CARGO_BIN="${CARGO:-$($RUSTUP_BIN which --toolchain stable cargo)}"
+# Keep Cargo and rustc together even when Homebrew's rustc precedes rustup on PATH.
+RUSTC="$($RUSTUP_BIN which --toolchain stable rustc)"
+export RUSTC
+export RUSTUP_TOOLCHAIN=stable
 
 # Determine Rust target from Xcode environment or default to simulator
 if [ "${PLATFORM_NAME:-}" = "appletvos" ]; then
@@ -62,14 +54,14 @@ echo "  Target:    $RUST_TARGET"
 echo "  Profile:   $PROFILE"
 echo "  Cargo:     $CARGO_BIN"
 
-# Build the static library. tvOS is Tier 3, so we need nightly + build-std.
+# Build against the installed stable target standard library.
 cd "$WORKSPACE_ROOT"
 
 if [ "$PROFILE" = "release" ]; then
-    "$CARGO_BIN" +nightly build -p sotf-tvos --target "$RUST_TARGET" --release -Zbuild-std
+    "$CARGO_BIN" build --locked -p sotf-tvos --target "$RUST_TARGET" --release
     LIB_DIR="target/$RUST_TARGET/release"
 else
-    "$CARGO_BIN" +nightly build -p sotf-tvos --target "$RUST_TARGET" -Zbuild-std
+    "$CARGO_BIN" build --locked -p sotf-tvos --target "$RUST_TARGET"
     LIB_DIR="target/$RUST_TARGET/debug"
 fi
 

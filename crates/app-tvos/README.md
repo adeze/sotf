@@ -32,11 +32,14 @@ placing `libsotf_tvos.a` under `tvos/lib/`.
 
 Prerequisites:
 
-- Rust nightly toolchain with the `rust-src` component:
+- Stable Rust with the distributed ARM64 tvOS target libraries:
   ```bash
-  rustup toolchain install nightly
-  rustup component add rust-src --toolchain nightly
+  rustup toolchain install stable
+  rustup target add --toolchain stable aarch64-apple-tvos aarch64-apple-tvos-sim
   ```
+
+ARM64 tvOS device and simulator targets are now Tier 2; nightly and `build-std`
+are not required for these targets. See [Rust target support](https://doc.rust-lang.org/rustc/platform-support/apple-tvos.html).
 
 Generate the Xcode project and build for the tvOS simulator:
 
