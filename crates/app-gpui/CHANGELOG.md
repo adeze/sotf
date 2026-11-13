@@ -1,3 +1,68 @@
+# 0.7.17 (unreleased)
+
+## Recording: live level meter and gain guidance
+
+- The Capture step shows a real-time input level bar fed lock-free from
+  the capture callback (`CaptureLevelMeter` in sotf-capture): green /
+  yellow / red zones on a −60…0 dBFS peak scale, numeric peak/RMS/hold
+  readout, dB SPL conversion when an SPL calibration exists, and a red
+  "no headroom" warning while clipping. After a take, a banner advises
+  lowering the microphone gain when clipping occurred or raising it
+  when the take peaked below −30 dBFS.
+
+## Recording: SPL calibration display
+
+- The tone level is shown in dBFS next to the linear peak/RMS values,
+  and the derived calibration is labelled "full scale (0 dBFS) = X dB
+  SPL at the microphone" instead of a bare `spl_offset_db` value that
+  read as a +105 dB correction for a 68 dB meter entry. Offsets outside
+  50–170 dB get a plausibility warning. The instructions and module
+  docs no longer reference GD-Opt v2.
+
+## Recording: Evaluating panels
+
+- Group delay plots one series per channel (the stored excess group
+  delay, computed only when absent) instead of two identical curves;
+  with no user smoothing it applies a light 1/24-oct smoothing.
+- Impulse response amplitude axis scales to the measured peak.
+- RT60 and Clarity fall back to the impulse reconstructed from the
+  frequency response when no measured IR is stored.
+- Spectrogram is painted as a magma cell grid on a canvas with a
+  peak-relative 80 dB window (the gpui-px contour heatmap rendered a
+  blank white panel), with time/frequency extent captions.
+- Axis labels shortened (Phase (°), GD (ms), C50 (dB)) so the vertical
+  axis legend stays inside the graph.
+- Loaded sessions: the Evaluating panels no longer report distortion,
+  RT60, clarity and group delay as unavailable. The session JSON keeps
+  only the frequency response, so on load the advanced series are
+  restored from each take's analysis CSV (`enrich_results_from_take_csvs`
+  in sotf-capture), THD is derived from the stored harmonic curves when
+  the THD series itself is absent, and the spectrogram is computed
+  from the measured or reconstructed impulse response when no stored
+  spectrogram exists.
+
+## Audit fixes (2026-10-18)
+
+- RoomEQ freshness checks hash a compact digest of the optimizer
+  inputs (`RoomEqState::input_digest`) instead of serializing every
+  response curve to JSON on each render; the Review step reads frozen
+  typed source metadata (`result_sources`) captured when the run
+  starts. Optimizer progress moved to a bounded channel with a run
+  generation: progress and completions from a cancelled or superseded
+  run are dropped.
+- Evaluating renders from borrowed recording results
+  (`filtered_result_refs`) and memoizes the derived group-delay, RT60,
+  and clarity series per input fingerprint; capture preparation
+  (stimulus synthesis, temp WAV, CTC reference persistence) runs on a
+  background executor instead of blocking the UI thread.
+- Library track list: the toolbar count and the virtualized rows now
+  share one cached materialization of filtered track indices
+  (`LibraryController::ensure_track_cache_valid`), keyed by a
+  filter/search/selection fingerprint so stale rows are never served.
+- All GPUI test targets are declared explicitly in `Cargo.toml`
+  (`autotests = false`) so no integration suite can silently drop
+  out of `cargo test` discovery.
+
 # 0.7.11 (unreleased)
 
 ## Workbench views

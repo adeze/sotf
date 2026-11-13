@@ -614,6 +614,13 @@ impl PlayerView {
             })
             .collect::<Vec<_>>();
         let next_capture_level = format!("{next_label}: {:.1} dBFS", recording.signal_level_db);
+        let live_level = recording.live_level;
+        let last_take_level = recording.last_take_level;
+        let language = state.app.ui_state.language;
+        let spl_offset_db = recording
+            .spl_calibration_capture
+            .to_spl_calibration()
+            .map(|cal| cal.spl_offset_db);
         let _ = state;
 
         let view = cx.entity().clone();
@@ -761,8 +768,203 @@ impl PlayerView {
                             .size(ProgressSize::Sm)
                             .variant(ProgressVariant::Default),
                     )
+                })
+                .when(is_recording, |stack| {
+                    let theme = theme.clone();
+                    stack.child(Self::render_live_level_meter(
+                        d,
+                        live_level,
+                        spl_offset_db,
+                        language,
+                        &theme,
+                    ))
+                })
+                .when(!is_recording, |stack| {
+                    let theme = theme.clone();
+                    let guidance = last_take_level.and_then(|snapshot| {
+                        snapshot
+                            .gain_advice()
+                            .map(|advice| (advice, snapshot))
+                    });
+                    match guidance {
+                        Some((advice, snapshot)) => stack.child(
+                            div()
+                                .p(d.pad_x)
+                                .rounded(d.r_md)
+                                .bg(theme.feedback.warning_background)
+                                .border_1()
+                                .border_color(theme.warning)
+                                .child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Xs)
+                                        .align(StackAlign::Center)
+                                        .child(
+                                            Text::new("⚠").size(TextSize::Sm).color(theme.warning),
+                                        )
+                                        .child(
+                                            Text::new(Self::gain_guidance_text(
+                                                advice,
+                                                &snapshot,
+                                                language,
+                                            ))
+                                            .size(TextSize::Xs)
+                                            .color(theme.warning),
+                                        ),
+                                ),
+                        ),
+                        None => stack,
+                    }
                 }),
         )
+    }
+
+    /// Classical green/yellow/red input level bar for the running take.
+    ///
+    /// The bar shows the latest block peak on a −60…0 dBFS scale: green
+    /// with healthy headroom, yellow when hot, red when there is no
+    /// headroom left (peak ≥ −1 dBFS or clipped samples). When an SPL
+    /// calibration exists, the peak is also shown in dB SPL.
+    pub(super) fn render_live_level_meter(
+        d: Ds,
+        snapshot: Option<sotf_audio_player::signal_recorder::CaptureLevelSnapshot>,
+        spl_offset_db: Option<f32>,
+        language: crate::app::i18n::Language,
+        theme: &crate::theme::Theme,
+    ) -> impl IntoElement {
+        use sotf_audio_player::signal_recorder::LevelZone;
+
+        let peak_dbfs = snapshot.and_then(|snap| snap.peak_dbfs);
+        let rms_dbfs = snapshot.and_then(|snap| snap.rms_dbfs);
+        let hold_dbfs = snapshot.and_then(|snap| snap.peak_hold_dbfs);
+        let clipped_samples = snapshot.map_or(0, |snap| snap.clipped_samples);
+        let zone = snapshot.map_or(LevelZone::Silence, |snap| snap.zone);
+
+        let bar_color = match zone {
+            LevelZone::Clipping => theme.error,
+            LevelZone::Hot => theme.warning,
+            LevelZone::Good | LevelZone::Low => theme.success,
+            LevelZone::Silence => theme.text_muted,
+        };
+        let (input_level_label, clipping_hint) = match language {
+            crate::app::i18n::Language::French => (
+                "Niveau d'entrée",
+                "Aucune marge — écrêtage. Baissez le gain du microphone ; cette prise doit être refaite.",
+            ),
+            crate::app::i18n::Language::German => (
+                "Eingangspegel",
+                "Keine Aussteuerungsreserve — Übersteuerung. Mikrofonverstärkung senken; diese Aufnahme wiederholen.",
+            ),
+            crate::app::i18n::Language::Spanish => (
+                "Nivel de entrada",
+                "Sin margen — saturación. Baje la ganancia del micrófono; repita esta toma.",
+            ),
+            _ => (
+                "Input level",
+                "No headroom — clipping. Lower the microphone gain; this take should be re-recorded.",
+            ),
+        };
+
+        // −60 dBFS (left) to 0 dBFS (right, no headroom).
+        let fraction = peak_dbfs
+            .map(|peak| ((peak + 60.0) / 60.0).clamp(0.0, 1.0))
+            .unwrap_or(0.0);
+
+        let fmt_level = |value: Option<f32>| match value {
+            Some(level) => format!("{level:.1}"),
+            None => "—".to_string(),
+        };
+        let mut readout = format!(
+            "Peak {} dBFS · RMS {} dBFS · Hold {} dBFS",
+            fmt_level(peak_dbfs),
+            fmt_level(rms_dbfs),
+            fmt_level(hold_dbfs),
+        );
+        if let (Some(peak), Some(offset)) = (peak_dbfs, spl_offset_db) {
+            readout.push_str(&format!(" · ≈ {:.0} dB SPL", peak + offset));
+        }
+        if clipped_samples > 0 {
+            readout.push_str(&format!(" · CLIPPING ({clipped_samples} samples)"));
+        }
+
+        let meter = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(d.grid)
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .align(StackAlign::Center)
+                    .child(Text::label(input_level_label).color(theme.text_secondary))
+                    .child(
+                        Text::caption(readout).color(if zone == LevelZone::Clipping {
+                            theme.error
+                        } else {
+                            theme.text_secondary
+                        }),
+                    ),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(12.0))
+                    .rounded(d.r_md)
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .child(
+                        div()
+                            .h_full()
+                            .w(gpui::relative(fraction))
+                            .rounded(d.r_md)
+                            .bg(bar_color),
+                    ),
+            );
+        let meter = if zone == LevelZone::Clipping {
+            meter.child(Text::caption(clipping_hint).color(theme.error))
+        } else {
+            meter
+        };
+        dev_track!(meter, "recording.level_meter")
+    }
+
+    /// Post-take microphone-gain guidance from the final level verdict.
+    pub(super) fn gain_guidance_text(
+        advice: sotf_audio_player::signal_recorder::GainAdvice,
+        snapshot: &sotf_audio_player::signal_recorder::CaptureLevelSnapshot,
+        language: crate::app::i18n::Language,
+    ) -> String {
+        use sotf_audio_player::signal_recorder::GainAdvice;
+        let peak = snapshot
+            .peak_hold_dbfs
+            .map(|level| format!("{level:.1}"))
+            .unwrap_or_else(|| "—".to_string());
+        match (language, advice) {
+            (crate::app::i18n::Language::French, GainAdvice::LowerMicrophoneGain) => format!(
+                "Gain du microphone trop élevé : écrêtage pendant la mesure (crête {peak} dBFS, aucune marge). Baissez le gain du microphone et réenregistrez."
+            ),
+            (crate::app::i18n::Language::French, GainAdvice::RaiseMicrophoneGain) => format!(
+                "Gain du microphone trop faible : la mesure n'a culminé qu'à {peak} dBFS. Augmentez le gain du microphone et réenregistrez."
+            ),
+            (crate::app::i18n::Language::German, GainAdvice::LowerMicrophoneGain) => format!(
+                "Mikrofonverstärkung zu hoch: Übersteuerung während der Messung (Spitze {peak} dBFS, keine Reserve). Mikrofonverstärkung senken und erneut aufnehmen."
+            ),
+            (crate::app::i18n::Language::German, GainAdvice::RaiseMicrophoneGain) => format!(
+                "Mikrofonverstärkung zu niedrig: Die Messung erreichte nur {peak} dBFS Spitze. Mikrofonverstärkung erhöhen und erneut aufnehmen."
+            ),
+            (crate::app::i18n::Language::Spanish, GainAdvice::LowerMicrophoneGain) => format!(
+                "Ganancia del micrófono demasiado alta: saturación durante la medición (pico {peak} dBFS, sin margen). Baje la ganancia del micrófono y vuelva a grabar."
+            ),
+            (crate::app::i18n::Language::Spanish, GainAdvice::RaiseMicrophoneGain) => format!(
+                "Ganancia del micrófono demasiado baja: la medición solo alcanzó {peak} dBFS de pico. Aumente la ganancia del micrófono y vuelva a grabar."
+            ),
+            (_, GainAdvice::LowerMicrophoneGain) => format!(
+                "Microphone gain too high: clipping occurred during the measurement (peak {peak} dBFS, no headroom). Lower the microphone gain and re-record."
+            ),
+            (_, GainAdvice::RaiseMicrophoneGain) => format!(
+                "Microphone gain too low: the measurement peaked at only {peak} dBFS. Increase the microphone gain and re-record."
+            ),
+        }
     }
 
     /// Render the list of channels with their recording status.
@@ -1277,12 +1479,9 @@ impl PlayerView {
                 .prepare_capture_inputs();
         });
         use sotf_audio_player::recording_helpers::{
-            capture_signal_params, measurement_amplitude, resolve_mic_calibration,
-            sanitize_recording_name, signal_type_for,
+            resolve_mic_calibration, sanitize_recording_name, signal_type_for,
         };
-        use sotf_audio_player::signal_recorder::{
-            SignalType, prepare_measurement_signal, write_temp_wav,
-        };
+        use sotf_audio_player::signal_recorder::SignalType;
 
         // --- Gather parameters from state ---
         #[derive(Clone)]
@@ -1521,7 +1720,7 @@ impl PlayerView {
             }
             rec_state.sweep_cancel_requested.clone()
         });
-        let capture_generation = self.state.update(cx, |state, _| {
+        let (capture_generation, level_meter) = self.state.update(cx, |state, _| {
             let rec_state = &mut state.app.measurement_state.recording_state;
             // Task 10: bump the capture generation so a still-finishing OLD
             // capture task (cancel-poll window) cannot apply its results to
@@ -1532,7 +1731,14 @@ impl PlayerView {
             rec_state.status_severity =
                 crate::app::types::recording::RecordingStatusSeverity::Working;
             rec_state.recording_progress = 0.0;
-            rec_state.capture_generation
+            // Fresh live level meter for this take; the capture callback
+            // feeds it and the UI poll task below renders it.
+            let level_meter =
+                std::sync::Arc::new(sotf_audio_player::signal_recorder::CaptureLevelMeter::new());
+            rec_state.live_level_meter = Some(level_meter.clone());
+            rec_state.live_level = None;
+            rec_state.last_take_level = None;
+            (rec_state.capture_generation, level_meter)
         });
         cx.notify();
 
@@ -1555,128 +1761,6 @@ impl PlayerView {
             mic_vec_indices,
         );
 
-        // Generate signal. dB → linear amplitude via the shared helper
-        // (clamped to ≤ 0 dBFS, R3). The sweep path routes through the
-        // shared helper (B1): with `bass_octave_duration_s` set, the
-        // stimulus becomes the self-timed octave-scaled sweep with silence
-        // windows — the same values persisted at save time.
-        let amplitude = measurement_amplitude(params.level_db as f64);
-        let sig_params = capture_signal_params(
-            params.signal_type,
-            params.sweep_start_freq,
-            params.sweep_end_freq,
-            amplitude,
-            Some(params.bass_octave_duration_s),
-            Some(params.pre_silence_s),
-            params.post_silence_s,
-        );
-
-        // Generate the stimulus through the shared entry point (R4):
-        // validates the parameters (Nyquist, start < end, amplitude) and
-        // applies the standard 20 ms fades + 250 ms pre/post padding
-        // (lag-neutral for the whole-signal cross-correlation analysis).
-        // Validation failures (e.g. sweep end above Nyquist) surface via
-        // the status message and Error channel state below.
-        let signal = match prepare_measurement_signal(
-            params.signal_type,
-            &sig_params,
-            params.duration_secs,
-            params.sample_rate,
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("Failed to generate signal: {}", e);
-                self.state.update(cx, |state, _| {
-                    for &vi in &mic_vec_indices {
-                        if let Some(rec) = state
-                            .app
-                            .measurement_state
-                            .recording_state
-                            .channel_recordings
-                            .get_mut(vi)
-                        {
-                            rec.state = ChannelRecordingState::Error;
-                        }
-                    }
-                    let rec_state = &mut state.app.measurement_state.recording_state;
-                    rec_state.current_recording_channel = None;
-                    rec_state.status_message = format!("Error: {}", e);
-                    rec_state.status_severity =
-                        crate::app::types::recording::RecordingStatusSeverity::Error;
-                    // Hard failure before spawn: end the batch, mirroring
-                    // the async error arms (task-9 review C8).
-                    rec_state.auto_record_remaining = false;
-                });
-                cx.notify();
-                return;
-            }
-        };
-
-        let stimulus_config = sotf_audio_player::recording_helpers::effective_acquisition_config(
-            params.signal_type,
-            &sig_params,
-            params.duration_secs,
-            params.sample_rate,
-        )
-        .map_err(|error| {
-            log::warn!("Could not snapshot effective recording stimulus: {error}");
-            error
-        })
-        .ok();
-
-        let temp_wav = match write_temp_wav(&signal, params.sample_rate, 1) {
-            Ok(f) => f,
-            Err(e) => {
-                log::error!("Failed to write temp WAV: {}", e);
-                self.state.update(cx, |state, _| {
-                    for &vi in &mic_vec_indices {
-                        if let Some(rec) = state
-                            .app
-                            .measurement_state
-                            .recording_state
-                            .channel_recordings
-                            .get_mut(vi)
-                        {
-                            rec.state = ChannelRecordingState::Error;
-                        }
-                    }
-                    let rec_state = &mut state.app.measurement_state.recording_state;
-                    rec_state.current_recording_channel = None;
-                    rec_state.status_message = format!("Error: {}", e);
-                    rec_state.status_severity =
-                        crate::app::types::recording::RecordingStatusSeverity::Error;
-                    // Hard failure before spawn: end the batch, mirroring
-                    // the async error arms (task-9 review C8).
-                    rec_state.auto_record_remaining = false;
-                });
-                cx.notify();
-                return;
-            }
-        };
-
-        if params.ctc_strategy == crate::app::types::CtcMatrixExportStrategy::RawSweep {
-            let reference_path = recording_dir.join("ctc_reference_sweep.wav");
-            if let Err(e) = sotf_audio_player::signal_recorder::write_wav_file(
-                &reference_path,
-                &signal,
-                params.sample_rate,
-                1,
-            ) {
-                log::warn!("Failed to persist CTC reference sweep: {}", e);
-            } else {
-                // B1: the octave-scaled sweep is self-timed, so persist the
-                // *actual* stimulus duration alongside the reference path —
-                // `signal_duration_secs` no longer describes this WAV.
-                let actual_duration_s = signal.len() as f32 / params.sample_rate as f32;
-                self.state.update(cx, |state, _| {
-                    let rec_state = &mut state.app.measurement_state.recording_state;
-                    rec_state.ctc_reference_sweep_path =
-                        Some(reference_path.to_string_lossy().to_string());
-                    rec_state.ctc_reference_sweep_duration_s = Some(actual_duration_s);
-                });
-            }
-        }
-
         // Build per-mic paths
         let wav_paths: Vec<std::path::PathBuf> = params
             .mics
@@ -1694,8 +1778,13 @@ impl PlayerView {
 
         let weak_state = self.state.downgrade();
         let weak_view = cx.weak_entity();
-        let reference_signal = signal.clone();
-        let temp_wav_path = temp_wav.path().to_path_buf();
+        let duration_secs = params.duration_secs;
+        let level_db = params.level_db;
+        let bass_octave_duration_s = params.bass_octave_duration_s;
+        let pre_silence_s = params.pre_silence_s;
+        let post_silence_s = params.post_silence_s;
+        let ctc_strategy = params.ctc_strategy;
+        let capture_recording_dir = recording_dir.clone();
         let mics = params.mics.clone();
         let speaker_name = params.speaker_name.clone();
         let signal_type = params.signal_type;
@@ -1706,7 +1795,7 @@ impl PlayerView {
         let input_device = params.input_device.clone();
         let sample_rate = params.sample_rate;
         let num_sweeps = params.num_sweeps;
-        let captured_stimulus_config = stimulus_config.clone();
+        let capture_level_meter = level_meter.clone();
         #[cfg(feature = "dev-api")]
         let qa_capture = params.qa_capture;
 
@@ -1722,9 +1811,88 @@ impl PlayerView {
             let capture_sweep_start_freq = sweep_start_freq;
             let capture_sweep_end_freq = sweep_end_freq;
             let capture_executor = cx.background_executor();
+            let executor_level_meter = capture_level_meter.clone();
             let results = capture_executor
                 .spawn(async move {
                     use sotf_audio_player::signal_recorder::SignalType;
+
+                    // Preparation runs on this executor thread, not the
+                    // UI thread: stimulus synthesis, the effective
+                    // acquisition snapshot, the temp WAV write, and the
+                    // CTC reference sweep persistence. Failures return
+                    // through the same error path as capture failures.
+                    use sotf_audio_player::recording_helpers::{
+                        capture_signal_params, effective_acquisition_config,
+                        measurement_amplitude,
+                    };
+                    use sotf_audio_player::signal_recorder::{
+                        prepare_measurement_signal, write_temp_wav,
+                    };
+                    let amplitude = measurement_amplitude(level_db as f64);
+                    let sig_params = capture_signal_params(
+                        signal_type,
+                        capture_sweep_start_freq,
+                        capture_sweep_end_freq,
+                        amplitude,
+                        Some(bass_octave_duration_s),
+                        Some(pre_silence_s),
+                        post_silence_s,
+                    );
+                    let reference_signal = match prepare_measurement_signal(
+                        signal_type,
+                        &sig_params,
+                        duration_secs,
+                        sample_rate,
+                    ) {
+                        Ok(signal) => signal,
+                        Err(error) => return Err(error),
+                    };
+                    let captured_stimulus_config = effective_acquisition_config(
+                        signal_type,
+                        &sig_params,
+                        duration_secs,
+                        sample_rate,
+                    )
+                    .map_err(|error| {
+                        log::warn!(
+                            "Could not snapshot effective recording stimulus: {error}"
+                        );
+                        error
+                    })
+                    .ok();
+                    let temp_wav = match write_temp_wav(&reference_signal, sample_rate, 1) {
+                        Ok(file) => file,
+                        Err(error) => return Err(error),
+                    };
+                    let temp_wav_path = temp_wav.path().to_path_buf();
+                    // Kept alive until the capture calls below finish.
+                    let _temp_wav_guard = &temp_wav;
+                    let _ = _temp_wav_guard;
+                    let ctc_reference = if ctc_strategy
+                        == crate::app::types::CtcMatrixExportStrategy::RawSweep
+                    {
+                        let reference_path =
+                            capture_recording_dir.join("ctc_reference_sweep.wav");
+                        match sotf_audio_player::signal_recorder::write_wav_file(
+                            &reference_path,
+                            &reference_signal,
+                            sample_rate,
+                            1,
+                        ) {
+                            Ok(()) => Some((
+                                reference_path.to_string_lossy().to_string(),
+                                reference_signal.len() as f32 / sample_rate as f32,
+                            )),
+                            Err(error) => {
+                                log::warn!(
+                                    "Failed to persist CTC reference sweep: {error}"
+                                );
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
 
                     let sweep_range = if signal_type == SignalType::Sweep {
                         Some((capture_sweep_start_freq, capture_sweep_end_freq))
@@ -1756,9 +1924,15 @@ impl PlayerView {
                         () => {{
                             if num_mics <= 1 {
                                 use sotf_audio_player::EnginePlayback;
-                                use sotf_audio_player::signal_recorder::record_and_analyze_with;
-                                record_and_analyze_with(
+                                use sotf_audio_player::signal_recorder::{
+                                    CpalRecorder, SweepRecorder as _,
+                                    record_and_analyze_with_recorder,
+                                };
+                                let mut recorder = CpalRecorder::new("record_and_analyze");
+                                recorder.set_level_meter(executor_level_meter.clone());
+                                record_and_analyze_with_recorder(
                                     &mut EnginePlayback::new(true, "record_and_analyze"),
+                                    &mut recorder,
                                     &temp_wav_path,
                                     &capture_wav_paths[0],
                                     &reference_signal,
@@ -1776,9 +1950,16 @@ impl PlayerView {
                                 .map(|capture| vec![capture])
                             } else {
                                 use sotf_audio_player::EnginePlayback;
-                                use sotf_audio_player::signal_recorder::record_and_analyze_with_multi;
-                                record_and_analyze_with_multi(
+                                use sotf_audio_player::signal_recorder::{
+                                    CpalRecorder, SweepRecorder as _,
+                                    record_and_analyze_with_multi_recorder,
+                                };
+                                let mut recorder =
+                                    CpalRecorder::new("record_and_analyze_multi");
+                                recorder.set_level_meter(executor_level_meter.clone());
+                                record_and_analyze_with_multi_recorder(
                                     &mut EnginePlayback::new(false, "record_and_analyze_multi"),
+                                    &mut recorder,
                                     &temp_wav_path,
                                     &capture_wav_paths,
                                     &reference_signal,
@@ -1862,6 +2043,10 @@ impl PlayerView {
                         let wire = VirtualWire::new(config);
                         let mut playback = wire.playback("qa_recording");
                         let mut recorder = wire.recorder("qa_recording");
+                        {
+                            use sotf_audio_player::signal_recorder::SweepRecorder as _;
+                            recorder.set_level_meter(executor_level_meter.clone());
+                        }
                         if num_mics <= 1 {
                             record_and_analyze_with_recorder(
                                 &mut playback,
@@ -1913,7 +2098,12 @@ impl PlayerView {
                         let _ = num_sweeps;
                         Err("Recording not available on iOS".to_string())
                     };
-                    results
+                    match results {
+                        Ok(captures) => {
+                            Ok((captures, captured_stimulus_config, ctc_reference))
+                        }
+                        Err(error) => Err(error),
+                    }
                 })
                 .await;
 
@@ -1943,8 +2133,26 @@ impl PlayerView {
                         );
                         return BatchNextAction::Hold;
                     }
+                    // This capture is over: stop the live meter and keep
+                    // the final level verdict for gain guidance.
+                    {
+                        let rec_state =
+                            &mut state.app.measurement_state.recording_state;
+                        rec_state.live_level_meter = None;
+                        rec_state.live_level = None;
+                        if results.is_ok() {
+                            rec_state.last_take_level =
+                                Some(capture_level_meter.snapshot());
+                        }
+                    }
                     let should_continue = match results {
-                        Ok(analysis_results) => {
+                        Ok((analysis_results, captured_stimulus_config, ctc_reference)) => {
+                            if let Some((path, duration_s)) = ctc_reference {
+                                let rec_state =
+                                    &mut state.app.measurement_state.recording_state;
+                                rec_state.ctc_reference_sweep_path = Some(path);
+                                rec_state.ctc_reference_sweep_duration_s = Some(duration_s);
+                            }
                             let mut any_low_signal = false;
                             let mut any_review = false;
                             let mut first_verdict: Option<String> = None;
@@ -1987,7 +2195,11 @@ impl PlayerView {
                                 }
 
                                 let rec_result = RecordingResult {
-                                    sample_rate_hz: Some(sample_rate),
+                                    // Actual negotiated capture rate from
+                                    // the engine, not the requested wizard
+                                    // rate (they differ when the input
+                                    // device negotiates another rate).
+                                    sample_rate_hz: Some(capture.analysis_sample_rate),
                                     channel: mic.vec_idx.unwrap_or(usize::MAX),
                                     wav_path: Some(wav_paths[mic_i].to_string_lossy().to_string()),
                                     csv_path: Some(csv_paths[mic_i].to_string_lossy().to_string()),
@@ -2260,9 +2472,44 @@ impl PlayerView {
                 }
             }
 
-            drop(temp_wav);
         })
         .detach();
+
+        // Poll the live level meter at UI cadence while this take's
+        // meter is the installed one; the loop exits when the take ends
+        // (meter cleared/replaced) or the view goes away.
+        {
+            let poll_meter = level_meter.clone();
+            let weak_poll_view = cx.weak_entity();
+            cx.spawn(async move |_, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(100))
+                        .await;
+                    let still_current = weak_poll_view.update(cx, |view, cx| {
+                        let current = view.state.update(cx, |state, _| {
+                            let rec = &mut state.app.measurement_state.recording_state;
+                            let current = rec
+                                .live_level_meter
+                                .as_ref()
+                                .is_some_and(|meter| std::sync::Arc::ptr_eq(meter, &poll_meter));
+                            if current {
+                                rec.live_level = Some(poll_meter.snapshot());
+                            }
+                            current
+                        });
+                        if current {
+                            cx.notify();
+                        }
+                        current
+                    });
+                    if !matches!(still_current, Ok(true)) {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
 
         log::info!("Recording started for speaker {}", params.speaker_name);
     }
@@ -2294,6 +2541,8 @@ impl PlayerView {
                 .measurement_state
                 .recording_state
                 .recording_progress = 0.0;
+            state.app.measurement_state.recording_state.live_level_meter = None;
+            state.app.measurement_state.recording_state.live_level = None;
             state.app.measurement_state.recording_state.status_message =
                 "Recording stopped".to_string();
             state.app.measurement_state.recording_state.status_severity =
@@ -2511,7 +2760,7 @@ impl PlayerView {
     }
 
     /// Save recordings to a JSON file in the recording directory
-    /// Outputs autoeq::RoomConfig format compatible with roomeq CLI
+    /// Outputs roomeq_model::RoomConfig format compatible with roomeq CLI
     pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
         if !self
             .state
@@ -2559,7 +2808,8 @@ impl PlayerView {
             return;
         }
         use crate::app::types::RoomEqMeasurementsFile;
-        use autoeq::{OptimizerConfig, RoomConfig};
+        use roomeq_model::OptimizerConfig;
+        use roomeq_model::RoomConfig;
         use sotf_audio_player::recording_helpers::RECORDINGS_FILENAME;
         use sotf_audio_player::room_eq_types::{
             DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY, build_speakers_from_recordings,
@@ -2772,7 +3022,7 @@ impl PlayerView {
 
             let ctc = ctc_measurements.map(|measurements| {
                 let raw = ctc_reference_sweep.is_some();
-                autoeq::roomeq::CtcConfig {
+                roomeq_model::CtcConfig {
                     // Off by default — binaural CTC is opt-in, the
                     // CTC stanza is written so the user can flip it
                     // on later without re-recording, but roomeq must
@@ -3042,6 +3292,9 @@ impl PlayerView {
                             sidecar,
                         );
                     }
+                    sotf_audio_player::recording_helpers::enrich_results_from_take_csvs(
+                        &mut recordings,
+                    );
                     let count = recordings.len();
                     rec.take_review.clear();
                     rec.channel_recordings = recordings;
@@ -3280,7 +3533,7 @@ impl PlayerView {
     /// 3. Write a new lightweight JSON file to the original location
     pub(super) fn perform_migration(&mut self, cx: &mut Context<Self>) {
         // Legacy `RoomEqMeasurementsFile` migration is no longer
-        // supported — the only on-disk format is `autoeq::RoomConfig`.
+        // supported — the only on-disk format is `roomeq_model::RoomConfig`.
         // The modal trigger has been disabled, but in case the modal
         // surfaces from stale state, dismiss it cleanly with a message
         // instead of touching the legacy parser.

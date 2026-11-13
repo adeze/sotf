@@ -6,3 +6,5 @@
 mod misc;
 mod waterfall;
 mod waterfall_data;
+
+pub(crate) use misc::DerivedSeriesCache;

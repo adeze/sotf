@@ -78,7 +78,7 @@ impl PlayerView {
                 room.artifact_dir.clone(),
                 capture_quality_report(&room.channel_measurements),
                 app.ui_state.theme_id != crate::app::theme::ThemeId::Light,
-                room.result_inputs.clone(),
+                room.result_inputs,
                 labels,
             )
         };
@@ -89,7 +89,6 @@ impl PlayerView {
             sotf_report_host::generate_report_with_quality(
                 &result,
                 artifacts.as_deref(),
-                None,
                 Some(&quality),
             )
         });

@@ -41,10 +41,10 @@ Prerequisites:
 ARM64 tvOS device and simulator targets are now Tier 2; nightly and `build-std`
 are not required for these targets. See [Rust target support](https://doc.rust-lang.org/rustc/platform-support/apple-tvos.html).
 
-Generate the Xcode project and build for the tvOS simulator:
+Build the Rust library, generate the Xcode project, and build for the tvOS simulator:
 
 ```bash
-just tvos-sim
+just tvos # Alias for just tvos-sim
 ```
 
 Or build the Rust library directly:

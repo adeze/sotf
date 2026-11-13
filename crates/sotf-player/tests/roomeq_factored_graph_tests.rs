@@ -261,13 +261,17 @@ fn gen514_per_route_graph_topology_matches_golden_snapshot() {
         return;
     }
 
-    let expected = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
-        panic!(
-            "missing golden snapshot {} ({e}). To create it, run with \
+    // Golden files are text; a CRLF checkout must compare equal to the
+    // LF-generated topology.
+    let expected = std::fs::read_to_string(&golden_path)
+        .map(|text| text.replace("\r\n", "\n"))
+        .unwrap_or_else(|e| {
+            panic!(
+                "missing golden snapshot {} ({e}). To create it, run with \
              INSTA_UPDATE=overwrite",
-            golden_path.display()
-        )
-    });
+                golden_path.display()
+            )
+        });
 
     if actual != expected {
         // Show a readable diff in the failure message: caller can copy the

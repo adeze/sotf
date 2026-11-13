@@ -1,3 +1,80 @@
+# 0.7.17
+
+## Features
+
+- Capture step now shows a real-time input level meter (green / yellow /
+  red bar with peak, RMS and peak-hold in dBFS, plus dB SPL when an SPL
+  calibration exists). After each take, the app advises lowering the
+  microphone gain when clipping occurred, or raising it when the
+  measurement peaked below −30 dBFS.
+- The RoomEQ report is now generated natively in Rust (AutoEQ d3rs
+  dataset composer) and displayed directly in the app — no Python
+  runtime is involved anymore.
+
+## Bug fixes
+
+- SPL calibration: entering a meter reading (e.g. 68 dB) no longer shows
+  a misleading "correction" of ~105 dB. The screen now shows the tone
+  level in dBFS and labels the stored value for what it is — the SPL of
+  a full-scale signal at the current microphone gain — with a
+  plausibility warning outside the usual range. The calibration
+  instructions no longer mention GD-Opt v2.
+- Evaluating: group delay no longer draws every channel twice (the
+  stored excess group delay and the recomputed curve were identical),
+  the impulse-response amplitude axis now scales to the measured peak
+  instead of rendering flat on a fixed −1…1 axis, RT60 and Clarity fall
+  back to the impulse reconstructed from the frequency response for
+  response-only results, and the spectrogram renders as a proper
+  magma cell grid (peak-relative 80 dB window) instead of a blank
+  white panel. Vertical axis labels were shortened so they stay
+  inside the graph. For recordings re-opened from a saved session,
+  distortion/RT60/clarity/group-delay are restored from each take's
+  analysis CSV and the spectrogram is recomputed from the impulse
+  response, instead of showing "not available".
+- iOS: fixed the black screen in the simulator (UIScene lifecycle),
+  the Server settings option is hidden on iPhone (kept on iPad), and a
+  renderer fix restores intermittently missing letters.
+- macOS DMG: third-party license notices are resolved from the pinned
+  GitHub gpui-toolkit checkout instead of a sibling directory on disk.
+
+## Testing
+
+- Dev-API scenarios now cover the client/server flows, the recording
+  wizard (fake capture, SPL calibration, clipping review) and opening
+  the RoomEQ report; measured RoomEQ datasets (2.0 and 5.1.4) are
+  exercised in the DSP system across iir/fir/mixed configurations.
+
+## Audit fixes (2026-10-18)
+
+- TUI RoomEQ export now writes the full DSP chain (all EQ stages, gain,
+  convolution sidecars) in every supported format instead of flattening
+  to a single PEQ stage; PEQ-only formats are rejected explicitly rather
+  than silently dropping stages. Export/apply are blocked when the
+  result is stale relative to the current inputs.
+- The shared RoomEQ model owns input/result/run revisions: both GPUI
+  and TUI discard completions from superseded runs, the TUI optimizer
+  uses the configured sample rate (not the device default) and can be
+  cancelled with `c`, and GPUI progress uses a bounded channel with a
+  run generation so a cancelled run cannot overwrite a newer one.
+- Recordings persist the actual negotiated capture sample rate and the
+  CTC builder uses each take's own rate (mixed-rate takes are rejected
+  instead of resampled silently).
+- Reconstructed impulse responses (from frequency response only) are
+  validity-gated in math-dsp — degenerate grids, non-finite data, or a
+  wrapped/silent reconstruction show "not available" with a
+  "reconstructed, not measured" caption instead of a fake curve.
+- Performance: capture preparation (stimulus synthesis, WAV writing,
+  CTC reference) runs off the UI thread; Evaluating borrows recording
+  results and memoizes group-delay/RT60/clarity series; RoomEQ
+  freshness is a cheap input digest instead of serializing every
+  response curve on each render; the library track list reuses cached
+  filtered track indices for both the count and the visible rows.
+- CI: the GitHub testing-tiers workflow checks out the private sibling
+  repositories at pinned revisions so it can run on a clean runner;
+  the GPUI test targets are declared explicitly so no suite is
+  silently skipped, and the capture-frontend regression test compiles
+  against the current capture API again.
+
 # 0.7.12
 
 Preparation for release

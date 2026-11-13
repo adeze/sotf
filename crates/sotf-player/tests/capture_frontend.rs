@@ -55,11 +55,15 @@ fn fixture() -> (Golden, RawCaptureManifest, Vec<f32>, Vec<f32>) {
         plan: session.plan().clone(),
         // This fixture has no loopback, probe, or bass-anchor acquisition.
         loopback_files: vec![],
+        // Nor any localization calibration snapshot.
+        localization_calibration: None,
         probe_pass: None,
         bass_anchor_pass: None,
         stimulus: stimulus.layout,
         timing_reference_output_channel: Some(0),
         status: RawCaptureStatus::RawComplete,
+        checkpoint: None,
+        transport_evidence: Vec::new(),
         pending_processing: vec!["clock_correction".into()],
         calibrations: vec![],
         takes: vec![],
@@ -210,7 +214,7 @@ fn capture_frontend_workflow_processes_and_imports_golden_session() {
         workflow.import_channels().unwrap(),
     ));
     let config = room.to_room_config();
-    let autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(source)) =
+    let roomeq_model::SpeakerConfig::Single(autoeq_core::MeasurementSource::Multiple(source)) =
         &config.speakers["left"]
     else {
         panic!("lost simultaneous microphone set")

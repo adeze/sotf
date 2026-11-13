@@ -2,7 +2,7 @@
 /**
  * Extract the autoeq ExportFormat enum into a JSON file the site can import.
  *
- * Source of truth: crates/autoeq/src/roomeq/export.rs
+ * Source of truth: ../autoeq/crates/roomeq-export/src/export_format.rs
  * Output:          site/src/data/export-formats.json
  *
  * Parsing strategy: read the file as text, locate the `enum ExportFormat { … }`
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SOURCE = resolve(__dirname, '../../crates/autoeq/src/roomeq/export.rs');
+const SOURCE = resolve(__dirname, '../../../autoeq/crates/roomeq-export/src/export_format.rs');
 const OUTPUT = resolve(__dirname, '../src/data/export-formats.json');
 
 // Display label for each variant (kebab-case readable names). Keep this map
@@ -29,6 +29,8 @@ const LABELS = {
   EasyEffects: 'EasyEffects',
   Wavelet: 'Wavelet',
   PipeWire: 'PipeWire',
+  Rew: 'Room EQ Wizard',
+  BiquadCoefficients: 'Biquad coefficients',
   RoonDsp: 'Roon',
 };
 
@@ -45,7 +47,7 @@ if (!enumMatch) fail('could not find `pub enum ExportFormat { … }`');
 const enumBody = enumMatch[1];
 
 // 2. Walk the body. Each variant is preceded by a /// doc comment line and a
-//    #[value(name = "…")] attribute. We anchor on the variant identifier and
+//    #[serde(rename = "…")] attribute. We anchor on the variant identifier and
 //    look backwards for its doc + cli name.
 const variants = [];
 const lines = enumBody.split('\n');
@@ -59,7 +61,7 @@ for (const raw of lines) {
     pendingDoc = (pendingDoc ? pendingDoc + ' ' : '') + m[1].trim();
     continue;
   }
-  if ((m = line.match(/^#\[value\(name\s*=\s*"([^"]+)"\)\]$/))) {
+  if ((m = line.match(/^#\[serde\(rename\s*=\s*"([^"]+)"\)\]$/))) {
     pendingCliName = m[1];
     continue;
   }
@@ -102,8 +104,7 @@ const out = variants.map((v) => {
 
 const json = JSON.stringify(
   {
-    source: 'crates/autoeq/src/roomeq/export.rs',
-    generatedAt: new Date().toISOString(),
+    source: '../autoeq/crates/roomeq-export/src/export_format.rs',
     formats: out,
   },
   null,

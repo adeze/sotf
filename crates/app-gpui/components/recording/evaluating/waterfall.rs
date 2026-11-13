@@ -27,12 +27,13 @@ impl PlayerView {
         super::waterfall_data::input_available(result)
     }
     pub(super) fn render_waterfall_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
         let d = Ds::from_cx(cx);
-        let results = self.get_filtered_results(cx);
+        let app = &self.state.read(cx).app;
+        let theme = &app.ui_state.theme;
+        let results = Self::filtered_result_refs(&app.measurement_state.recording_state);
         let (title, body) = match results.first() {
             Some((name, _, result)) => match prepare(result) {
-                Ok(data) => (format!("Waterfall · {name}"), preview(data, &theme, d)),
+                Ok(data) => (format!("Waterfall · {name}"), preview(data, theme, d)),
                 Err(reason) => (
                     "Waterfall".to_owned(),
                     div()

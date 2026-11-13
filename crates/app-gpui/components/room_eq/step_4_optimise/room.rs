@@ -842,7 +842,7 @@ impl PlayerView {
             return;
         }
         use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
-        use autoeq::roomeq::CallbackAction;
+        use roomeq_workflow::CallbackAction;
         use sotf_audio_player::autoeq::{
             PipelineStepId, PipelineStepStatus, RoomOptimizationCallback, RoomOptimizationProgress,
             run_room_optimization_with_output_dir,
@@ -1014,9 +1014,14 @@ impl PlayerView {
         }
 
         // Update state to running and clear progress history
-        let cancel_flag = self.state.update(cx, |state, _cx| {
+        let (cancel_flag, run_generation) = self.state.update(cx, |state, _cx| {
             let room = &mut state.app.measurement_state.room_eq_state;
-            room.result_inputs = Some(room.optimization_input_snapshot());
+            room.result_inputs = Some(room.input_digest());
+            room.result_sources = Some(room.capture_result_sources());
+            // New run generation: progress receivers and the completion
+            // of any previous (cancelled/superseded) run become stale.
+            room.optimization_generation = room.optimization_generation.wrapping_add(1);
+            let generation = room.optimization_generation;
             state
                 .app
                 .measurement_state
@@ -1072,12 +1077,15 @@ impl PlayerView {
                     .with_size(700.0, 250.0),
             );
 
-            state
-                .app
-                .measurement_state
-                .room_eq_state
-                .cancel_requested
-                .clone()
+            (
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .cancel_requested
+                    .clone(),
+                generation,
+            )
         });
 
         // The running state changes the primary action into Cancel; request
@@ -1099,13 +1107,13 @@ impl PlayerView {
             Option<PipelineStepId>,
             Option<PipelineStepStatus>,
         );
-        // Use an unbounded progress channel and coalesce on the UI side.
-        // Iteration callbacks can arrive in bursts; with a bounded
-        // `try_send` queue, the sparse final pipeline events (IR,
-        // matching, metadata, sanity) were easy to drop behind old
-        // iteration messages. Those late events are exactly what tells the
-        // user why CPU is still busy after the visible channel rounds.
-        let (progress_tx, progress_rx) = smol::channel::unbounded::<ProgressMsg>();
+        // Bounded progress channel; the producer drops updates when the
+        // queue is full (`try_send`), so a fast optimizer cannot grow an
+        // unbounded backlog behind a busy UI. The consumer coalesces
+        // everything pending on each wakeup, so dropped intermediate
+        // iterations cost nothing; final pipeline events are also
+        // carried by the completion path, not only by this channel.
+        let (progress_tx, progress_rx) = smol::channel::bounded::<ProgressMsg>(64);
 
         // Clone state for progress receiver task
         let state_for_progress = self.state.clone();
@@ -1216,8 +1224,13 @@ impl PlayerView {
                         }
                     }
 
-                    state_for_progress.update(&mut cx.clone(), |state, cx| {
+                    let still_current = state_for_progress.update(&mut cx.clone(), |state, cx| {
                         let room_eq = &mut state.app.measurement_state.room_eq_state;
+                        // A newer run owns the state now; drop this
+                        // run's remaining progress without touching it.
+                        if room_eq.optimization_generation != run_generation {
+                            return false;
+                        }
                         // Iteration / loss only advance when a real
                         // per-iteration message arrived in this batch;
                         // otherwise we keep the previous values so the
@@ -1261,7 +1274,11 @@ impl PlayerView {
                             }
                         }
                         cx.notify();
+                        true
                     });
+                    if !still_current {
+                        break;
+                    }
 
                     // Yield to the executor so it can poll other futures
                     // (critically, the smol::unblock that drives the
@@ -1381,6 +1398,19 @@ impl PlayerView {
 
             // Drop progress sender to close channel and stop receiver
             drop(progress_tx);
+
+            // A superseded run must not write into the newer run's
+            // state at all — not even its Cancelled status.
+            let completion_is_current = state_clone.update(&mut cx.clone(), |state, _cx| {
+                state.app.measurement_state.room_eq_state.optimization_generation
+                    == run_generation
+            });
+            if !completion_is_current {
+                log::info!(
+                    "Dropping Room EQ completion from superseded generation {run_generation}"
+                );
+                return;
+            }
 
             // If the user cancelled, short-circuit before mapping partial
             // results into the UI. The optimizer returns Ok(..) with whatever
@@ -1738,8 +1768,8 @@ pub fn room_eq_progress_chart_series(
 /// such as bass-management crossovers. `ChannelOptimizationResult.final_curve`
 /// remains the fallback for older/incomplete backend results.
 pub fn room_eq_display_response_points(
-    chain: Option<&autoeq::roomeq::ChannelDspChain>,
-    fallback_final_curve: Option<&autoeq::Curve>,
+    chain: Option<&roomeq_model::ChannelDspChain>,
+    fallback_final_curve: Option<&autoeq_core::Curve>,
 ) -> Option<Vec<(f64, f64)>> {
     chain
         .and_then(|chain| chain.final_curve.as_ref())
@@ -1749,8 +1779,8 @@ pub fn room_eq_display_response_points(
 }
 
 pub fn room_eq_initial_response_points(
-    chain: Option<&autoeq::roomeq::ChannelDspChain>,
-    fallback_initial_curve: Option<&autoeq::Curve>,
+    chain: Option<&roomeq_model::ChannelDspChain>,
+    fallback_initial_curve: Option<&autoeq_core::Curve>,
 ) -> Option<Vec<(f64, f64)>> {
     chain
         .and_then(|chain| chain.initial_curve.as_ref())
@@ -1760,9 +1790,9 @@ pub fn room_eq_initial_response_points(
 }
 
 pub fn room_eq_channel_chain_by_name<'a>(
-    channels: &'a std::collections::HashMap<String, autoeq::roomeq::ChannelDspChain>,
+    channels: &'a std::collections::HashMap<String, roomeq_model::ChannelDspChain>,
     name: &str,
-) -> Option<&'a autoeq::roomeq::ChannelDspChain> {
+) -> Option<&'a roomeq_model::ChannelDspChain> {
     channels
         .get(name)
         .or_else(|| channels.values().find(|chain| chain.channel == name))
@@ -1793,16 +1823,16 @@ fn room_eq_artifact_dir(
 }
 
 fn room_eq_channel_result_by_name<'a>(
-    results: &'a std::collections::HashMap<String, autoeq::roomeq::ChannelOptimizationResult>,
+    results: &'a std::collections::HashMap<String, roomeq_workflow::ChannelOptimizationResult>,
     name: &str,
-    chain: Option<&autoeq::roomeq::ChannelDspChain>,
-) -> Option<&'a autoeq::roomeq::ChannelOptimizationResult> {
+    chain: Option<&roomeq_model::ChannelDspChain>,
+) -> Option<&'a roomeq_workflow::ChannelOptimizationResult> {
     results
         .get(name)
         .or_else(|| chain.and_then(|chain| results.get(&chain.channel)))
 }
 
-fn room_eq_curve_data_response_points(curve: &autoeq::roomeq::CurveData) -> Vec<(f64, f64)> {
+fn room_eq_curve_data_response_points(curve: &roomeq_model::CurveData) -> Vec<(f64, f64)> {
     curve
         .freq
         .iter()
@@ -1812,7 +1842,7 @@ fn room_eq_curve_data_response_points(curve: &autoeq::roomeq::CurveData) -> Vec<
         .collect()
 }
 
-fn room_eq_curve_response_points(curve: &autoeq::Curve) -> Vec<(f64, f64)> {
+fn room_eq_curve_response_points(curve: &autoeq_core::Curve) -> Vec<(f64, f64)> {
     curve
         .freq
         .iter()

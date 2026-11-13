@@ -1,5 +1,6 @@
 //! Real measured single-channel study through the native app's shared pipeline.
-use autoeq::roomeq::{CallbackAction, ProcessingMode};
+use roomeq_model::config::ProcessingMode;
+use roomeq_workflow::CallbackAction;
 use serde_json::json;
 use sotf_audio_player::autoeq::{
     OptimizerConfig, RoomOptimizationProgress, RoomOptimizationResult,
@@ -23,7 +24,7 @@ fn scientific_result(result: &RoomOptimizationResult) -> serde_json::Value {
 fn run(input: &Path, output: &Path) -> Result<(), String> {
     std::fs::create_dir(output).map_err(|e| format!("Use a fresh output directory: {e}"))?;
     let curve =
-        autoeq::read::read_curve_from_csv(&input.to_path_buf()).map_err(|e| e.to_string())?;
+        autoeq_measurements::read::read_curve_from_csv(&input.to_path_buf()).map_err(|e| e.to_string())?;
     let config = build_room_config_from_curves(
         &[("L".into(), curve.clone())],
         OptimizerConfig {
