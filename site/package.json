@@ -12,11 +12,11 @@
     "upgrade": "npx npm-check-updates -u"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.39.3",
-    "@tailwindcss/postcss": "4.3.0",
-    "astro": "6.3.3",
-    "npm": "^11.21.2",
-    "npm-check-updates": "22.2.0",
-    "tailwindcss": "4.3.0"
+    "@astrojs/starlight": "^0.42.11",
+    "astro": "7.4.11",
+    "npm-check-updates": "23.1.1",
+    "tailwindcss": "4.3.5",
+    "@astrojs/markdown-remark": "^7.3.0",
+    "@tailwindcss/vite": "4.3.5"
   }
 }
