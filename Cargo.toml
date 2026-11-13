@@ -110,7 +110,7 @@ rfd = { version = "0.17.2", package = "sotf-rfd", git = "https://github.com/pier
 # library crates take the workspace dep bare so dev `cargo check -p <lib>`
 # doesn't pay for the C compile. Feature unification re-enables `bundled`
 # automatically when a shipping app is in the build graph.
-rusqlite = { version = "0.41.1" }
+rusqlite = { version = "0.42.0" }
 rust-embed = "8"
 smol = "2"
 strsim = "0.11"
@@ -267,7 +267,7 @@ rtrb = "0.4"
 
 # TUI framework
 ratatui = "0.30"
-mpris-server = "0.9"
+mpris-server = "0.11"
 ratatui-image = { version = "11", default-features = false, features = ["serde", "crossterm", "image-defaults"] }
 crossterm = "0.29"
 
